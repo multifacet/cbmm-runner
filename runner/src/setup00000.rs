@@ -145,7 +145,7 @@ where
     /// Create and init a new VM, including installing guest dependencies.
     create_vm: bool,
 
-    /// Compile and install Linux 5.1.4 on the guest.
+    /// Compile and install a recent Linux on the guest.
     guest_kernel: bool,
 
     /// Compile and install guest bmks.

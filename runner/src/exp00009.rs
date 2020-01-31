@@ -176,7 +176,7 @@ where
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
-    // Reuse the kernel 5.1.4 build folder we used during setup 0 to build the guest kernel. We
+    // Reuse the kernel build folder we used during setup 0 to build the guest kernel. We
     // need to clean it first...
     let tarball_path: String = KERNEL_RECENT_TARBALL_NAME
         .trim_end_matches(".tar.gz")
