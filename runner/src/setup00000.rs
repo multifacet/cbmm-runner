@@ -1081,6 +1081,13 @@ fn install_guest_kernel(
                 ("CONFIG_RETPOLINE", false),
                 // for `perf` stack traces
                 ("CONFIG_FRAME_POINTER", true),
+                // for bpf
+                ("CONFIG_IKHEADERS", true),
+                ("CONFIG_BPF", true),
+                ("CONFIG_BPF_SYSCALL", true),
+                ("CONFIG_BPF_JIT", true),
+                ("CONFIG_HAVE_EBPF_JIT", true),
+                ("CONFIG_BPF_EVENTS", true),
             ],
         },
         None,
