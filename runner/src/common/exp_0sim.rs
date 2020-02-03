@@ -693,16 +693,23 @@ pub fn virsh_vcpupin(
 pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(), failure::Error> {
     let vagrant_path = &format!("{}/{}", RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
 
-    // Keep the same VM domain name though...
+    // Keep the same VM domain name and box type though...
     let current_name =
         shell.run(cmd!("grep -oE ':test_vm[0-9a-zA-Z_]+' Vagrantfile").cwd(vagrant_path))?;
     let current_name = current_name.stdout.trim();
 
+    let current_box = shell.run(
+        cmd!(r#"grep -oE 'vagrant_box = ".*"' Vagrantfile.bk | awk '{{print $3}}'"#)
+            .cwd(vagrant_path),
+    )?;
+    let current_box = current_box.stdout.trim();
+
     with_shell! { shell in vagrant_path =>
         cmd!("cp Vagrantfile.bk Vagrantfile"),
-        cmd!("sed -i 's/:test_vm/{}/' Vagrantfile", current_name),
-        cmd!("sed -i 's/memory = 1023/memory = {}/' Vagrantfile", memgb),
-        cmd!("sed -i 's/cpus = 1/cpus = {}/' Vagrantfile", cores),
+        cmd!(r#"sed -i 's/vagrant_vm_name = :test_vm/vagrant_vm_name = {}/' Vagrantfile"#, current_name),
+        cmd!(r#"sed -i 's/vagrant_box = \'\'/vagrant_box = {}/' Vagrantfile"#, current_box),
+        cmd!(r#"sed -i 's/vagrant_vmem_gb = 20/vagrant_vmem_gb = {}/' Vagrantfile"#, memgb),
+        cmd!(r#"sed -i 's/vagrant_vcpus = 1/vagrant_vcpus = {}/' Vagrantfile"#, cores),
     }
 
     let user_home = crate::common::get_user_home_dir(shell)?;
@@ -718,15 +725,15 @@ pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(
 
     with_shell! { shell in vagrant_path =>
         cmd!(
-            r#"sed -i 's/vagrant_dir = ''/vagrant_dir = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/vagrant_dir = \'\'/vagrant_dir = "{}"/' Vagrantfile"#,
             vagrant_full_path
         ),
         cmd!(
-            r#"sed -i 's/vm_shared_dir = ''/vm_shared_dir = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/vm_shared_dir = \'\'/vm_shared_dir = "{}"/' Vagrantfile"#,
             vm_shared_full_path
         ),
         cmd!(
-            r#"sed -i 's/zerosim_workspace_dir = ''/zerosim_workspace_dir = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/zerosim_workspace_dir = \'\'/zerosim_workspace_dir = "{}"/' Vagrantfile"#,
             research_workspace_full_path
         ),
     }

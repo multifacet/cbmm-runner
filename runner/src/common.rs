@@ -356,11 +356,22 @@ pub fn gen_local_version(branch: &str, hash: &str) -> String {
 }
 
 /// Generate a new vagrant domain name and update the Vagrantfile.
-pub fn gen_new_vagrantdomain(shell: &SshShell) -> Result<(), failure::Error> {
+pub fn gen_new_vagrantdomain(shell: &SshShell, vagrant_box: &str) -> Result<(), failure::Error> {
     let vagrant_path = &format!("{}/{}", RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
     let uniq = shell.run(cmd!("date | sha256sum | head -c 10"))?;
     let uniq = uniq.stdout.trim();
-    shell.run(cmd!("sed -i 's/:test_vm/:test_vm_{}/' Vagrantfile", uniq).cwd(vagrant_path))?;
+
+    with_shell! { shell in vagrant_path =>
+        cmd!(
+            r#"sed -i 's/vagrant_vm_name = :test_vm/vagrant_vm_name = :test_vm_{}/' Vagrantfile"#,
+            uniq
+        ),
+        cmd!(
+            r#"sed -i 's/vagrant_box = \'\'/vagrant_box = "{}"/' Vagrantfile"#,
+            vagrant_box
+        ),
+    }
+
     Ok(())
 }
 

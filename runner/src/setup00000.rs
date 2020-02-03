@@ -891,6 +891,7 @@ fn destroy_vm(ushell: &SshShell) -> Result<(), failure::Error> {
     Ok(())
 }
 
+// TODO: fedora flag should create a fedora guest too, so that things are uniform
 /// Create the VM and install dependencies for the benchmarks/simulator. Returns root and user
 /// shells to the VM.
 fn init_vm<A>(
