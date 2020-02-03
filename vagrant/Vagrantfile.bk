@@ -1,17 +1,14 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-#required_plugins = %w(vagrant-libvirt)
-#
-#plugins_to_install = required_plugins.select { |plugin| not Vagrant.has_plugin? plugin }
-#if not plugins_to_install.empty?
-#    puts "Installing plugins: #{plugins_to_install.join(' ')}"
-#    if system "vagrant plugin install #{plugins_to_install.join(' ')}"
-#        exec "vagrant #{ARGV.join(' ')}"
-#    else
-#        abort "Installation of one or more plugins has failed. Aborting."
-#    end
-#end
+# Various configurations that should be set before instantiating a VM.
+vagrant_vm_name = :test_vm
+vagrant_box = ''
+vagrant_vcpus = 1
+vagrant_vmem_gb = 20
+vagrant_dir = ''
+vm_shared_dir = ''
+zerosim_workspace_dir = ''
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
 # configures the configuration version (we support older styles for
@@ -24,24 +21,18 @@ Vagrant.configure("2") do |config|
     libvirt.video_type = "cirrus"
 
     # machine
-    libvirt.cpus = 1
-    libvirt.memory = 1023 * 1024 # MB
+    libvirt.cpus = vagrant_vcpus
+    libvirt.memory = vagrant_vmem_gb * 1024 # MB
 
     # HACK: libvirt has no way to specify phys-bits, so we just force it to
     # pass QEMU the -cpu flag twice. QEMU happens to take the second one.
     libvirt.qemuargs :value => '-cpu'
     libvirt.qemuargs :value => 'Skylake-Client,phys-bits=48'
-
-    # kernel
-    #libvirt.kernel = '/home/markm/linux-4.14.18/kbuild/arch/x86_64/boot/bzImage'
   end
 
-  config.vm.define :test_vm do |test_vm|
+  config.vm.define vagrant_vm_name do |test_vm|
     # Guest OS distribution
-    #test_vm.vm.box = "debian/jessie64"
-    #test_vm.vm.box = "generic/ubuntu1604"
-    test_vm.vm.box = "centos/7"
-    #test_vm.vm.box = "generic/fedora27"
+    test_vm.vm.box = vagrant_box
 
     # Make sure the guest can connect to the host network
     iface = "eno1"
@@ -55,15 +46,7 @@ Vagrant.configure("2") do |config|
         :host => 5555,
         :host_ip => "0.0.0.0"
 
-    # Copy host ssh key to guest
-    #config.vm.provision "file", 
-    #    :source => "~/.ssh/id_rsa.pub", 
-    #    :destination => "~/.ssh/me.pub"
-
     # Shared folders via NFS
-    vagrant_dir = ''
-    vm_shared_dir = ''
-    zerosim_workspace_dir = ''
     config.vm.synced_folder vagrant_dir, '/vagrant',
         :disabled => true
 
@@ -74,12 +57,5 @@ Vagrant.configure("2") do |config|
     config.vm.synced_folder zerosim_workspace_dir, '/home/vagrant/0sim-workspace',
         :disabled => false,
         :nfs => true
-
-    # 9p shared folder (seems to be read-only)
-    # config.vm.synced_folder '/home/markm/vagrant/vm_shared', '/vagrant/vm_shared',
-    #     :type => '9p',
-    #     :disabled => false,
-    #     :accessmode => 'squash',
-    #     :owner => 'any'
   end
 end
