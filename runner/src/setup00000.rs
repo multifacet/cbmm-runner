@@ -96,6 +96,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) Build and install a guest benchmarks")
         (@arg HADOOP: --hadoop
          "(Optional) set up hadoop stack on VM.")
+
+        (@arg FEDORA: --fedora
+         "(Optional) the remote is running fedora, not centos")
     }
 }
 
@@ -152,6 +155,9 @@ where
     guest_bmks: bool,
     /// Set up the Hadoop on the guest.
     setup_hadoop: bool,
+
+    /// The remote is using fedora, not centos
+    fedora: bool,
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -191,6 +197,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let guest_bmks = sub_m.is_present("GUEST_BMKS");
 
+    let fedora = sub_m.is_present("FEDORA");
+
     let cfg = SetupConfig {
         login,
         aws,
@@ -211,6 +219,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         guest_kernel,
         guest_bmks,
         setup_hadoop,
+        fedora,
     };
 
     validate_options(&cfg)?;
@@ -241,7 +250,7 @@ where
         rename_poweroff(&ushell)?;
         install_host_dependencies(&mut ushell, &cfg)?;
     }
-    set_up_host_devices(&ushell, &cfg)?; // TODO
+    set_up_host_devices(&ushell, &cfg)?;
     clone_research_workspace(&ushell, &cfg)?;
     install_host_kernel(&ushell, &cfg)?;
 
@@ -354,14 +363,17 @@ where
         // This installs the qemu-kvm package, which we don't want on machines where we will run VMs.
         ushell.run(spurs_util::centos::yum_install(&["libguestfs-tools-c"]))?;
     } else {
+        if !cfg.fedora {
+            with_shell! { ushell =>
+                spurs_util::centos::yum_install(&["centos-release-scl", "devtoolset-7"]),
+            }
+        }
+
         with_shell! { ushell =>
             spurs_util::centos::yum_install(&[
                 "libunwind-devel",
-                "centos-release-scl",
                 "libfdt-devel",
             ]),
-
-            spurs_util::centos::yum_install(&["devtoolset-7"]),
         }
     }
 
@@ -414,51 +426,60 @@ where
         spurs_util::add_to_group("libvirt"),
     }
 
-    let installed = ushell
-        .run(cmd!("yum list installed vagrant | grep -q vagrant"))
-        .is_ok();
+    if !cfg.fedora {
+        let installed = ushell
+            .run(cmd!("yum list installed vagrant | grep -q vagrant"))
+            .is_ok();
 
-    if !installed {
-        ushell.run(cmd!("sudo yum -y install {}", VAGRANT_RPM_URL))?;
-    }
+        if !installed {
+            ushell.run(cmd!("sudo yum -y install {}", VAGRANT_RPM_URL))?;
+        }
 
-    let installed = ushell
-        .run(cmd!("vagrant plugin list | grep -q libvirt"))
-        .is_ok();
+        let installed = ushell
+            .run(cmd!("vagrant plugin list | grep -q libvirt"))
+            .is_ok();
 
-    if !installed {
-        if cfg.aws {
-            // ruby-libvirt is finicky on AWS.
-            ushell.run(cmd!(
-                "CONFIGURE_ARGS='with-ldflags=-L/opt/vagrant/embedded/lib \
+        if !installed {
+            if cfg.aws {
+                // ruby-libvirt is finicky on AWS.
+                ushell.run(cmd!(
+                    "CONFIGURE_ARGS='with-ldflags=-L/opt/vagrant/embedded/lib \
                  with-libvirt-include=/usr/include/libvirt with-libvirt-lib=/usr/lib' \
                  GEM_HOME=~/.vagrant.d/gems GEM_PATH=$GEM_HOME:/opt/vagrant/embedded/gems \
                  PATH=/opt/vagrant/embedded/bin:$PATH vagrant plugin install vagrant-libvirt",
-            ))?;
-        } else {
-            ushell.run(cmd!("vagrant plugin install vagrant-libvirt"))?;
+                ))?;
+            } else {
+                ushell.run(cmd!("vagrant plugin install vagrant-libvirt"))?;
+            }
         }
+    } else {
+        ushell.run(spurs_util::centos::yum_install(&["vagrant-libvirt"]))?;
     }
 
     // Need a new shell so that we get the new user group
     *ushell = SshShell::with_default_key(cfg.login.username, &cfg.login.host)?;
 
-    // Build and Install QEMU 4.0.0 from source
-    ushell.run(cmd!("wget {}", QEMU_TARBALL))?;
-    ushell.run(cmd!("tar xvf {}", QEMU_TARBALL_NAME))?;
+    if cfg.fedora {
+        // Install a recent QEMU
+        ushell.run(spurs_util::centos::yum_install(&["qemu"]))?;
+    } else {
+        // Build and Install QEMU 4.0.0 from source
+        ushell.run(cmd!("wget {}", QEMU_TARBALL))?;
+        ushell.run(cmd!("tar xvf {}", QEMU_TARBALL_NAME))?;
 
-    let qemu_dir = QEMU_TARBALL_NAME.trim_end_matches(".tar.xz");
-    let ncores = crate::common::get_num_cores(&ushell)?;
+        let qemu_dir = QEMU_TARBALL_NAME.trim_end_matches(".tar.xz");
+        let ncores = crate::common::get_num_cores(&ushell)?;
 
-    with_shell! { ushell in qemu_dir =>
-        cmd!("./configure"),
-        cmd!("make -j {}", ncores),
-        cmd!("sudo make install"),
+        with_shell! { ushell in qemu_dir =>
+            cmd!("./configure"),
+            cmd!("make -j {}", ncores),
+            cmd!("sudo make install"),
+        }
+
+        ushell.run(cmd!(
+            "sudo chown qemu:kvm /usr/local/bin/qemu-system-x86_64"
+        ))?;
     }
-
-    ushell.run(cmd!(
-        "sudo chown qemu:kvm /usr/local/bin/qemu-system-x86_64"
-    ))?;
 
     // Make sure libvirtd can run the qemu binary
     ushell.run(cmd!(
@@ -883,7 +904,14 @@ where
     let vagrant_path = &dir!(RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
 
     ushell.run(cmd!("cp Vagrantfile.bk Vagrantfile").cwd(vagrant_path))?;
-    crate::common::gen_new_vagrantdomain(&ushell)?;
+    crate::common::gen_new_vagrantdomain(
+        &ushell,
+        if cfg.fedora {
+            VAGRANT_FEDORA_BOX
+        } else {
+            VAGRANT_CENTOS_BOX
+        },
+    )?;
 
     gen_vagrantfile(&ushell, 20, 1)?;
 
@@ -1007,7 +1035,17 @@ where
     }
 
     // proxy
-    rshell.run(cmd!("echo proxy=https://{} | tee --append /etc/yum.conf", proxy).use_bash())?;
+    if cfg.fedora {
+        rshell.run(
+            cmd!(
+                "echo proxy=http://{} | tee --append /etc/dnf/dnf.conf",
+                proxy
+            )
+            .use_bash(),
+        )?;
+    } else {
+        rshell.run(cmd!("echo proxy=https://{} | tee --append /etc/yum.conf", proxy).use_bash())?;
+    }
 
     // need to restart shell to get new env
     let rshell = connect_to_vagrant_as_root(&cfg.login.host)?;
