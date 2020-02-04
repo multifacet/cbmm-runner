@@ -591,6 +591,9 @@ pub fn build_kernel(
         }
     }
 
+    // Make sure config is consistent
+    ushell.run(cmd!("yes '' | make oldconfig").cwd(&kbuild_path))?;
+
     // Compile with as many processors as we have.
     //
     // NOTE: for some reason, this sometimes fails the first time, so just do it again.

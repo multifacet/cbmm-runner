@@ -420,6 +420,8 @@ where
             "libevent",
             "libevent-devel",
             "firewalld",
+            "automake",
+            "rpmdevtools",
         ]),
 
         // Add user to libvirt group after installing
@@ -625,6 +627,8 @@ where
             ("CONFIG_RETPOLINE", false),
             // for `perf` stack traces
             ("CONFIG_FRAME_POINTER", true),
+            // Compile with more recent kernels (bug workaround)
+            ("CONFIG_NVM", true),
         ];
 
         // On AWS we use actual RHEL, so we don't have the keys to build with.
