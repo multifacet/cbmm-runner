@@ -96,6 +96,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) Build and install a guest benchmarks")
         (@arg HADOOP: --hadoop
          "(Optional) set up hadoop stack on VM.")
+
+        (@arg CENTOS7: --centos7
+         "(Optional) the remote machine is running CentOS 7.")
     }
 }
 
@@ -152,6 +155,9 @@ where
     guest_bmks: bool,
     /// Set up the Hadoop on the guest.
     setup_hadoop: bool,
+
+    /// The remote machine is using Centos 7, rather thena Centos 8.
+    centos7: bool,
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -191,6 +197,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let guest_bmks = sub_m.is_present("GUEST_BMKS");
 
+    let centos7 = sub_m.is_present("CENTOS7");
+
     let cfg = SetupConfig {
         login,
         aws,
@@ -211,6 +219,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         guest_kernel,
         guest_bmks,
         setup_hadoop,
+        centos7,
     };
 
     validate_options(&cfg)?;
@@ -353,15 +362,10 @@ where
     if cfg.aws {
         // This installs the qemu-kvm package, which we don't want on machines where we will run VMs.
         ushell.run(spurs_util::centos::yum_install(&["libguestfs-tools-c"]))?;
-    } else {
-        with_shell! { ushell =>
-            spurs_util::centos::yum_install(&["centos-release-scl", "devtoolset-7"]),
-        }
-
+    } else if cfg.centos7 {
         with_shell! { ushell =>
             spurs_util::centos::yum_install(&[
-                "libunwind-devel",
-                "libfdt-devel",
+                "centos-release-scl", "devtoolset-7", "libunwind-devel", "libfdt-devel"
             ]),
         }
     }
@@ -742,7 +746,7 @@ where
         ),
     }
 
-    if cfg.aws {
+    if cfg.aws || !cfg.centos7 {
         ushell.run(cmd!("make clean cg CLASS=E").cwd(&dir!(
             RESEARCH_WORKSPACE_PATH,
             ZEROSIM_BENCHMARKS_DIR,
