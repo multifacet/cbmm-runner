@@ -699,17 +699,17 @@ pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(
     let current_name = current_name.stdout.trim();
 
     let current_box = shell.run(
-        cmd!(r#"grep -oE 'vagrant_box = ".*"' Vagrantfile.bk | awk '{{print $3}}'"#)
-            .cwd(vagrant_path),
+        cmd!(r#"grep -oE 'vagrant_box = ".*"' Vagrantfile | awk '{{print $3}}'"#).cwd(vagrant_path),
     )?;
     let current_box = current_box.stdout.trim();
 
     with_shell! { shell in vagrant_path =>
         cmd!("cp Vagrantfile.bk Vagrantfile"),
-        cmd!(r#"sed -i 's/vagrant_vm_name = :test_vm/vagrant_vm_name = {}/' Vagrantfile"#, current_name),
-        cmd!(r#"sed -i 's/vagrant_box = \'\'/vagrant_box = {}/' Vagrantfile"#, current_box),
-        cmd!(r#"sed -i 's/vagrant_vmem_gb = 20/vagrant_vmem_gb = {}/' Vagrantfile"#, memgb),
-        cmd!(r#"sed -i 's/vagrant_vcpus = 1/vagrant_vcpus = {}/' Vagrantfile"#, cores),
+        cmd!(r#"sed -i 's/^vagrant_vm_name = :test_vm$/vagrant_vm_name = {}/' Vagrantfile"#, current_name),
+        // NOTE: the box name already contains "quotes"
+        cmd!(r#"sed -i 's|^vagrant_box = .*$|vagrant_box = {}|' Vagrantfile"#, current_box),
+        cmd!(r#"sed -i 's/^vagrant_vmem_gb = 20$/vagrant_vmem_gb = {}/' Vagrantfile"#, memgb),
+        cmd!(r#"sed -i 's/^vagrant_vcpus = 1$/vagrant_vcpus = {}/' Vagrantfile"#, cores),
     }
 
     let user_home = crate::common::get_user_home_dir(shell)?;
@@ -725,15 +725,15 @@ pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(
 
     with_shell! { shell in vagrant_path =>
         cmd!(
-            r#"sed -i 's/vagrant_dir = \'\'/vagrant_dir = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/^vagrant_dir = .*$/vagrant_dir = "{}"/' Vagrantfile"#,
             vagrant_full_path
         ),
         cmd!(
-            r#"sed -i 's/vm_shared_dir = \'\'/vm_shared_dir = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/^vm_shared_dir = .*$/vm_shared_dir = "{}"/' Vagrantfile"#,
             vm_shared_full_path
         ),
         cmd!(
-            r#"sed -i 's/zerosim_workspace_dir = \'\'/zerosim_workspace_dir = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/^zerosim_workspace_dir = .*$/zerosim_workspace_dir = "{}"/' Vagrantfile"#,
             research_workspace_full_path
         ),
     }
@@ -752,7 +752,7 @@ pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(
 
     shell.run(
         cmd!(
-            r#"sed -i 's/iface = "eno1"/iface = "{}"/' Vagrantfile"#,
+            r#"sed -i 's/^iface = .*$/iface = "{}"/' Vagrantfile"#,
             iface
         )
         .cwd(vagrant_path),

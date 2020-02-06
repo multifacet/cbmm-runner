@@ -9,6 +9,7 @@ vagrant_vmem_gb = 20
 vagrant_dir = ''
 vm_shared_dir = ''
 zerosim_workspace_dir = ''
+iface = ''
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
 # configures the configuration version (we support older styles for
@@ -35,7 +36,6 @@ Vagrant.configure("2") do |config|
     test_vm.vm.box = vagrant_box
 
     # Make sure the guest can connect to the host network
-    iface = "eno1"
     config.vm.network :public_network,
         :bridge => iface,
         :dev => iface

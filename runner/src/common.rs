@@ -360,11 +360,11 @@ pub fn gen_new_vagrantdomain(shell: &SshShell, vagrant_box: &str) -> Result<(), 
 
     with_shell! { shell in vagrant_path =>
         cmd!(
-            r#"sed -i 's/vagrant_vm_name = :test_vm/vagrant_vm_name = :test_vm_{}/' Vagrantfile"#,
+            r#"sed -i 's/^vagrant_vm_name = :test_vm$/vagrant_vm_name = :test_vm_{}/' Vagrantfile"#,
             uniq
         ),
         cmd!(
-            r#"sed -i 's/vagrant_box = \'\'/vagrant_box = "{}"/' Vagrantfile"#,
+            r#"sed -i 's|^vagrant_box = .*$|vagrant_box = "{}"|' Vagrantfile"#,
             vagrant_box
         ),
     }
