@@ -19,7 +19,7 @@ use crate::common::{
 };
 
 const VAGRANT_RPM_URL: &str =
-    "https://releases.hashicorp.com/vagrant/2.1.5/vagrant_2.1.5_x86_64.rpm";
+    "https://releases.hashicorp.com/vagrant/2.2.7/vagrant_2.2.7_x86_64.rpm";
 
 const QEMU_TARBALL: &str = "https://download.qemu.org/qemu-4.0.0.tar.xz";
 const QEMU_TARBALL_NAME: &str = "qemu-4.0.0.tar.xz";
