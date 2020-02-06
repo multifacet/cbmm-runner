@@ -149,8 +149,11 @@ pub mod paths {
     /// Path to the `vagrant` subdirectory where `gen_vagrantfile` will do its work.
     pub const VAGRANT_SUBDIRECTORY: &str = "vagrant";
 
-    /// The base box for vagrant for CentOS.
-    pub const VAGRANT_CENTOS_BOX: &str = "centos/7";
+    /// The base box for vagrant for CentOS 7.
+    pub const VAGRANT_CENTOS7_BOX: &str = "centos/7";
+
+    /// The base box for vagrant for CentOS 8.
+    pub const VAGRANT_CENTOS8_BOX: &str = "centos/8";
 
     pub mod setup00000 {
         /// The shared directory on the host.

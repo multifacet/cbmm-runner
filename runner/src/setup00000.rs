@@ -415,10 +415,15 @@ where
             "firewalld",
             "automake",
             "rpmdevtools",
+            "python3",
         ]),
 
         // Add user to libvirt group after installing
         spurs_util::add_to_group("libvirt"),
+    }
+
+    if !cfg.centos7 {
+        ushell.run(cmd!("sudo alternatives --set python /usr/bin/python3"))?;
     }
 
     let installed = ushell
@@ -434,8 +439,8 @@ where
         .is_ok();
 
     if !installed {
-        if cfg.aws {
-            // ruby-libvirt is finicky on AWS.
+        if cfg.aws || !cfg.centos7 {
+            // ruby-libvirt is finicky.
             ushell.run(cmd!(
                 "CONFIGURE_ARGS='with-ldflags=-L/opt/vagrant/embedded/lib \
                  with-libvirt-include=/usr/include/libvirt with-libvirt-lib=/usr/lib' \
@@ -451,7 +456,11 @@ where
     *ushell = SshShell::with_default_key(cfg.login.username, &cfg.login.host)?;
 
     // Build and Install QEMU 4.0.0 from source
-    ushell.run(cmd!("wget {}", QEMU_TARBALL))?;
+    ushell.run(cmd!(
+        "[ -e {} ] || wget {}",
+        QEMU_TARBALL_NAME,
+        QEMU_TARBALL
+    ))?;
     ushell.run(cmd!("tar xvf {}", QEMU_TARBALL_NAME))?;
 
     let qemu_dir = QEMU_TARBALL_NAME.trim_end_matches(".tar.xz");
@@ -615,8 +624,8 @@ where
             ("CONFIG_NVM", true),
         ];
 
-        // On AWS we use actual RHEL, so we don't have the keys to build with.
-        if cfg.aws {
+        // We don't have the keys to build with.
+        if cfg.aws || !cfg.centos7 {
             config_set.push(("CONFIG_SYSTEM_TRUSTED_KEYS", false));
             config_set.push(("CONFIG_MODULE_SIG_KEY", false));
         }
@@ -656,20 +665,31 @@ where
             .stdout;
         let kernel_rpm = kernel_rpm.trim();
 
-        ushell.run(
-            cmd!(
-                "sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
-                user_home,
-                kernel_rpm
-            )
-            .use_bash(),
-        )?;
+        if cfg.centos7 {
+            ushell.run(
+                cmd!(
+                    "sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
+                    user_home,
+                    kernel_rpm
+                )
+                .use_bash(),
+            )?;
+
+            // update grub to choose this entry (new kernel) by default
+            ushell.run(cmd!("sudo grub2-set-default 0"))?;
+        } else {
+            ushell.run(
+                cmd!(
+                    "sudo yum install -y {}/rpmbuild/RPMS/x86_64/{}",
+                    user_home,
+                    kernel_rpm
+                )
+                .use_bash(),
+            )?;
+        }
 
         // Build cpupower
         ushell.run(cmd!("make").cwd(&format!("{}/tools/power/cpupower/", kernel_path)))?;
-
-        // update grub to choose this entry (new kernel) by default
-        ushell.run(cmd!("sudo grub2-set-default 0"))?;
     }
 
     Ok(())
@@ -722,7 +742,7 @@ where
             .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_TRACE_SUBMODULE)),
     )?;
 
-    // Make directory to put results
+    // Make the share directory (if it doesn't exist)
     ushell.run(cmd!("mkdir -p {}", HOSTNAME_SHARED_RESULTS_DIR))?;
 
     // 0sim-experiments
@@ -891,8 +911,18 @@ where
     // Create the VM and add our ssh key to it.
     let vagrant_path = &dir!(RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
 
+    // Make the share directory (if it doesn't exist)
+    ushell.run(cmd!("mkdir -p {}", HOSTNAME_SHARED_RESULTS_DIR))?;
+
     ushell.run(cmd!("cp Vagrantfile.bk Vagrantfile").cwd(vagrant_path))?;
-    crate::common::gen_new_vagrantdomain(&ushell, VAGRANT_CENTOS_BOX)?;
+    crate::common::gen_new_vagrantdomain(
+        &ushell,
+        if cfg.centos7 {
+            VAGRANT_CENTOS7_BOX
+        } else {
+            VAGRANT_CENTOS8_BOX
+        },
+    )?;
 
     gen_vagrantfile(&ushell, 20, 1)?;
 
