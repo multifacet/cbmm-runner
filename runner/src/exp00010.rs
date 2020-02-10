@@ -348,7 +348,10 @@ where
 
     if print_results_path {
         let glob = settings.gen_file_name("*");
-        println!("RESULTS: {}", glob);
+        println!(
+            "RESULTS: {}",
+            dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)
+        );
     }
 
     Ok(())
