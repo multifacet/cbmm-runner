@@ -883,6 +883,10 @@ where
     // Make sure libvirtd is running.
     crate::common::service(&ushell, "libvirtd", ServiceAction::Restart)?;
 
+    // Make sure NFS accepts UDP.
+    ushell.run(cmd!(r"sed 's/\[nfsd\]/[nfsd]\nudp=y/' /etc/nfs.conf"))?;
+    crate::common::service(&ushell, "nfs-server", ServiceAction::Restart)?;
+
     Ok(())
 }
 
