@@ -324,7 +324,7 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
     lapic_adjust: bool,
 ) -> Result<SshShell, failure::Error> {
     crate::common::service(shell, "firewalld", ServiceAction::Stop)?;
-    crate::common::service(shell, "nfs-idmap", ServiceAction::Restart)?;
+    crate::common::service(shell, "nfs-idmapd", ServiceAction::Restart)?;
     crate::common::service(shell, "libvirtd", ServiceAction::Restart)?;
 
     // Disable KSM because it creates a lot of overhead when the host is oversubscribed
