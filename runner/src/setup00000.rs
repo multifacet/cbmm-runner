@@ -307,7 +307,7 @@ where
     // Disable TSC offsetting for performance
     ZeroSim::tsc_offsetting(&ushell, false)?;
 
-    install_guest_dependencies(&vrshell, &vushell)?;
+    install_guest_dependencies(&vrshell, &vushell, &cfg)?;
 
     if cfg.guest_kernel {
         install_guest_kernel(&ushell, &vrshell, &vushell)?;
@@ -1049,12 +1049,20 @@ where
     Ok((rshell, ushell))
 }
 
-fn install_guest_dependencies(
+fn install_guest_dependencies<A>(
     vrshell: &SshShell,
     vushell: &SshShell,
-) -> Result<(), failure::Error> {
+    cfg: &SetupConfig<'_, A>,
+) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+{
     // Install stuff on the VM
-    vrshell.run(spurs_util::centos::yum_install(&["epel-release"]))?;
+
+    if cfg.centos7 {
+        vrshell.run(spurs_util::centos::yum_install(&["epel-release"]))?;
+    }
+
     vrshell.run(spurs_util::centos::yum_install(&[
         "vim",
         "git",
