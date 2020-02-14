@@ -665,28 +665,18 @@ where
             .stdout;
         let kernel_rpm = kernel_rpm.trim();
 
-        if cfg.centos7 {
-            ushell.run(
-                cmd!(
-                    "sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
-                    user_home,
-                    kernel_rpm
-                )
-                .use_bash(),
-            )?;
+        ushell.run(
+            cmd!(
+                "sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
+                user_home,
+                kernel_rpm
+            )
+            .use_bash(),
+        )?;
 
-            // update grub to choose this entry (new kernel) by default
-            ushell.run(cmd!("sudo grub2-set-default 0"))?;
-        } else {
-            ushell.run(
-                cmd!(
-                    "sudo yum install -y {}/rpmbuild/RPMS/x86_64/{}",
-                    user_home,
-                    kernel_rpm
-                )
-                .use_bash(),
-            )?;
-        }
+        // update grub to choose this entry (new kernel) by default. This works as long as the new
+        // kernel is the most recent one installed.
+        ushell.run(cmd!("sudo grub2-set-default 0"))?;
 
         // Build cpupower
         ushell.run(cmd!("make").cwd(&format!("{}/tools/power/cpupower/", kernel_path)))?;
