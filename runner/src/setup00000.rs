@@ -1039,8 +1039,8 @@ where
         cmd!("echo export HTTPS_PROXY='{}' | tee --append .bashrc", proxy).use_bash(),
     }
 
-    // proxy
-    rshell.run(cmd!("echo proxy=https://{} | tee --append /etc/yum.conf", proxy).use_bash())?;
+    // proxy (https would be preferred, but RHEL/Centos 8 has issues with proxies)
+    rshell.run(cmd!("echo proxy=http://{} | tee --append /etc/yum.conf", proxy).use_bash())?;
 
     // need to restart shell to get new env
     let rshell = connect_to_vagrant_as_root(&cfg.login.host)?;
