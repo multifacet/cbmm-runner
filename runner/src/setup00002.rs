@@ -117,9 +117,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let is_tag = sub_m.is_present("IS_TAG");
     let kernel_config: Vec<_> = sub_m
         .values_of("CONFIGS")
-        .unwrap()
-        .map(|arg| parse_config_option(arg).unwrap())
-        .collect();
+        .map(|values| {
+            values
+                .map(|arg| parse_config_option(arg).unwrap())
+                .collect()
+        })
+        .unwrap_or_else(|| vec![]);
 
     // Connect to the remote.
     let (ushell, vshell) =
