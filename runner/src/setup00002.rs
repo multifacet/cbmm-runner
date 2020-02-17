@@ -35,7 +35,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg IS_TAG: --tag
          "Pass if GIT_BRANCH is not a branch but a tag \
          (NOTE: this needs to be passed before )")
-        (@arg SECRET: --secret +takes_value requires[HTTPS] requires[USERNAME]
+        (@arg SECRET: --secret +takes_value requires[HTTPS] requires[GIT_USERNAME]
          "A secret token for accessing a private repository")
         (@arg GIT_USERNAME: --username +takes_value requires[HTTPS] requires[SECRET]
          "A username for accessing a private repository")
