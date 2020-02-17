@@ -30,8 +30,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg SSH: --ssh +takes_value
              "The git repository to compile the kernel from as an SSH address.")
         )
-        (@arg GIT_REPO: +required +takes_value
-         "The git repository to compile the kernel from (either SSH or HTTPS)")
         (@arg GIT_BRANCH: +required +takes_value
          "The git branch to compile the kernel from (e.g. master)")
         (@arg IS_TAG: --tag
