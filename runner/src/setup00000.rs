@@ -1060,7 +1060,11 @@ where
     // Install stuff on the VM
 
     if cfg.centos7 {
-        vrshell.run(spurs_util::centos::yum_install(&["epel-release"]))?;
+        vrshell.run(spurs_util::centos::yum_install(&[
+            "epel-release",
+            "centos-release-scl",
+        ]))?;
+        vrshell.run(spurs_util::centos::yum_install(&["devtoolset-7"]))?;
     }
 
     vrshell.run(spurs_util::centos::yum_install(&[
@@ -1069,6 +1073,7 @@ where
         "memcached",
         "gcc",
         "gcc-c++",
+        "ggc-gfortran",
         "libcgroup",
         "libcgroup-tools",
         "java-1.8.0-openjdk",
