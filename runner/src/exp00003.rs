@@ -235,6 +235,7 @@ where
                 server_pin_core: None,
                 freq: None,
                 pf_time: None,
+                pintool: None,
             },
             INTERVAL,
             continual_compaction,

@@ -19,7 +19,8 @@ use crate::{
     settings,
     workloads::{
         run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data, run_time_mmap_touch,
-        MemcachedWorkloadConfig, RedisWorkloadConfig, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TimeMmapTouchConfig,
+        TimeMmapTouchPattern,
     },
 };
 
@@ -73,6 +74,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg DISABLE_ZSWAP: --disable_zswap
          "(Optional; not recommended) Disable zswap, forcing the hypervisor to \
          actually swap to disk")
+        (@arg MEMTRACE: --memtrace
+         "(Optional) collect a memory access trace of the workload. This could be multiple \
+         gigabytes in size.")
     }
 }
 
@@ -127,6 +131,8 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
 
     let multicore_offsetting = sub_m.is_present("MULTICORE_OFFSETTING");
 
+    let memtrace = sub_m.is_present("MEMTRACE");
+
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = crate::common::local_research_workspace_git_hash()?;
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
@@ -153,6 +159,8 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
         zswap_max_pool_percent: 50,
         (zerosim_drift_threshold.is_some()) zerosim_drift_threshold: zerosim_drift_threshold,
         (zerosim_delay.is_some()) zerosim_delay: zerosim_delay,
+
+        (memtrace) memtrace: memtrace,
 
         username: login.username,
         host: login.hostname,
@@ -190,6 +198,7 @@ where
     let zerosim_delay = settings.get::<Option<usize>>("zerosim_delay");
     let disable_zswap = settings.get::<bool>("disable_zswap");
     let multicore_offsetting = settings.get::<bool>("multicore_offsetting");
+    let memtrace = settings.get::<bool>("memtrace");
 
     // Reboot
     initial_reboot(&login)?;
@@ -265,6 +274,17 @@ where
 
     let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
     let params = serde_json::to_string(&settings)?;
+
+    let pin_path = dir!(
+        "/home/vagrant",
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
+        "pin"
+    );
+
+    // Only used for memtrace.
+    let output_path = settings.gen_file_name("trace");
+    let output_path = dir!(VAGRANT_RESULTS_DIR, output_path);
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -345,6 +365,14 @@ where
                         eager: false,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
+                        pintool: if memtrace {
+                            Some(Pintool::MemTrace {
+                                output_path: &output_path,
+                                pin_path: &pin_path,
+                            })
+                        } else {
+                            None
+                        },
                     }
                 )?
             );

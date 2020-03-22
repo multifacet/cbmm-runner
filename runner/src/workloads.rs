@@ -53,6 +53,17 @@ impl TasksetCtx {
     }
 }
 
+/// Indicates a Intel PIN pintool to run, along with the needed parameters.
+pub enum Pintool<'s> {
+    /// Collect a memory trace.
+    MemTrace {
+        /// The path to the root of the `pin/` directory. This should be accessible in the VM.
+        pin_path: &'s str,
+        /// The file path and name to output the trace to.
+        output_path: &'s str,
+    },
+}
+
 /// The different patterns supported by the `time_mmap_touch` workload.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TimeMmapTouchPattern {
@@ -148,6 +159,9 @@ pub struct MemcachedWorkloadConfig<'s> {
     pub pf_time: Option<u64>,
     /// Indicates whether the workload should be run with eager paging.
     pub eager: bool,
+
+    /// Indicates that we should run the given pintool on the workload.
+    pub pintool: Option<Pintool<'s>>,
 }
 
 /// Start a `memcached` server in daemon mode as the given user with the given amount of memory.
@@ -170,24 +184,34 @@ pub fn start_memcached(
     // large-memory systems.
     shell.run(cmd!("sudo sysctl -w vm.max_map_count={}", 1_000_000_000))?;
 
-    if let Some(server_pin_core) = cfg.server_pin_core {
-        shell.run(cmd!(
-            "taskset -c {} {}/memcached {} -m {} -d -u {} -f 1.11 -v",
-            server_pin_core,
-            cfg.memcached,
-            if cfg.allow_oom { "-M" } else { "" },
-            cfg.server_size_mb,
-            cfg.user
-        ))?
+    let taskset = if let Some(server_pin_core) = cfg.server_pin_core {
+        format!("taskset -c {} ", server_pin_core)
     } else {
-        shell.run(cmd!(
-            "{}/memcached {} -m {} -d -u {} -f 1.11 -v",
-            cfg.memcached,
-            if cfg.allow_oom { "-M" } else { "" },
-            cfg.server_size_mb,
-            cfg.user
-        ))?
+        "".into()
     };
+
+    let pintool = match cfg.pintool {
+        Some(Pintool::MemTrace {
+            pin_path,
+            output_path,
+        }) => format!(
+            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit --",
+            pin_path, pin_path, output_path
+        ),
+
+        None => "".into(),
+    };
+
+    shell.run(cmd!(
+        "{}{}{}/memcached {} -m {} -d -u {} -f 1.11 -v",
+        pintool,
+        taskset,
+        cfg.memcached,
+        if cfg.allow_oom { "-M" } else { "" },
+        cfg.server_size_mb,
+        cfg.user
+    ))?;
+
     Ok(())
 }
 
