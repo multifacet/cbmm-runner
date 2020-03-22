@@ -28,3 +28,6 @@
 [submodule "bmks/membuffer-extract"]
 	path = bmks/membuffer-extract
 	url = https://github.com/mark-i-m/membuffer-extract.git
+[submodule "bmks/zlib"]
+	path = bmks/zlib
+	url = https://github.com/mark-i-m/zlib
