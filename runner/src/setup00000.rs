@@ -27,6 +27,9 @@ const QEMU_TARBALL_NAME: &str = "qemu-4.0.0.tar.xz";
 const HADOOP_VERSION: &str = "3.1.3";
 const SPARK_VERSION: &str = "2.4.4";
 
+const PIN_TARBALL: &str = "https://software.intel.com/sites/landingpage/pintool/downloads/pin-3.11-97998-g7ecce2dac-gcc-linux.tar.gz";
+const PIN_TARBALL_NAME: &str = "pin.tar.gz";
+
 pub fn cli_options() -> clap::App<'static, 'static> {
     clap_app! { setup00000 =>
         (about: "Sets up the given _centos_ test machine for use with vagrant. Requires `sudo`.")
@@ -589,6 +592,8 @@ where
             ZEROSIM_METIS_SUBMODULE,
             ZEROSIM_MEMCACHED_SUBMODULE,
             ZEROSIM_NULLFS_SUBMODULE,
+            ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
+            ZEROSIM_ZLIB_SUBMODULE,
         ];
 
         crate::common::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
@@ -815,6 +820,26 @@ where
         ZEROSIM_BENCHMARKS_DIR,
         ZEROSIM_SWAPNIL_PATH
     )))?;
+
+    // Build zlib, membuffer-extract, and PinTool
+    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_ZLIB_SUBMODULE) =>
+        cmd!("./configure"),
+        cmd!("make -j"),
+    }
+
+    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE) =>
+        cmd!("wget {} -O {}", PIN_TARBALL, PIN_TARBALL_NAME),
+        cmd!("mkdir -p pin"),
+        cmd!("tar -xvf -C pin --strip-components 1 {}", PIN_TARBALL_NAME),
+        cmd!("cp ../../{}/libz.a pin/source/tools/MemTrace", ZEROSIM_ZLIB_SUBMODULE),
+        cmd!("cp membuffer.cpp pin/source/tools/MemTrace"),
+        cmd!("cp membuffer.make pin/source/tools/MemTrace"),
+        cmd!("echo -e '\ninclude membuffer.make' | tee -a pin/source/tools/MemTrace/makefile.rules"),
+        cmd!("make -C pin/source/tools/MemTrace"),
+
+        cmd!("$HOME/.cargo/bin/cargo build --release")
+            .use_bash(),
+    }
 
     Ok(())
 }
