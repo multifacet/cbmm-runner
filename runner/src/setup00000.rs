@@ -33,6 +33,8 @@ const PIN_TARBALL_NAME: &str = "pin.tar.gz";
 pub fn cli_options() -> clap::App<'static, 'static> {
     clap_app! { setup00000 =>
         (about: "Sets up the given _centos_ test machine for use with vagrant. Requires `sudo`.")
+        (@setting SubcommandRequiredElseHelp)
+        (@setting DisableVersion)
         (@arg HOSTNAME: +required +takes_value
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value

@@ -39,6 +39,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
 
     clap_app! { exp00003 =>
         (about: "Run experiment 00003. Requires `sudo`.")
+        (@setting SubcommandRequiredElseHelp)
+        (@setting DisableVersion)
         (@arg HOSTNAME: +required +takes_value
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
