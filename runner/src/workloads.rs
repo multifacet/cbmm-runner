@@ -195,7 +195,7 @@ pub fn start_memcached(
             pin_path,
             output_path,
         }) => format!(
-            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit --",
+            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit -- ",
             pin_path, pin_path, output_path
         ),
 
