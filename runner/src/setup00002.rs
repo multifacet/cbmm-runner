@@ -18,7 +18,7 @@ pub const GUEST_SWAP_GBS: usize = 10;
 pub fn cli_options() -> clap::App<'static, 'static> {
     clap_app! { setup00002 =>
         (about: "Sets up the given _centos_ with the given kernel. Requires `sudo`.")
-        (@setting SubcommandRequiredElseHelp)
+        (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
         (@setting TrailingVarArg)
         (@arg HOSTNAME: +required +takes_value
