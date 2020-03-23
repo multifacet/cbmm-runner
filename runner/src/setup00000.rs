@@ -832,7 +832,7 @@ where
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE) =>
         cmd!("wget {} -O {}", PIN_TARBALL, PIN_TARBALL_NAME),
         cmd!("mkdir -p pin"),
-        cmd!("tar -xvf -C pin --strip-components 1 {}", PIN_TARBALL_NAME),
+        cmd!("tar --strip-components=1 -C pin -xvf {}", PIN_TARBALL_NAME),
         cmd!("cp ../../{}/libz.a pin/source/tools/MemTrace", ZEROSIM_ZLIB_SUBMODULE),
         cmd!("cp membuffer.cpp pin/source/tools/MemTrace"),
         cmd!("cp membuffer.make pin/source/tools/MemTrace"),
