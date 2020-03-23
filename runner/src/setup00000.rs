@@ -837,7 +837,7 @@ where
         cmd!("cp membuffer.cpp pin/source/tools/MemTrace"),
         cmd!("cp membuffer.make pin/source/tools/MemTrace"),
         cmd!("echo -e '\ninclude membuffer.make' | tee -a pin/source/tools/MemTrace/makefile.rules"),
-        cmd!("make -C pin/source/tools/MemTrace"),
+        cmd!("(source /opt/rh/devtoolset-7/enable ;  make -C pin/source/tools/MemTrace)"),
 
         cmd!("$HOME/.cargo/bin/cargo build --release")
             .use_bash(),
