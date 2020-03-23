@@ -212,6 +212,9 @@ pub fn start_memcached(
         cfg.user
     ))?;
 
+    // Wait for memcached to start by using `memcached-tool` until we are able to connect.
+    while let Err(..) = shell.run(cmd!("memcached-tool localhost:11211")) {}
+
     Ok(())
 }
 
@@ -249,6 +252,11 @@ pub fn run_memcached_gen_data(
     };
 
     shell.run(cmd)?;
+
+    // Make sure memcached dies.
+    shell.run(cmd!("memcached-tool localhost:11211"))?;
+    shell.run(cmd!("memcached-tool localhost:11211 stats"))?;
+    shell.run(cmd!("pkill memcached"))?;
 
     Ok(())
 }
