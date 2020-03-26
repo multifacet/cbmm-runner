@@ -31,3 +31,6 @@
 [submodule "bmks/zlib"]
 	path = bmks/zlib
 	url = https://github.com/mark-i-m/zlib
+[submodule "bmks/YCSB"]
+	path = bmks/YCSB
+	url = https://github.com/multifacet/YCSB
