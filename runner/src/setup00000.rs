@@ -350,6 +350,14 @@ fn install_host_dependencies<A>(
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
+    // Make sure we have sbin in path.
+    if cfg.centos7 {
+        ushell.run(cmd!(
+            "echo 'export PATH=$PATH:/usr/sbin/' | \
+             sudo tee /etc/profile.d/sbin.sh"
+        ))?;
+    }
+
     // Install a bunch of stuff
     ushell.run(cmd!("sudo yum group install -y 'Development Tools'"))?;
 
