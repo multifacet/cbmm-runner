@@ -444,7 +444,7 @@ where
         cmd!("mkdir -p maven"),
         cmd!("wget {}", MAVEN_TARBALL),
         cmd!("tar -C maven --strip-components=1 -xvzf {}", MAVEN_TARBALL_NAME),
-        cmd!("echo -e 'export JAVA_HOME=/usr/lib/jvm/jre-openjdk\n\
+        cmd!("echo -e 'export JAVA_HOME=/usr/lib/jvm/java/\n\
             export M2_HOME=~{}/maven/\n\
             export MAVEN_HOME=$M2_HOME\n\
             export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
