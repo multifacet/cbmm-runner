@@ -854,6 +854,8 @@ where
         cmd!("wget {}", KYOTOCABINET_CORE_TARBALL),
         cmd!("wget {}", KYOTOCABINET_JAVA_TARBALL),
 
+        cmd!("mkdir -p kc-core"),
+        cmd!("mkdir -p kc-java"),
         cmd!("tar -C kc-core --strip-components=1 -xzvf {}", KYOTOCABINET_CORE_TARBALL_NAME),
         cmd!("tar -C kc-java --strip-components=1 -xzvf {}", KYOTOCABINET_JAVA_TARBALL_NAME),
 
