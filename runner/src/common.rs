@@ -140,6 +140,9 @@ pub mod paths {
     /// Path the to membuffer-extract submodule
     pub const ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE: &str = "bmks/membuffer-extract";
 
+    /// Path the to YCSB submodule
+    pub const ZEROSIM_YCSB_SUBMODULE: &str = "bmks/YCSB";
+
     /// Path to redis.conf.
     pub const REDIS_CONF: &str = "bmks/redis.conf";
 

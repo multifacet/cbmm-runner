@@ -34,6 +34,14 @@ const SPARK_VERSION: &str = "2.4.4";
 const PIN_TARBALL: &str = "https://software.intel.com/sites/landingpage/pintool/downloads/pin-3.11-97998-g7ecce2dac-gcc-linux.tar.gz";
 const PIN_TARBALL_NAME: &str = "pin.tar.gz";
 
+const KYOTOCABINET_CORE_TARBALL: &str =
+    "https://fallabs.com/kyotocabinet/pkg/kyotocabinet-1.2.77.tar.gz";
+const KYOTOCABINET_CORE_TARBALL_NAME: &str = "kyotocabinet-1.2.77.tar.gz";
+
+const KYOTOCABINET_JAVA_TARBALL: &str =
+    "https://fallabs.com/kyotocabinet/javapkg/kyotocabinet-java-1.24.tar.gz";
+const KYOTOCABINET_JAVA_TARBALL_NAME: &str = "kyotocabinet-java-1.24.tar.gz";
+
 pub fn cli_options() -> clap::App<'static, 'static> {
     clap_app! { setup00000 =>
         (about: "Sets up the given _centos_ test machine for use with vagrant. Requires `sudo`.")
@@ -612,6 +620,7 @@ where
             ZEROSIM_NULLFS_SUBMODULE,
             ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
             ZEROSIM_ZLIB_SUBMODULE,
+            ZEROSIM_YCSB_SUBMODULE,
         ];
 
         crate::common::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
@@ -839,6 +848,28 @@ where
         cmd!("$HOME/.cargo/bin/cargo build --release")
             .use_bash(),
     }
+
+    // Build kyoto cabinet
+    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE, "kyotocabinet") =>
+        cmd!("wget {}", KYOTOCABINET_CORE_TARBALL),
+        cmd!("wget {}", KYOTOCABINET_JAVA_TARBALL),
+
+        cmd!("tar -C kc-core --strip-components=1 -xzvf {}", KYOTOCABINET_CORE_TARBALL_NAME),
+        cmd!("tar -C kc-java --strip-components=1 -xzvf {}", KYOTOCABINET_JAVA_TARBALL_NAME),
+
+        cmd!("cd kc-core ; ./configure --prefix=`pwd`"),
+        cmd!("cd kc-core ; make && make install"),
+        cmd!("cd kc-java ; ./configure --with-kc=../kc-core/"),
+        cmd!("cd kc-java ; make"),
+    }
+
+    // Build YCSB
+    ushell.run(
+        cmd!(
+        "mvn -pl :memcached-binding -pl :redis-binding -pl :kyotocabinet-binding -am clean package"
+    )
+        .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE)),
+    )?;
 
     Ok(())
 }
