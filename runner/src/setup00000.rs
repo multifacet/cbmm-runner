@@ -24,6 +24,10 @@ const VAGRANT_RPM_URL: &str =
 const QEMU_TARBALL: &str = "https://download.qemu.org/qemu-4.0.0.tar.xz";
 const QEMU_TARBALL_NAME: &str = "qemu-4.0.0.tar.xz";
 
+const MAVEN_TARBALL: &str =
+    "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz";
+const MAVEN_TARBALL_NAME: &str = "apache-maven-3.6.3-bin.tar.gz";
+
 const HADOOP_VERSION: &str = "3.1.3";
 const SPARK_VERSION: &str = "2.4.4";
 
@@ -372,6 +376,10 @@ where
             spurs_util::centos::yum_install(&[
                 "centos-release-scl", "devtoolset-7", "libunwind-devel", "libfdt-devel"
             ]),
+
+            // Set up SCL as the default
+            cmd!("echo 'source /opt/rh/devtoolset-7/enable' | \
+                sudo tee /etc/profile.d/recent-compilers.sh"),
         }
     }
 
@@ -410,8 +418,6 @@ where
             "memcached",
             "libcgroup",
             "libcgroup-tools",
-            "java-1.8.0-openjdk",
-            "maven",
             "redis",
             "perf", // for debugging
             "wget",
@@ -425,6 +431,16 @@ where
 
         // Add user to libvirt group after installing
         spurs_util::add_to_group("libvirt"),
+
+        // Set up maven
+        cmd!("mkdir -p maven"),
+        cmd!("wget {}", MAVEN_TARBALL),
+        cmd!("tar -C maven --strip-components=1 -xvzf {}", MAVEN_TARBALL_NAME),
+        cmd!("echo -e 'export JAVA_HOME=/usr/lib/jvm/jre-openjdk\n\
+            export M2_HOME=~{}/maven/\n\
+            export MAVEN_HOME=$M2_HOME\n\
+            export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
+            sudo tee /etc/profile.d/java.sh", cfg.login.username),
     }
 
     if !cfg.centos7 {
@@ -727,7 +743,7 @@ fn install_rust(shell: &SshShell) -> Result<(), failure::Error> {
 /// makes them available to the guest, since they share the directory.
 fn build_host_benchmarks<A>(
     ushell: &SshShell,
-    cfg: &SetupConfig<'_, A>,
+    _cfg: &SetupConfig<'_, A>,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
@@ -763,37 +779,18 @@ where
         ),
     }
 
-    if cfg.aws || !cfg.centos7 {
-        ushell.run(cmd!("make clean cg CLASS=E").cwd(&dir!(
-            RESEARCH_WORKSPACE_PATH,
-            ZEROSIM_BENCHMARKS_DIR,
-            "NPB3.4",
-            "NPB3.4-OMP"
-        )))?;
-        ushell.run(cmd!("make clean cg CLASS=F").cwd(&dir!(
-            RESEARCH_WORKSPACE_PATH,
-            ZEROSIM_BENCHMARKS_DIR,
-            "NPB3.4",
-            "NPB3.4-OMP"
-        )))?;
-    } else {
-        ushell.run(
-            cmd!("(source /opt/rh/devtoolset-7/enable ; make clean cg CLASS=E )").cwd(&dir!(
-                RESEARCH_WORKSPACE_PATH,
-                ZEROSIM_BENCHMARKS_DIR,
-                "NPB3.4",
-                "NPB3.4-OMP"
-            )),
-        )?;
-        ushell.run(
-            cmd!("(source /opt/rh/devtoolset-7/enable ; make clean cg CLASS=F )").cwd(&dir!(
-                RESEARCH_WORKSPACE_PATH,
-                ZEROSIM_BENCHMARKS_DIR,
-                "NPB3.4",
-                "NPB3.4-OMP"
-            )),
-        )?;
-    }
+    ushell.run(cmd!("make clean cg CLASS=E").cwd(&dir!(
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_BENCHMARKS_DIR,
+        "NPB3.4",
+        "NPB3.4-OMP"
+    )))?;
+    ushell.run(cmd!("make clean cg CLASS=F").cwd(&dir!(
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_BENCHMARKS_DIR,
+        "NPB3.4",
+        "NPB3.4-OMP"
+    )))?;
 
     // memhog
     ushell.run(cmd!("make").cwd(&dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE)))?;
@@ -837,7 +834,7 @@ where
         cmd!("cp membuffer.cpp pin/source/tools/MemTrace"),
         cmd!("cp membuffer.make pin/source/tools/MemTrace"),
         cmd!("echo -e '\ninclude membuffer.make' | tee -a pin/source/tools/MemTrace/makefile.rules"),
-        cmd!("(source /opt/rh/devtoolset-7/enable ;  make -C pin/source/tools/MemTrace)"),
+        cmd!("make -C pin/source/tools/MemTrace"),
 
         cmd!("$HOME/.cargo/bin/cargo build --release")
             .use_bash(),
