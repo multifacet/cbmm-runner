@@ -359,12 +359,14 @@ where
     } else if cfg.centos7 {
         with_shell! { ushell =>
             spurs_util::centos::yum_install(&[
-                "centos-release-scl", "devtoolset-7", "libunwind-devel", "libfdt-devel"
+                "centos-release-scl", "libunwind-devel", "libfdt-devel"
             ]),
+
+            spurs_util::centos::yum_install(&["devtoolset-7"]),
 
             // Set up SCL as the default
             cmd!("echo 'source /opt/rh/devtoolset-7/enable' | \
-                sudo tee /etc/profile.d/recent-compilers.sh"),
+                  sudo tee /etc/profile.d/recent-compilers.sh"),
         }
     }
 
@@ -1100,6 +1102,10 @@ where
             "centos-release-scl",
         ]))?;
         vrshell.run(spurs_util::centos::yum_install(&["devtoolset-7"]))?;
+        vrshell.run(cmd!(
+            "echo 'source /opt/rh/devtoolset-7/enable' | \
+             sudo tee /etc/profile.d/recent-compilers.sh"
+        ))?;
     }
 
     vrshell.run(spurs_util::centos::yum_install(&[
