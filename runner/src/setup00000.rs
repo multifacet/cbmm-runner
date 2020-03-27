@@ -757,6 +757,8 @@ fn build_host_benchmarks<A>(
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
+    let ncores = crate::common::get_num_cores(&ushell)?;
+
     // Build 0sim trace tool
     ushell.run(
         cmd!("$HOME/.cargo/bin/cargo build --release")
@@ -802,28 +804,30 @@ where
     )))?;
 
     // memhog
-    ushell.run(cmd!("make").cwd(&dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE)))?;
+    ushell.run(
+        cmd!("make -j {}", ncores).cwd(&dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE)),
+    )?;
 
     // Metis
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE) =>
         cmd!("./configure"),
-        cmd!("make"),
+        cmd!("make -j {}", ncores),
     }
 
     // memcached
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMCACHED_SUBMODULE) =>
         cmd!("./autogen.sh"),
         cmd!("./configure"),
-        cmd!("make"),
+        cmd!("make -j {}", ncores),
     }
 
     // nullfs (for redis bgsave)
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE) =>
-        cmd!("make"),
+        cmd!("make -j {}", ncores),
     }
 
     // Eager paging scripts/programs
-    ushell.run(cmd!("make").cwd(&dir!(
+    ushell.run(cmd!("make -j {}", ncores).cwd(&dir!(
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_BENCHMARKS_DIR,
         ZEROSIM_SWAPNIL_PATH
@@ -832,7 +836,7 @@ where
     // Build zlib, membuffer-extract, and PinTool
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_ZLIB_SUBMODULE) =>
         cmd!("./configure"),
-        cmd!("make -j"),
+        cmd!("make -j {}", ncores),
     }
 
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE) =>
@@ -843,7 +847,7 @@ where
         cmd!("cp membuffer.cpp pin/source/tools/MemTrace"),
         cmd!("cp membuffer.make pin/source/tools/MemTrace"),
         cmd!("echo -e '\ninclude membuffer.make' | tee -a pin/source/tools/MemTrace/makefile.rules"),
-        cmd!("make -C pin/source/tools/MemTrace"),
+        cmd!("make -j {} -C pin/source/tools/MemTrace", ncores),
 
         cmd!("$HOME/.cargo/bin/cargo build --release")
             .use_bash(),
@@ -860,9 +864,9 @@ where
         cmd!("tar -C kc-java --strip-components=1 -xzvf {}", KYOTOCABINET_JAVA_TARBALL_NAME),
 
         cmd!("cd kc-core ; ./configure --prefix=`pwd`"),
-        cmd!("cd kc-core ; make && make install"),
+        cmd!("cd kc-core ; make -j {} && make install", ncores),
         cmd!("cd kc-java ; ./configure --with-kc=../kc-core/"),
-        cmd!("cd kc-java ; make"),
+        cmd!("cd kc-java ; make -j {}", ncores),
     }
 
     // Build YCSB
