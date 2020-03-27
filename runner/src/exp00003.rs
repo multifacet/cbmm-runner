@@ -20,10 +20,10 @@ use crate::{
         exp_0sim::*,
         output::OutputManager,
         paths::{setup00000::*, *},
+        workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
     },
     settings,
     setup00001::GUEST_SWAP_GBS,
-    workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig},
 };
 
 /// Interval at which to collect thp stats
@@ -213,7 +213,7 @@ where
         transparent_hugepage_khugepaged_scan_sleep_ms,
     )?;
 
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     time!(
         timers,

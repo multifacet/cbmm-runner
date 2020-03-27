@@ -10,13 +10,18 @@ use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
 use crate::{
-    common::{exp_0sim::*, get_cpu_freq, get_user_home_dir, output::OutputManager, paths::*},
-    settings,
-    workloads::{
-        run_locality_mem_access, run_memcached_gen_data, run_time_loop, run_time_mmap_touch,
-        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
-        TimeMmapTouchConfig, TimeMmapTouchPattern,
+    common::{
+        exp_0sim::*,
+        get_cpu_freq, get_user_home_dir,
+        output::OutputManager,
+        paths::*,
+        workloads::{
+            run_locality_mem_access, run_memcached_gen_data, run_time_loop, run_time_mmap_touch,
+            LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
+            TimeMmapTouchConfig, TimeMmapTouchPattern,
+        },
     },
+    settings,
 };
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -214,7 +219,7 @@ where
     ))?;
 
     let cores = crate::common::get_num_cores(&ushell)?;
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Run the workload.
     match workload {

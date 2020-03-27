@@ -13,13 +13,13 @@ use crate::{
         exp_0sim::*,
         output::OutputManager,
         paths::{setup00000::*, *},
+        workloads::{
+            run_locality_mem_access, run_memcached_gen_data, run_time_mmap_touch,
+            LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
+            TimeMmapTouchConfig, TimeMmapTouchPattern,
+        },
     },
     settings,
-    workloads::{
-        run_locality_mem_access, run_memcached_gen_data, run_time_mmap_touch,
-        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
-        TimeMmapTouchConfig, TimeMmapTouchPattern,
-    },
 };
 
 /// # of iterations for locality_mem_access workload
@@ -248,7 +248,7 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Warm up
     //const WARM_UP_SIZE: usize = 50; // GB

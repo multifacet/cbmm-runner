@@ -13,12 +13,12 @@ use crate::{
         exp_0sim::*,
         output::OutputManager,
         paths::{setup00000::*, setup00001::*, *},
+        workloads::{
+            run_memcached_gen_data, run_memhog, run_nas_cg, MemcachedWorkloadConfig, MemhogOptions,
+            NasClass, TasksetCtx,
+        },
     },
     settings,
-    workloads::{
-        run_memcached_gen_data, run_memhog, run_nas_cg, MemcachedWorkloadConfig, MemhogOptions,
-        NasClass,
-    },
 };
 
 /// The amount of time (in hours) to let the NAS CG workload run.
@@ -340,7 +340,7 @@ where
     )?;
 
     let freq = crate::common::get_cpu_freq(&ushell)?;
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Start the hog process and give it all memory... the hope is that this gets oom killed
     // eventually, but not before some reclaim happens.

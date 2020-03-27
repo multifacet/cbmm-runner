@@ -5,15 +5,11 @@
 #[macro_use]
 mod common;
 
-// Automates starting common workloads.
-mod workloads;
-
 // Setup routines
+mod manual;
 mod setup00000;
 mod setup00001;
 mod setup00002;
-
-mod manual;
 
 // Experiment routines
 mod exptmp;

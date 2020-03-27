@@ -10,9 +10,14 @@ use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
 use crate::{
-    common::{exp_0sim::*, get_user_home_dir, output::OutputManager, paths::*},
+    common::{
+        exp_0sim::*,
+        get_user_home_dir,
+        output::OutputManager,
+        paths::*,
+        workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
+    },
     settings,
-    workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig},
 };
 
 /// Interval at which to collect thp stats
@@ -139,7 +144,7 @@ where
     )?;
 
     let cores = crate::common::get_num_cores(&ushell)?;
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Run workload
     time!(

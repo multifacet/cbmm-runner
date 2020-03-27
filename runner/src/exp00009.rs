@@ -14,13 +14,13 @@ use crate::{
         get_cpu_freq,
         output::OutputManager,
         paths::{setup00000::*, *},
+        workloads::{
+            run_memcached_gen_data, run_time_mmap_touch, MemcachedWorkloadConfig, TasksetCtx,
+            TimeMmapTouchConfig, TimeMmapTouchPattern,
+        },
         KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
     },
     settings,
-    workloads::{
-        run_memcached_gen_data, run_time_mmap_touch, MemcachedWorkloadConfig, TimeMmapTouchConfig,
-        TimeMmapTouchPattern,
-    },
 };
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -215,7 +215,7 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Warm up
     if warmup {

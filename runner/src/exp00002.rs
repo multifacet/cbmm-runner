@@ -14,12 +14,12 @@ use crate::{
         exp_0sim::*,
         output::OutputManager,
         paths::{setup00000::*, *},
+        workloads::{
+            run_locality_mem_access, run_time_loop, run_time_mmap_touch, LocalityMemAccessConfig,
+            LocalityMemAccessMode, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        },
     },
     settings,
-    workloads::{
-        run_locality_mem_access, run_time_loop, run_time_mmap_touch, LocalityMemAccessConfig,
-        LocalityMemAccessMode, TimeMmapTouchConfig, TimeMmapTouchPattern,
-    },
 };
 
 /// Which workload to run?
@@ -215,7 +215,7 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Warm up
     if warmup {

@@ -13,11 +13,12 @@ use crate::{
         exp_0sim::*,
         output::OutputManager,
         paths::{setup00000::*, *},
+        workloads::{
+            run_nas_cg, run_time_mmap_touch, NasClass, TasksetCtx, TimeMmapTouchConfig,
+            TimeMmapTouchPattern,
+        },
     },
     settings,
-    workloads::{
-        run_nas_cg, run_time_mmap_touch, NasClass, TimeMmapTouchConfig, TimeMmapTouchPattern,
-    },
 };
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -190,7 +191,7 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Warm up
     if warmup {

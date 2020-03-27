@@ -17,12 +17,13 @@ use crate::{
         get_cpu_freq,
         output::OutputManager,
         paths::{setup00000::*, *},
+        workloads::{
+            run_memcached_gen_data, run_memhog, run_metis_matrix_mult, run_mix, run_nas_cg,
+            run_redis_gen_data, MemcachedWorkloadConfig, MemhogOptions, NasClass,
+            RedisWorkloadConfig, TasksetCtx,
+        },
     },
     settings,
-    workloads::{
-        run_memcached_gen_data, run_memhog, run_metis_matrix_mult, run_mix, run_nas_cg,
-        run_redis_gen_data, MemcachedWorkloadConfig, MemhogOptions, NasClass, RedisWorkloadConfig,
-    },
 };
 
 /// The amount of time (in hours) to let the NAS CG workload run.
@@ -278,7 +279,7 @@ where
     // We want to use rdtsc as the time source, so find the cpu freq:
     let freq = get_cpu_freq(&ushell)?;
 
-    let mut tctx = crate::workloads::TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cores);
 
     // Record buddyinfo on the guest until signalled to stop.
     vshell.run(cmd!("rm -f /tmp/exp-stop"))?;

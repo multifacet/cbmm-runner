@@ -15,8 +15,8 @@ mod macros;
 pub mod output;
 
 pub mod exp_0sim;
-
 pub mod hadoop;
+pub mod workloads;
 
 use failure::ResultExt;
 
