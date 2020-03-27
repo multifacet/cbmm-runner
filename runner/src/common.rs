@@ -14,6 +14,7 @@ mod macros;
 #[macro_use]
 pub mod output;
 
+pub mod downloads;
 pub mod exp_0sim;
 pub mod hadoop;
 pub mod workloads;
@@ -176,14 +177,6 @@ pub mod paths {
 
         /// The shared directory for results on the guest.
         pub const VAGRANT_RESULTS_DIR: &str = "/vagrant/vm_shared/results/";
-
-        /// The URL of the tarball used to build the guest kernel.
-        /// **NOTE** Also update the next constant.
-        pub const KERNEL_RECENT_TARBALL: &str =
-            "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.5.tar.xz";
-
-        /// The location of the tarball used to build the guest kernel.
-        pub const KERNEL_RECENT_TARBALL_NAME: &str = "linux-5.5.tar.xz";
     }
 
     pub mod setup00001 {

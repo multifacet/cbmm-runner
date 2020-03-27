@@ -9,46 +9,41 @@ const APACHE_HADOOP_MIRROR: &str = "http://apache-mirror.8birdsvideo.com/";
 const HADOOP_TARBALL_URL_TEMPLATE: &str = "hadoop/common/hadoop-VERSION/hadoop-VERSION.tar.gz";
 const SPARK_TARBALL_URL_TEMPLATE: &str = "spark/spark-VERSION/spark-VERSION-bin-hadoop2.7.tgz";
 
+const HADOOP_VERSION: &str = "3.1.3";
+const SPARK_VERSION: &str = "2.4.4";
+
 /// Download and untar the hadoop tarball for the given version as `path/hadoop/`, deleting
 /// anything that was previously there.
-pub fn download_hadoop_tarball<P>(
-    ushell: &SshShell,
-    version: &str,
-    path: &P,
-) -> Result<(), failure::Error>
+pub fn download_hadoop_tarball<P>(ushell: &SshShell, path: &P) -> Result<(), failure::Error>
 where
     P: AsRef<Path>,
 {
-    let url =
-        APACHE_HADOOP_MIRROR.to_owned() + &HADOOP_TARBALL_URL_TEMPLATE.replace("VERSION", version);
+    let url = APACHE_HADOOP_MIRROR.to_owned()
+        + &HADOOP_TARBALL_URL_TEMPLATE.replace("VERSION", HADOOP_VERSION);
 
     with_shell! { ushell =>
         cmd!("wget -O /tmp/hadoop.tgz {}", url),
         cmd!("tar xvzf /tmp/hadoop.tgz"),
         cmd!("rm -rf {}/hadoop", path.as_ref().display()),
-        cmd!("mv hadoop-{} {}/hadoop", version, path.as_ref().display()),
+        cmd!("mv hadoop-{} {}/hadoop", HADOOP_VERSION, path.as_ref().display()),
     }
 
     Ok(())
 }
 
 /// Download and untar the spark tarball for the given version as `$HOME/hadoop/`.
-pub fn download_spark_tarball<P>(
-    ushell: &SshShell,
-    version: &str,
-    path: &P,
-) -> Result<(), failure::Error>
+pub fn download_spark_tarball<P>(ushell: &SshShell, path: &P) -> Result<(), failure::Error>
 where
     P: AsRef<Path>,
 {
-    let url =
-        APACHE_HADOOP_MIRROR.to_owned() + &SPARK_TARBALL_URL_TEMPLATE.replace("VERSION", version);
+    let url = APACHE_HADOOP_MIRROR.to_owned()
+        + &SPARK_TARBALL_URL_TEMPLATE.replace("VERSION", SPARK_VERSION);
 
     with_shell! { ushell =>
         cmd!("wget -O /tmp/spark.tgz {}", url),
         cmd!("tar xvzf /tmp/spark.tgz"),
         cmd!("rm -rf {}/spark", path.as_ref().display()),
-        cmd!("mv spark-{}-bin-hadoop2.7 {}/spark", version, path.as_ref().display()),
+        cmd!("mv spark-{}-bin-hadoop2.7 {}/spark", SPARK_VERSION, path.as_ref().display()),
     }
 
     Ok(())

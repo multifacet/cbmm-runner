@@ -12,35 +12,12 @@ use failure::ResultExt;
 use spurs::{cmd, Execute, SshShell};
 
 use crate::common::{
+    downloads::{artifact_info, download, download_and_extract, Artifact},
     exp_0sim::*,
     get_user_home_dir,
     paths::{setup00000::*, *},
     KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login, ServiceAction,
 };
-
-const VAGRANT_RPM_URL: &str =
-    "https://releases.hashicorp.com/vagrant/2.2.7/vagrant_2.2.7_x86_64.rpm";
-
-const QEMU_TARBALL: &str = "https://download.qemu.org/qemu-4.0.0.tar.xz";
-const QEMU_TARBALL_NAME: &str = "qemu-4.0.0.tar.xz";
-
-const MAVEN_TARBALL: &str =
-    "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz";
-const MAVEN_TARBALL_NAME: &str = "apache-maven-3.6.3-bin.tar.gz";
-
-const HADOOP_VERSION: &str = "3.1.3";
-const SPARK_VERSION: &str = "2.4.4";
-
-const PIN_TARBALL: &str = "https://software.intel.com/sites/landingpage/pintool/downloads/pin-3.11-97998-g7ecce2dac-gcc-linux.tar.gz";
-const PIN_TARBALL_NAME: &str = "pin.tar.gz";
-
-const KYOTOCABINET_CORE_TARBALL: &str =
-    "https://fallabs.com/kyotocabinet/pkg/kyotocabinet-1.2.77.tar.gz";
-const KYOTOCABINET_CORE_TARBALL_NAME: &str = "kyotocabinet-1.2.77.tar.gz";
-
-const KYOTOCABINET_JAVA_TARBALL: &str =
-    "https://fallabs.com/kyotocabinet/javapkg/kyotocabinet-java-1.24.tar.gz";
-const KYOTOCABINET_JAVA_TARBALL_NAME: &str = "kyotocabinet-java-1.24.tar.gz";
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     clap_app! { setup00000 =>
@@ -439,17 +416,19 @@ where
 
         // Add user to libvirt group after installing
         spurs_util::add_to_group("libvirt"),
-
-        // Set up maven
-        cmd!("mkdir -p maven"),
-        cmd!("wget {}", MAVEN_TARBALL),
-        cmd!("tar -C maven --strip-components=1 -xvzf {}", MAVEN_TARBALL_NAME),
-        cmd!("echo -e 'export JAVA_HOME=/usr/lib/jvm/java/\n\
-            export M2_HOME=~{}/maven/\n\
-            export MAVEN_HOME=$M2_HOME\n\
-            export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
-            sudo tee /etc/profile.d/java.sh", cfg.login.username),
     }
+
+    // Set up maven
+    let user_home = &get_user_home_dir(&ushell)?;
+    download_and_extract(ushell, Artifact::Maven, user_home, Some("maven"))?;
+    ushell.run(cmd!(
+        "echo -e 'export JAVA_HOME=/usr/lib/jvm/java/\n\
+         export M2_HOME=~{}/maven/\n\
+         export MAVEN_HOME=$M2_HOME\n\
+         export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
+         sudo tee /etc/profile.d/java.sh",
+        cfg.login.username
+    ))?;
 
     if !cfg.centos7 {
         ushell.run(cmd!("sudo alternatives --set python /usr/bin/python3"))?;
@@ -460,7 +439,8 @@ where
         .is_ok();
 
     if !installed {
-        ushell.run(cmd!("sudo yum -y install {}", VAGRANT_RPM_URL))?;
+        let vagrant_info = artifact_info(Artifact::Vagrant);
+        ushell.run(cmd!("sudo yum -y install {}", vagrant_info.url))?;
     }
 
     let installed = ushell
@@ -485,14 +465,8 @@ where
     *ushell = SshShell::with_default_key(cfg.login.username, &cfg.login.host)?;
 
     // Build and Install QEMU 4.0.0 from source
-    ushell.run(cmd!(
-        "[ -e {} ] || wget {}",
-        QEMU_TARBALL_NAME,
-        QEMU_TARBALL
-    ))?;
-    ushell.run(cmd!("tar xvf {}", QEMU_TARBALL_NAME))?;
-
-    let qemu_dir = QEMU_TARBALL_NAME.trim_end_matches(".tar.xz");
+    let qemu_info = download_and_extract(ushell, Artifact::Qemu, user_home, None)?;
+    let qemu_dir = qemu_info.name.trim_end_matches(".tar.xz");
     let ncores = crate::common::get_num_cores(&ushell)?;
 
     with_shell! { ushell in qemu_dir =>
@@ -839,10 +813,9 @@ where
         cmd!("make -j {}", ncores),
     }
 
-    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE) =>
-        cmd!("wget {} -O {}", PIN_TARBALL, PIN_TARBALL_NAME),
-        cmd!("mkdir -p pin"),
-        cmd!("tar --strip-components=1 -C pin -xvf {}", PIN_TARBALL_NAME),
+    let membuffer_extract_dir = dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE);
+    download_and_extract(ushell, Artifact::Pin, &membuffer_extract_dir, Some("pin"))?;
+    with_shell! { ushell in &membuffer_extract_dir =>
         cmd!("cp ../../{}/libz.a pin/source/tools/MemTrace", ZEROSIM_ZLIB_SUBMODULE),
         cmd!("cp membuffer.cpp pin/source/tools/MemTrace"),
         cmd!("cp membuffer.make pin/source/tools/MemTrace"),
@@ -854,19 +827,20 @@ where
     }
 
     // Build kyoto cabinet
-    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE, "kyotocabinet") =>
-        cmd!("wget {}", KYOTOCABINET_CORE_TARBALL),
-        cmd!("wget {}", KYOTOCABINET_JAVA_TARBALL),
-
-        cmd!("mkdir -p kc-core"),
-        cmd!("mkdir -p kc-java"),
-        cmd!("tar -C kc-core --strip-components=1 -xzvf {}", KYOTOCABINET_CORE_TARBALL_NAME),
-        cmd!("tar -C kc-java --strip-components=1 -xzvf {}", KYOTOCABINET_JAVA_TARBALL_NAME),
-
-        cmd!("cd kc-core ; ./configure --prefix=`pwd`"),
-        cmd!("cd kc-core ; make -j {} && make install", ncores),
-        cmd!("cd kc-java ; ./configure --with-kc=../kc-core/"),
-        cmd!("cd kc-java ; make -j {}", ncores),
+    let kc_dir = dir!(
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_YCSB_SUBMODULE,
+        "kyotocabinet"
+    );
+    download_and_extract(ushell, Artifact::KyotoCabinetCore, &kc_dir, Some("kc-core"))?;
+    with_shell! { ushell in &dir!(&kc_dir, "kc-core") =>
+        cmd!("./configure --prefix=`pwd`"),
+        cmd!("make -j {} && make install", ncores),
+    }
+    download_and_extract(ushell, Artifact::KyotoCabinetJava, &kc_dir, Some("kc-java"))?;
+    with_shell! { ushell in &dir!(&kc_dir, "kc-java") =>
+        cmd!("./configure --with-kc=../kc-core/"),
+        cmd!("make -j {}", ncores),
     }
 
     // Build YCSB
@@ -1171,11 +1145,11 @@ fn install_guest_kernel(
 
     let guest_config_base_name = std::path::Path::new(guest_config).file_name().unwrap();
 
-    ushell.run(cmd!("wget {}", KERNEL_RECENT_TARBALL))?;
+    let kernel_info = download(ushell, Artifact::Linux, user_home, None)?;
     crate::common::build_kernel(
         &ushell,
         KernelSrc::Tar {
-            tarball_path: KERNEL_RECENT_TARBALL_NAME.into(),
+            tarball_path: kernel_info.name.into(),
         },
         KernelConfig {
             base_config: KernelBaseConfigSource::Path(dir!(
@@ -1245,7 +1219,7 @@ where
 {
     // Hadoop/spark/hibench
     if cfg.setup_hadoop {
-        vm_setup_hadoop(ushell, vushell, vrshell, HADOOP_VERSION, SPARK_VERSION)?;
+        vm_setup_hadoop(ushell, vushell, vrshell)?;
     }
 
     // Create a mountpoint for nullfs
@@ -1260,8 +1234,6 @@ fn vm_setup_hadoop(
     ushell: &SshShell,
     vushell: &SshShell,
     vrshell: &SshShell,
-    hadoop_version: &str,
-    spark_version: &str,
 ) -> Result<(), failure::Error> {
     let hadoop_path = dir!(
         RESEARCH_WORKSPACE_PATH,
@@ -1286,8 +1258,8 @@ fn vm_setup_hadoop(
     ))?;
 
     // Download and untar hadoop and spark.
-    crate::common::hadoop::download_hadoop_tarball(&ushell, hadoop_version, &hadoop_path)?;
-    crate::common::hadoop::download_spark_tarball(&ushell, spark_version, &hadoop_path)?;
+    crate::common::hadoop::download_hadoop_tarball(&ushell, &hadoop_path)?;
+    crate::common::hadoop::download_spark_tarball(&ushell, &hadoop_path)?;
 
     // Copy config options into place. These already have settings set, so we don't need to do a
     // lot of adjusting on the fly.

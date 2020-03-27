@@ -10,6 +10,7 @@ use spurs_util::escape_for_bash;
 
 use crate::{
     common::{
+        downloads::{artifact_info, Artifact},
         exp_0sim::*,
         get_cpu_freq,
         output::OutputManager,
@@ -180,7 +181,8 @@ where
 
     // Reuse the kernel build folder we used during setup 0 to build the guest kernel. We
     // need to clean it first...
-    let tarball_path: String = KERNEL_RECENT_TARBALL_NAME
+    let tarball_path: String = artifact_info(Artifact::Linux)
+        .name
         .trim_end_matches(".tar.gz")
         .trim_end_matches(".tar.xz")
         .trim_end_matches(".tgz")
@@ -247,11 +249,12 @@ where
         let ushell2 = SshShell::with_default_key(login.username, &login.host)
             .expect("Unable to connect to host for kernel build");
 
+        let kernel_info = artifact_info(Artifact::Linux);
         move || {
             crate::common::build_kernel(
                 &ushell2,
                 KernelSrc::Tar {
-                    tarball_path: KERNEL_RECENT_TARBALL_NAME.into(),
+                    tarball_path: kernel_info.name.into(),
                 },
                 KernelConfig {
                     base_config: KernelBaseConfigSource::Current,
