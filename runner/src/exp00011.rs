@@ -18,8 +18,8 @@ use crate::{
         output::OutputManager,
         paths::{setup00000::*, *},
         workloads::{
-            run_ycsb_workload, Pintool, RedisWorkloadConfig, TasksetCtx, TimeMmapTouchConfig,
-            TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
+            run_ycsb_workload, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx,
+            TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
         },
     },
     settings,
@@ -180,7 +180,7 @@ where
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
-    // Get the amount of memory the guest thinks it has (in KB).
+    // Get the amount of memory the guest thinks it has (in GB).
     let size = vshell
         .run(cmd!("grep MemAvailable /proc/meminfo | awk '{{print $2}}'").use_bash())?
         .stdout
@@ -199,26 +199,45 @@ where
         "pin"
     );
 
-    // Only used for memtrace.
-    let output_path = settings.gen_file_name("trace");
-    let output_path = dir!(VAGRANT_RESULTS_DIR, output_path);
-
     vshell.run(cmd!(
         "echo '{}' > {}",
         escape_for_bash(&params),
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = TasksetCtx::new(cores);
-
-    // We want to use rdtsc as the time source, so find the cpu freq:
-    let freq = get_cpu_freq(&ushell)?;
-
     // Run the workload.
     time!(
         timers,
         "Workload",
-        run_ycsb_workload(&vshell, YcsbConfig { workload, system })?
+        run_ycsb_workload(
+            &vshell,
+            YcsbConfig {
+                workload,
+                system,
+                ycsb_path: &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE),
+                memcached: Some(MemcachedWorkloadConfig {
+                    user: "vagrant",
+                    exp_dir: zerosim_exp_path,
+                    memcached: &dir!(
+                        "/home/vagrant",
+                        RESEARCH_WORKSPACE_PATH,
+                        ZEROSIM_MEMCACHED_SUBMODULE
+                    ),
+                    allow_oom: true,
+                    server_pin_core: None,
+                    server_size_mb: size << 10,
+                    pintool: None, // TODO
+
+                    // Ignored:
+                    wk_size_gb: 0,
+                    freq: None,
+                    pf_time: None,
+                    output_file: None,
+                    eager: false,
+                    client_pin_core: 0,
+                })
+            }
+        )?
     );
 
     ushell.run(cmd!("date"))?;

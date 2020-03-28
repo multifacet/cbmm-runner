@@ -781,12 +781,49 @@ pub enum YcsbSystem {
 }
 
 /// Every setting of a YCSB workload.
-pub struct YcsbConfig {
+pub struct YcsbConfig<'s> {
     pub workload: YcsbWorkload,
     pub system: YcsbSystem,
+
+    /// A config file for memcached. The following fields are ignored:
+    /// - server_size_mb
+    /// - client_pin_core
+    /// - wk_size_gb
+    /// - output_file
+    /// - freq
+    /// - pf_time
+    /// - eager
+    pub memcached: Option<MemcachedWorkloadConfig<'s>>,
+
+    /// The path of the YCSB directory.
+    pub ycsb_path: &'s str,
 }
 
 /// Run a YCSB workload, waiting to completion.
 pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failure::Error> {
-    todo!()
+    let workload_file = match cfg.workload {
+        YcsbWorkload::A => "workloads/workloada",
+        YcsbWorkload::B => "workloads/workloadb",
+        YcsbWorkload::C => "workloads/workloadc",
+        YcsbWorkload::D => "workloads/workloadd",
+        YcsbWorkload::E => "workloads/workloade",
+        YcsbWorkload::F => "workloads/workloadf",
+    };
+
+    // TODO: support for pin/memtrace
+
+    match cfg.system {
+        YcsbSystem::Memcached => {
+            start_memcached(shell, cfg.memcached.as_ref().unwrap())?;
+
+            with_shell! { shell in &cfg.ycsb_path =>
+                cmd!("./bin/ycsb load memcached -s -P {} -p memcached.hosts=localhost:11211", workload_file),
+                cmd!("./bin/ycsb run memcached -s -P {} -p memcached.hosts=localhost:11211", workload_file),
+            }
+        }
+
+        YcsbSystem::Redis | YcsbSystem::KyotoCabinet => todo!(),
+    }
+
+    Ok(())
 }
