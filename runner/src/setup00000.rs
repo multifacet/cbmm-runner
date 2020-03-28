@@ -1150,11 +1150,10 @@ where
     download_and_extract(vushell, Artifact::Maven, user_home, Some("maven"))?;
     vushell.run(cmd!(
         "echo -e 'export JAVA_HOME=/usr/lib/jvm/java/\n\
-         export M2_HOME=~{}/maven/\n\
+         export M2_HOME=~vagrant/maven/\n\
          export MAVEN_HOME=$M2_HOME\n\
          export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
          sudo tee /etc/profile.d/java.sh",
-        cfg.login.username
     ))?;
 
     Ok(())
