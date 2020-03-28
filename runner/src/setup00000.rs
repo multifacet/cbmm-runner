@@ -375,6 +375,11 @@ where
             // Set up SCL as the default
             cmd!("echo 'source /opt/rh/devtoolset-7/enable' | \
                   sudo tee /etc/profile.d/recent-compilers.sh"),
+
+            // SCL cannibalizes sudo, but their version kinda sucks because it doesn't take
+            // any flags. So restore the original functionality by moving SCL's sudo away.
+            cmd!("sudo mv /opt/rh/devtoolset-7/root/usr/bin/sudo \
+                  /opt/rh/devtoolset-7/root/usr/bin/scl-sudo")
         }
     }
 
@@ -1113,6 +1118,9 @@ where
         vrshell.run(cmd!(
             "echo 'source /opt/rh/devtoolset-7/enable' | \
              sudo tee /etc/profile.d/recent-compilers.sh"
+        ))?;
+        vrshell.run(cmd!(
+            "sudo mv /opt/rh/devtoolset-7/root/usr/bin/sudo /opt/rh/devtoolset-7/root/usr/bin/scl-sudo"
         ))?;
     }
 
