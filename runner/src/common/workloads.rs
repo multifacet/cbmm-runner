@@ -760,3 +760,33 @@ pub fn run_mix(
 
     Ok(())
 }
+
+/// Which YCSB core workload to run.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum YcsbWorkload {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+}
+
+/// Which backend to use for YCSB.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum YcsbSystem {
+    Memcached,
+    Redis,
+    KyotoCabinet,
+}
+
+/// Every setting of a YCSB workload.
+pub struct YcsbConfig {
+    pub workload: YcsbWorkload,
+    pub system: YcsbSystem,
+}
+
+/// Run a YCSB workload, waiting to completion.
+pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failure::Error> {
+    todo!()
+}
