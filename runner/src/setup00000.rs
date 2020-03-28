@@ -1133,13 +1133,13 @@ where
         "libcgroup",
         "libcgroup-tools",
         "java-1.8.0-openjdk",
-        "maven",
         "redis",
         "perf", // for debugging
         "libevent",
         "libevent-devel",
         "numactl-devel",
         "fuse-devel",
+        "wget",
     ]))?;
 
     install_rust(vrshell)?;
