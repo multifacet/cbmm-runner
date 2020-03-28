@@ -410,7 +410,6 @@ where
             "lsof",
             "java-1.8.0-openjdk",
             "scl-utils",
-            "maven",
             "glib2-devel",
             "pixman-devel",
             "zlib-devel",
@@ -1145,6 +1144,18 @@ where
 
     install_rust(vrshell)?;
     install_rust(vushell)?;
+
+    // Set up maven
+    let user_home = &get_user_home_dir(&vushell)?;
+    download_and_extract(vushell, Artifact::Maven, user_home, Some("maven"))?;
+    vushell.run(cmd!(
+        "echo -e 'export JAVA_HOME=/usr/lib/jvm/java/\n\
+         export M2_HOME=~{}/maven/\n\
+         export MAVEN_HOME=$M2_HOME\n\
+         export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
+         sudo tee /etc/profile.d/java.sh",
+        cfg.login.username
+    ))?;
 
     Ok(())
 }
