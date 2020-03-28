@@ -214,7 +214,11 @@ where
             YcsbConfig {
                 workload,
                 system,
-                ycsb_path: &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE),
+                ycsb_path: &dir!(
+                    "/home/vagrant",
+                    RESEARCH_WORKSPACE_PATH,
+                    ZEROSIM_YCSB_SUBMODULE
+                ),
                 memcached: Some(MemcachedWorkloadConfig {
                     user: "vagrant",
                     exp_dir: zerosim_exp_path,
