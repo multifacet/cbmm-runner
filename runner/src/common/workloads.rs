@@ -816,9 +816,19 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
         YcsbSystem::Memcached => {
             start_memcached(shell, cfg.memcached.as_ref().unwrap())?;
 
+            /// The number of KB a record takes.
+            const RECORD_SIZE_KB: usize = 16;
+
+            let nrecords = (cfg.memcached.as_ref().unwrap().server_size_mb << 10) / RECORD_SIZE_KB;
+
+            let ycsb_flags = format!(
+                "-p memcached.hosts=localhost:11211 -p recordcount={}",
+                nrecords
+            );
+
             with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb load memcached -s -P {} -p memcached.hosts=localhost:11211", workload_file),
-                cmd!("./bin/ycsb run memcached -s -P {} -p memcached.hosts=localhost:11211", workload_file),
+                cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, ycsb_flags),
+                cmd!("./bin/ycsb run memcached -s -P {} {}", workload_file, ycsb_flags),
             }
         }
 
