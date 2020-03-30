@@ -814,12 +814,18 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
 
     match cfg.system {
         YcsbSystem::Memcached => {
-            start_memcached(shell, cfg.memcached.as_ref().unwrap())?;
-
             /// The number of KB a record takes.
             const RECORD_SIZE_KB: usize = 16;
 
+            // This is the number of records that would consume the memory given to memcached
+            // (approximately)...
             let nrecords = (cfg.memcached.as_ref().unwrap().server_size_mb << 10) / RECORD_SIZE_KB;
+
+            // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
+            // so we make the workload a bit smaller to avoid being killed by the OOM killer.
+            let nrecords = nrecords * 9 / 10;
+
+            start_memcached(shell, cfg.memcached.as_ref().unwrap())?;
 
             let ycsb_flags = format!(
                 "-p memcached.hosts=localhost:11211 -p recordcount={}",
@@ -828,6 +834,7 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
 
             with_shell! { shell in &cfg.ycsb_path =>
                 cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, ycsb_flags),
+                cmd!("memcached-tool localhost:11211"),
                 cmd!("./bin/ycsb run memcached -s -P {} {}", workload_file, ycsb_flags),
             }
         }
