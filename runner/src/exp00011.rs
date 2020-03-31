@@ -1,8 +1,7 @@
 //! Run the given YCSB workload on the remote machine in simulation and record its results.
 //!
-//! TODO: also collect a memory trace and record mm stats.
-//!
-//! Requires `setup00000`.
+//! Requires `setup00000`. If `--mmstats` is used, then `setup00001` with an instrumented kernel is
+//! needed.
 
 use clap::clap_app;
 
@@ -95,6 +94,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg KC: --kyotocabinet
              "Use kyotocabinet as the YCSB backend.")
         )
+        (@arg MEMTRACE: --memtrace
+         "Collect a memory trace of the given system.")
+        (@arg MMSTATS: --mmstats
+         "Collect kernel memory management stats.")
     }
 }
 
@@ -125,6 +128,9 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
         _ => unreachable!(),
     };
 
+    let memtrace = sub_m.is_present("MEMTRACE");
+    let mmstats = sub_m.is_present("MMSTATS");
+
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = crate::common::local_research_workspace_git_hash()?;
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
@@ -135,8 +141,11 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
         system,
         exp: 11,
 
-        * vm_size: vm_size,
-        (cores > 1) cores: cores,
+        vm_size,
+        cores,
+
+        memtrace,
+        mmstats,
 
         zswap_max_pool_percent: 50,
 
@@ -252,7 +261,14 @@ where
                     allow_oom: true,
                     server_pin_core: None,
                     server_size_mb: size << 10,
-                    pintool: None, // TODO
+                    pintool: if cfg.memtrace {
+                        Some(Pintool::MemTrace {
+                            pin_path: &pin_path,
+                            output_path: &trace_file,
+                        })
+                    } else {
+                        None
+                    },
 
                     // Ignored:
                     wk_size_gb: 0,
