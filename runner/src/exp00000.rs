@@ -9,19 +9,16 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        get_cpu_freq,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data, run_time_mmap_touch,
-            MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx, TimeMmapTouchConfig,
-            TimeMmapTouchPattern,
-        },
+use crate::common::{
+    exp_0sim::*,
+    get_cpu_freq,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data, run_time_mmap_touch,
+        MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx, TimeMmapTouchConfig,
+        TimeMmapTouchPattern,
     },
-    settings,
 };
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -30,6 +27,55 @@ enum Workload {
     Redis,
     MatrixMult2,
     TimeMmapTouch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    #[name]
+    app: Workload,
+    exp: usize,
+
+    #[name]
+    vm_size: usize,
+    #[name(self.cores > 1)]
+    cores: usize,
+    pattern: Option<TimeMmapTouchPattern>,
+    prefault: bool,
+
+    #[name(self.size.is_some())]
+    size: Option<usize>,
+
+    calibrate: bool,
+    #[name(self.warmup)]
+    warmup: bool,
+
+    #[name(self.disable_zswap)]
+    disable_zswap: bool,
+
+    #[name(self.multicore_offsetting)]
+    multicore_offsetting: bool,
+
+    zswap_max_pool_percent: usize,
+    #[name(self.zerosim_drift_threshold.is_some())]
+    zerosim_drift_threshold: Option<usize>,
+    #[name(self.zerosim_delay.is_some())]
+    zerosim_delay: Option<usize>,
+
+    #[name(self.memtrace)]
+    memtrace: bool,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -140,68 +186,52 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: "bmk",
-        * app: workload,
+    let cfg = Config {
+        workload: "bmk".into(),
+        app: workload,
         exp: 0,
 
-        * vm_size: vm_size,
-        (cores > 1) cores: cores,
-        pattern: pattern,
-        prefault: prefault,
+        vm_size,
+        cores,
+        pattern,
+        prefault,
 
-        (size.is_some()) size: size,
-        calibrated: false,
-        warmup: warmup,
+        size,
+        calibrate: false,
+        warmup,
 
-        (disable_zswap) disable_zswap: disable_zswap,
+        disable_zswap,
 
-        (multicore_offsetting) multicore_offsetting: multicore_offsetting,
+        multicore_offsetting,
 
         zswap_max_pool_percent: 50,
-        (zerosim_drift_threshold.is_some()) zerosim_drift_threshold: zerosim_drift_threshold,
-        (zerosim_delay.is_some()) zerosim_delay: zerosim_delay,
+        zerosim_drift_threshold,
+        zerosim_delay,
 
-        (memtrace) memtrace: memtrace,
+        memtrace,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let workload = settings.get::<Workload>("app");
-    let pattern = settings.get::<Option<TimeMmapTouchPattern>>("pattern");
-    let size = settings.get::<Option<usize>>("size");
-    let warmup = settings.get::<bool>("warmup");
-    let prefault = settings.get::<bool>("prefault");
-    let calibrate = settings.get::<bool>("calibrated");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-    let zerosim_drift_threshold = settings.get::<Option<usize>>("zerosim_drift_threshold");
-    let zerosim_delay = settings.get::<Option<usize>>("zerosim_delay");
-    let disable_zswap = settings.get::<bool>("disable_zswap");
-    let multicore_offsetting = settings.get::<bool>("multicore_offsetting");
-    let memtrace = settings.get::<bool>("memtrace");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -209,7 +239,7 @@ where
     let mut ushell = connect_and_setup_host_only(&login)?;
 
     // Turn on SSDSWAP.
-    if !disable_zswap {
+    if !cfg.disable_zswap {
         turn_on_ssdswap(&ushell)?;
     }
 
@@ -223,8 +253,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST,
@@ -232,22 +262,22 @@ where
     );
 
     // Environment
-    if !disable_zswap {
+    if !cfg.disable_zswap {
         ZeroSim::turn_on_zswap(&mut ushell)?;
     }
 
-    if let Some(threshold) = zerosim_drift_threshold {
+    if let Some(threshold) = cfg.zerosim_drift_threshold {
         ZeroSim::threshold(&ushell, threshold)?;
     }
-    if let Some(delay) = zerosim_delay {
+    if let Some(delay) = cfg.zerosim_delay {
         ZeroSim::delay(&ushell, delay)?;
     }
-    ZeroSim::multicore_offsetting(&ushell, multicore_offsetting)?;
-    if multicore_offsetting {
+    ZeroSim::multicore_offsetting(&ushell, cfg.multicore_offsetting)?;
+    if cfg.multicore_offsetting {
         ZeroSim::sync_guest_tsc(&ushell)?;
     }
 
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -255,7 +285,7 @@ where
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
-    let size = if let Some(size) = size {
+    let size = if let Some(size) = cfg.size {
         size // GB
     } else {
         // Get the amount of memory the guest thinks it has (in KB).
@@ -266,7 +296,7 @@ where
     };
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -274,8 +304,8 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     let pin_path = dir!(
         "/home/vagrant",
@@ -285,7 +315,7 @@ where
     );
 
     // Only used for memtrace.
-    let output_path = settings.gen_file_name("trace");
+    let output_path = cfg.gen_file_name("trace");
     let output_path = dir!(VAGRANT_RESULTS_DIR, output_path);
 
     vshell.run(cmd!(
@@ -294,10 +324,10 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Warm up
-    if warmup {
+    if cfg.warmup {
         //const WARM_UP_SIZE: usize = 50; // GB
         const WARM_UP_PATTERN: TimeMmapTouchPattern = TimeMmapTouchPattern::Zeros;
         time!(
@@ -323,7 +353,7 @@ where
     let freq = get_cpu_freq(&ushell)?;
 
     // Run memcached or time_touch_mmap
-    match workload {
+    match cfg.app {
         Workload::TimeMmapTouch => {
             time!(
                 timers,
@@ -333,8 +363,8 @@ where
                     &TimeMmapTouchConfig {
                         exp_dir: zerosim_exp_path,
                         pages: (size << 30) >> 12,
-                        pattern: pattern.unwrap(),
-                        prefault: prefault,
+                        pattern: cfg.pattern.unwrap(),
+                        prefault: cfg.prefault,
                         pf_time: None,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
                         eager: false,
@@ -367,7 +397,7 @@ where
                         eager: false,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
-                        pintool: if memtrace {
+                        pintool: if cfg.memtrace {
                             Some(Pintool::MemTrace {
                                 output_path: &output_path,
                                 pin_path: &pin_path,
@@ -440,7 +470,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

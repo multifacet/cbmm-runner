@@ -9,17 +9,14 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_locality_mem_access, run_time_loop, run_time_mmap_touch, LocalityMemAccessConfig,
-            LocalityMemAccessMode, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
-        },
+use crate::common::{
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_locality_mem_access, run_time_loop, run_time_mmap_touch, LocalityMemAccessConfig,
+        LocalityMemAccessMode, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
-    settings,
 };
 
 /// Which workload to run?
@@ -33,6 +30,37 @@ enum Workload {
 
     /// Multithreaded `locality_mem_access` with the given number of threads
     MtLocalityMemAccess(usize),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: Workload,
+    exp: usize,
+
+    warmup: bool,
+    calibrate: bool,
+    #[name]
+    n: usize,
+    #[name(self.threads > 1)]
+    threads: usize,
+
+    #[name]
+    vm_size: usize,
+    cores: usize,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -116,58 +144,42 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: match workload {
-            Workload::TimeLoop => "time_loop",
-            Workload::LocalityMemAccess => "locality_mem_access",
-            Workload::MtLocalityMemAccess(..) => "locality_mem_access",
-        },
+    let cfg = Config {
+        workload,
         exp: 2,
 
-        warmup: warmup,
-        calibrated: false,
-        * n: n,
-        (nthreads > 1) threads: nthreads,
+        warmup,
+        calibrate: false,
+        n,
+        threads: nthreads,
 
-        * vm_size: vm_size,
-        cores: cores,
+        vm_size,
+        cores,
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
 
-        // machine readable version for convenience
-        workload_mr: workload,
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let warmup = settings.get::<bool>("warmup");
-    let calibrate = settings.get::<bool>("calibrated");
-    let n = settings.get::<usize>("n");
-    let workload = settings.get::<Workload>("workload_mr");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -180,8 +192,8 @@ where
         "Setup host and start VM",
         connect_and_setup_host_and_vagrant(
             &login,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
         )?
@@ -189,7 +201,7 @@ where
 
     // Environment
     ZeroSim::turn_on_zswap(&mut ushell)?;
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -198,7 +210,7 @@ where
     );
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -206,8 +218,8 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -215,10 +227,10 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Warm up
-    if warmup {
+    if cfg.warmup {
         const WARM_UP_PATTERN: TimeMmapTouchPattern = TimeMmapTouchPattern::Zeros;
         time!(
             timers,
@@ -227,7 +239,7 @@ where
                 &vshell,
                 &TimeMmapTouchConfig {
                     exp_dir: zerosim_exp_path,
-                    pages: ((vm_size << 30) >> 12) >> 1,
+                    pages: ((cfg.vm_size << 30) >> 12) >> 1,
                     pattern: WARM_UP_PATTERN,
                     prefault: false,
                     pf_time: None,
@@ -240,7 +252,7 @@ where
     }
 
     // Then, run the actual experiment
-    match workload {
+    match cfg.workload {
         Workload::TimeLoop => {
             time!(
                 timers,
@@ -248,7 +260,7 @@ where
                 run_time_loop(
                     &vshell,
                     zerosim_exp_path,
-                    n,
+                    cfg.n,
                     &dir!(VAGRANT_RESULTS_DIR, output_file),
                     /* eager */ false,
                     &mut tctx,
@@ -257,8 +269,8 @@ where
         }
 
         Workload::LocalityMemAccess => {
-            let local_file = settings.gen_file_name("local");
-            let nonlocal_file = settings.gen_file_name("nonlocal");
+            let local_file = cfg.gen_file_name("local");
+            let nonlocal_file = cfg.gen_file_name("nonlocal");
 
             time!(timers, "Workload", {
                 run_locality_mem_access(
@@ -266,7 +278,7 @@ where
                     &LocalityMemAccessConfig {
                         exp_dir: zerosim_exp_path,
                         locality: LocalityMemAccessMode::Local,
-                        n: n,
+                        n: cfg.n,
                         threads: None,
                         output_file: &dir!(VAGRANT_RESULTS_DIR, local_file),
                         eager: false,
@@ -277,7 +289,7 @@ where
                     &LocalityMemAccessConfig {
                         exp_dir: zerosim_exp_path,
                         locality: LocalityMemAccessMode::Random,
-                        n: n,
+                        n: cfg.n,
                         threads: None,
                         output_file: &dir!(VAGRANT_RESULTS_DIR, nonlocal_file),
                         eager: false,
@@ -287,8 +299,8 @@ where
         }
 
         Workload::MtLocalityMemAccess(threads) => {
-            let local_file = settings.gen_file_name("local");
-            let nonlocal_file = settings.gen_file_name("nonlocal");
+            let local_file = cfg.gen_file_name("local");
+            let nonlocal_file = cfg.gen_file_name("nonlocal");
 
             time!(timers, "Workload", {
                 run_locality_mem_access(
@@ -296,7 +308,7 @@ where
                     &LocalityMemAccessConfig {
                         exp_dir: zerosim_exp_path,
                         locality: LocalityMemAccessMode::Local,
-                        n: n,
+                        n: cfg.n,
                         threads: Some(threads),
                         output_file: &dir!(VAGRANT_RESULTS_DIR, local_file),
                         eager: false,
@@ -307,7 +319,7 @@ where
                     &LocalityMemAccessConfig {
                         exp_dir: zerosim_exp_path,
                         locality: LocalityMemAccessMode::Random,
-                        n: n,
+                        n: cfg.n,
                         threads: Some(threads),
                         output_file: &dir!(VAGRANT_RESULTS_DIR, nonlocal_file),
                         eager: false,
@@ -328,7 +340,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

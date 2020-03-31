@@ -11,19 +11,16 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        get_cpu_freq,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_memcached_gen_data, run_memhog, run_metis_matrix_mult, run_mix, run_nas_cg,
-            run_redis_gen_data, MemcachedWorkloadConfig, MemhogOptions, NasClass,
-            RedisWorkloadConfig, TasksetCtx,
-        },
+use crate::common::{
+    exp_0sim::*,
+    get_cpu_freq,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_memcached_gen_data, run_memhog, run_metis_matrix_mult, run_mix, run_nas_cg,
+        run_redis_gen_data, MemcachedWorkloadConfig, MemhogOptions, NasClass, RedisWorkloadConfig,
+        TasksetCtx,
     },
-    settings,
 };
 
 /// The amount of time (in hours) to let the NAS CG workload run.
@@ -40,6 +37,42 @@ enum Workload {
     Mix,
     Redis,
     MatrixMult2,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    #[name]
+    app: Workload,
+    exp: usize,
+
+    calibrate: bool,
+    #[name(self.warmup)]
+    warmup: bool,
+
+    #[name(self.eager)]
+    eager: bool,
+
+    #[name]
+    vm_size: usize,
+    #[name]
+    cores: usize,
+
+    stats_interval: usize,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -92,20 +125,14 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
         .parse::<usize>()
         .unwrap();
 
-    let workload = if sub_m.is_present("memcached") {
-        Workload::Memcached
-    } else if sub_m.is_present("cg") {
-        Workload::Cg
-    } else if sub_m.is_present("memhog") {
-        Workload::Memhog
-    } else if sub_m.is_present("mix") {
-        Workload::Mix
-    } else if sub_m.is_present("redis") {
-        Workload::Redis
-    } else if sub_m.is_present("matrix") {
-        Workload::MatrixMult2
-    } else {
-        unreachable!();
+    let workload = match () {
+        () if sub_m.is_present("memcached") => Workload::Memcached,
+        () if sub_m.is_present("cg") => Workload::Cg,
+        () if sub_m.is_present("memhog") => Workload::Memhog,
+        () if sub_m.is_present("mix") => Workload::Mix,
+        () if sub_m.is_present("redis") => Workload::Redis,
+        () if sub_m.is_present("matrix") => Workload::MatrixMult2,
+        () => unreachable!(),
     };
 
     let vm_size = if let Some(vm_size) = sub_m
@@ -136,55 +163,45 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: "fragmentation",
-        * app: workload,
+    let cfg = Config {
+        workload: "fragmentation".into(),
+        app: workload,
         exp: 7,
 
-        calibrated: false,
-        (warmup) warmup: warmup,
+        calibrate: false,
+        warmup,
 
-        (eager) eager: eager,
+        eager,
 
-        * vm_size: vm_size,
-        * cores: cores,
+        vm_size,
+        cores,
 
         stats_interval: interval,
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let workload = settings.get::<Workload>("app");
-    let interval = settings.get::<usize>("stats_interval");
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let calibrate = settings.get::<bool>("calibrated");
-    let warmup = settings.get::<bool>("warmup");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-    let eager = settings.get::<bool>("eager");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -207,8 +224,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
@@ -221,7 +238,7 @@ where
         .stdout;
     let size = size.trim().parse::<usize>().unwrap();
 
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -235,7 +252,7 @@ where
     );
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -243,9 +260,9 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let guest_mem_file = settings.gen_file_name("guest_mem");
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let guest_mem_file = cfg.gen_file_name("guest_mem");
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -259,7 +276,7 @@ where
     ))?;
 
     // Warm up
-    if warmup {
+    if cfg.warmup {
         const WARM_UP_PATTERN: &str = "-z";
         time!(
             timers,
@@ -279,7 +296,7 @@ where
     // We want to use rdtsc as the time source, so find the cpu freq:
     let freq = get_cpu_freq(&ushell)?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Record buddyinfo on the guest until signalled to stop.
     vshell.run(cmd!("rm -f /tmp/exp-stop"))?;
@@ -292,7 +309,7 @@ where
              sleep {} ; \
              done ; echo done measuring",
             dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-            interval
+            cfg.stats_interval
         )
         .use_bash(),
     )?;
@@ -307,7 +324,7 @@ where
     )?;
 
     // Run the actual workload
-    match workload {
+    match cfg.app {
         Workload::Memcached => {
             time!(
                 timers,
@@ -328,7 +345,7 @@ where
                         allow_oom: true,
                         pf_time: None,
                         output_file: None,
-                        eager: eager,
+                        eager: cfg.eager,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
@@ -349,7 +366,7 @@ where
                         ZEROSIM_METIS_SUBMODULE
                     ),
                     ((size << 7) as f64).sqrt() as usize,
-                    eager,
+                    cfg.eager,
                     &mut tctx,
                 )?
                 .1
@@ -370,7 +387,7 @@ where
                         freq: Some(freq),
                         pf_time: None,
                         output_file: None,
-                        eager: eager,
+                        eager: cfg.eager,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
@@ -392,7 +409,7 @@ where
                     zerosim_bmk_path,
                     NasClass::F,
                     Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                    eager,
+                    cfg.eager,
                     &mut tctx,
                 )?;
 
@@ -412,7 +429,7 @@ where
                     Some(MEMHOG_R),
                     size,
                     MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
-                    eager,
+                    cfg.eager,
                     &mut tctx,
                 )?
                 .1
@@ -443,7 +460,7 @@ where
                     &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF,),
                     freq,
                     size >> 20,
-                    eager,
+                    cfg.eager,
                     &mut tctx,
                 )?
             });
@@ -468,7 +485,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

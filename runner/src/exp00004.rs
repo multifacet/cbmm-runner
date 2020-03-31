@@ -6,22 +6,48 @@
 
 use clap::clap_app;
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        get_user_home_dir,
-        output::OutputManager,
-        paths::*,
-        workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
-    },
-    settings,
+use crate::common::{
+    exp_0sim::*,
+    get_user_home_dir,
+    output::{Parametrize, Timestamp},
+    paths::*,
+    workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
 };
 
 /// Interval at which to collect thp stats
 const INTERVAL: usize = 60; // seconds
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    exp: usize,
+
+    #[name]
+    size: usize,
+
+    transparent_hugepage_enabled: String,
+    transparent_hugepage_defrag: String,
+    transparent_hugepage_khugepaged_defrag: usize,
+    transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
+    transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
+}
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     fn is_usize(s: String) -> Result<(), String> {
@@ -57,51 +83,40 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: "memcached_thp_ops_per_page_bare_metal",
+    let cfg = Config {
+        workload: "memcached_thp_ops_per_page_bare_metal".into(),
         exp: 4,
 
-        * size: size,
+        size,
 
-        transparent_hugepage_enabled: "always",
-        transparent_hugepage_defrag: "always",
+        transparent_hugepage_enabled: "always".into(),
+        transparent_hugepage_defrag: "always".into(),
         transparent_hugepage_khugepaged_defrag: 1,
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let size = settings.get::<usize>("size");
-    let transparent_hugepage_enabled = settings.get::<&str>("transparent_hugepage_enabled");
-    let transparent_hugepage_defrag = settings.get::<&str>("transparent_hugepage_defrag");
-    let transparent_hugepage_khugepaged_defrag =
-        settings.get::<usize>("transparent_hugepage_khugepaged_defrag");
-    let transparent_hugepage_khugepaged_alloc_sleep_ms =
-        settings.get::<usize>("transparent_hugepage_khugepaged_alloc_sleep_ms");
-    let transparent_hugepage_khugepaged_scan_sleep_ms =
-        settings.get::<usize>("transparent_hugepage_khugepaged_scan_sleep_ms");
-
     // Reboot
     initial_reboot_no_vagrant(&login)?;
 
@@ -118,8 +133,8 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
-    let (output_file, params_file, time_file, _sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, _sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
         "echo '{}' > {}",
@@ -136,11 +151,11 @@ where
     // Turn on compaction and force it to happen
     crate::common::turn_on_thp(
         &ushell,
-        transparent_hugepage_enabled,
-        transparent_hugepage_defrag,
-        transparent_hugepage_khugepaged_defrag,
-        transparent_hugepage_khugepaged_alloc_sleep_ms,
-        transparent_hugepage_khugepaged_scan_sleep_ms,
+        &cfg.transparent_hugepage_enabled,
+        &cfg.transparent_hugepage_defrag,
+        cfg.transparent_hugepage_khugepaged_defrag,
+        cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+        cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
     )?;
 
     let cores = crate::common::get_num_cores(&ushell)?;
@@ -156,8 +171,8 @@ where
                 user: login.username,
                 exp_dir: zerosim_exp_path,
                 memcached: &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMCACHED_SUBMODULE),
-                server_size_mb: size << 10,
-                wk_size_gb: size,
+                server_size_mb: cfg.size << 10,
+                wk_size_gb: cfg.size,
                 allow_oom: true,
                 output_file: None,
                 eager: false,
@@ -184,7 +199,7 @@ where
     ))?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!(
             "RESULTS: {}",
             dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)

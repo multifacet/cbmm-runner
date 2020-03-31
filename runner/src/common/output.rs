@@ -1,58 +1,87 @@
-//! Utilities for handling and tagging generated output.
+//! Utilities for handling and tagging generated output. See the `Parametrize` trait.
 
-use chrono::{offset::Local, DateTime};
-use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
+use chrono::offset::Local;
+use serde::{Deserialize, Serialize};
 
-/// `OutputManager` manages all things regarding naming and tagging output with settings and
-/// properties of its data.
-///
-/// Each experiment should create an `OutputManager` at the beginning with all of the settings for
-/// the experiment. The `settings!` macro helper can be used to do this conveniently. The
-/// `OutputManager` can then be used to generate filenames for output files and can generate a
-/// `.params` file containing all of the settings.
-///
-/// The generated filenames will be unique by including a timestamp. They can also optionally
-/// contain any settings marked as `important`.
-#[derive(Debug, Clone)]
-pub struct OutputManager {
-    settings: std::collections::BTreeMap<String, String>,
-    important: Vec<String>,
-    timestamp: DateTime<Local>,
+pub use runner_proc_macro::*;
+
+/// A timestamp used to make filenames unique.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Timestamp(pub String);
+
+impl Timestamp {
+    /// Returns a timestamp representing the current time.
+    pub fn now() -> Self {
+        Self(Local::now().format("%Y-%m-%d-%H-%M-%S").to_string())
+    }
 }
 
-impl OutputManager {
-    /// Create a new empty `OutputManager` containing now settings.
-    pub fn new() -> Self {
-        OutputManager {
-            settings: std::collections::BTreeMap::new(),
-            important: Vec::new(),
-            timestamp: Local::now(),
-        }
-    }
-
-    /// Register a new setting called `name` with value `value`. The boolean value `important`
-    /// indicates whether or not the setting should be included in any generated filenames. All
-    /// settings must be serializable.
-    pub fn register<V: serde::Serialize + std::fmt::Debug>(
-        &mut self,
-        name: &str,
-        value: &V,
-        important: bool,
-    ) {
-        let value = serde_json::to_string(value).expect("unable to serialize");
-        if let Some(prev) = self.settings.insert(name.into(), value) {
-            panic!(
-                "Setting {:?} previously registered with value {:?}",
-                name, prev
-            );
-        }
-        if important {
-            self.important.push(name.into());
-        }
-    }
-
+/// A `Parametrize` type manages all things regarding naming and tagging output with settings (i.e.
+/// parameters) and properties of its data.
+///
+/// Each experiment should create a `Parametrize` type at the beginning with all of the settings
+/// for the experiment. The derive macro can be used to do this conveniently. The `Parametrize`
+/// type can then be used to generate filenames for output files and can generate a string
+/// containing all of the settings, which can then be written to a `.param` file.
+///
+/// The generated filenames will be (probably) unique by including a timestamp (returned by the
+/// `timestamp()` method. Fields can also optionally contain any settings marked as `important`,
+/// which means that they will be included in the filename for greater visibility.
+///
+/// # Derive macro
+///
+/// `Parametrize` can be derived automatically for many types using a custom derive macro. Here is
+/// an example usage:
+///
+/// ```rust
+/// use crate::common::output::{Parametrize, Timestamp};
+///
+/// use serde::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize, Parametrize)]
+/// struct Config {
+///     // This is a setting with type `usize` and name `exp`.
+///     exp: usize,
+///
+///     // The `name` attribute marks this setting as `important`.
+///     #[name]
+///     workload: YcsbWorkload,
+///
+///     // `name` can also take a condition: `cores` is only marked as important if it is `> 1`.
+///     #[name(self.cores > 1)]
+///     cores: usize,
+///
+///     // The `timestamp` attribute marks this field as the timestamp. It is returned from the
+///     // generated `timestamp()` implementation.
+///     #[timestamp]
+///     timestamp: Timestamp,
+/// }
+///
+/// ```
+///
+/// Then, to use the struct later, construct it like any other struct:
+///
+/// ```rust,ignore
+/// // In `main` (or wherever):
+/// let cfg = Config {
+///     exp: 0xFF,
+///     workload: YcsbWorkload::A,
+///     cores: 32,
+///     timestamp: Timestamp::now(),
+/// };
+///
+/// // Run some experiments.
+/// run(&cfg)?;
+/// ```
+///
+/// By passing an immutable reference to the `Config` struct, we prevent accidental modification.
+/// It also helps if the `run` function doesn't take any other input. This gives greater confidence
+/// that the `Parametrize` is actually recording all of the needed parameters.
+///
+/// See any of the `exp*` modules in the runner for more examples.
+pub trait Parametrize: Serialize + Deserialize<'static> {
     /// Generate the primary output and params filenames, in that order.
-    pub fn gen_standard_names(&self) -> (String, String, String, String) {
+    fn gen_standard_names(&self) -> (String, String, String, String) {
         const OUTPUT_SUFFIX: &str = "out";
         const PARAMS_SUFFIX: &str = "params";
         const TIMES_SUFFIX: &str = "time";
@@ -69,20 +98,33 @@ impl OutputManager {
     /// Generate a filename with the given extension. Only use this if you want to generate a file
     /// that is not a `.out` or a `.params` file. The parameter `ext` is the extension without the
     /// leading dot (e.g. `err`).
-    pub fn gen_file_name(&self, ext: &str) -> String {
+    fn gen_file_name(&self, ext: &str) -> String {
+        /// Helper to add the given setting to the given string. Used to build file names. The caller
+        /// should ensure that the setting is registered.
+        fn append_setting(string: &mut String, setting: &str, val: &str) {
+            // sanitize
+            let val = val.trim();
+            let val = val.replace(" ", "_");
+            let val = val.replace("\"", "_");
+            let val = val.replace("\'", "_");
+
+            string.push_str(setting);
+            string.push_str(&val);
+        }
+
         let mut base = String::new();
 
         // prepend all important settings
-        for (i, setting) in self.important.iter().enumerate() {
+        for (i, (setting, value)) in self.important().iter().enumerate() {
             if i > 0 {
                 base.push_str("-");
             }
-            self.append_setting(&mut base, setting);
+            append_setting(&mut base, setting, value);
         }
 
         // append the date
         base.push_str("-");
-        base.push_str(&self.timestamp.format("%Y-%m-%d-%H-%M-%S").to_string());
+        base.push_str(&self.timestamp().0);
 
         base.push_str(".");
         base.push_str(ext);
@@ -90,112 +132,11 @@ impl OutputManager {
         base
     }
 
-    /// Helper to add the given setting to the given string. Used to build file names. The caller
-    /// should ensure that the setting is registered.
-    fn append_setting(&self, string: &mut String, setting: &str) {
-        let val = self
-            .settings
-            .get(setting)
-            .expect("important setting not defined");
+    /// Returns a list of important settings and their values, which should be included in
+    /// generated file names.
+    fn important(&self) -> Vec<(String, String)>;
 
-        // sanitize
-        let val = val.trim();
-        let val = val.replace(" ", "_");
-        let val = val.replace("\"", "_");
-        let val = val.replace("\'", "_");
-
-        string.push_str(setting);
-        string.push_str(&val);
-    }
-
-    /// Returns the value of setting `setting` deserialized to a `D`.
-    ///
-    /// # Panics
-    ///
-    /// - If `setting` is not registered at the time `get` is called.
-    /// - If `setting`'s value cannot be deserialized to a `D`.
-    pub fn get<'s, 'de, D: serde::Deserialize<'de>>(&'s self, setting: &str) -> D
-    where
-        's: 'de,
-    {
-        serde_json::from_str(self.settings.get(setting).expect("no such setting"))
-            .expect("unable to deserialize")
-    }
-}
-
-impl Serialize for OutputManager {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut map = serializer.serialize_map(Some(self.settings.len()))?;
-        for (k, v) in &self.settings {
-            map.serialize_entry(k, v)?;
-        }
-        map.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for OutputManager {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let settings: std::collections::BTreeMap<String, String> =
-            Deserialize::deserialize(deserializer)?;
-
-        Ok(Self {
-            settings,
-            important: Vec::new(),
-            timestamp: Local::now(),
-        })
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __settings_helper {
-    (manager ,) => {};
-    ($manager:ident, $name:ident : $value:expr, $($tail:tt)*) => {{
-        $manager.register(stringify!($name), &$value, false);
-        $crate::__settings_helper!($manager, $($tail)*);
-    }};
-    ($manager:ident, * $name:ident : $value:expr, $($tail:tt)*) => {{
-        $manager.register(stringify!($name), &$value, true);
-        $crate::__settings_helper!($manager, $($tail)*);
-    }};
-    ($manager:ident, ($impt:expr) $name:ident : $value:expr, $($tail:tt)*) => {{
-        $manager.register(stringify!($name), &$value, $impt);
-        $crate::__settings_helper!($manager, $($tail)*);
-    }};
-}
-
-/// A convenience macro for creating an `OutputManager` with the given settings. The syntax is `[*]
-/// name: value` where `name` is the name of the setting, `value` is any expression that evaluates
-/// to the value of the setting, and the `*` is an optional token that signifies that the setting is
-/// important. Alternately, `(cond)` can be used to dynamically mark a setting as important
-/// depending on their value (e.g. to call attention to a non-default value).
-///
-/// ```rust
-/// let settings: OutputManager = settings! {
-///     * workload: if pattern.is_some() { "time_mmap_touch" } else { "memcached_gen_data" },
-///     exp: 00000,
-///
-///     * size: 100, // gb
-///     pattern: "-z",
-///     calibrated: false,
-///
-///     (!warmup) warmup: warmup, // `warmup` is marked important if `false`.
-/// };
-///
-/// ```
-#[macro_export]
-macro_rules! settings {
-    ($($tail:tt)*) => {{
-        let mut manager = crate::common::output::OutputManager::new();
-
-        $crate::__settings_helper!(manager, $($tail)*);
-
-        manager
-    }}
+    /// Returns a timestamp (the same timestamp every time) that is associated with this set of
+    /// parameters.
+    fn timestamp(&self) -> &Timestamp;
 }

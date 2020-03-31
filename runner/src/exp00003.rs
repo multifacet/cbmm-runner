@@ -12,22 +12,60 @@
 
 use clap::clap_app;
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
 use crate::{
     common::{
         exp_0sim::*,
-        output::OutputManager,
+        output::{Parametrize, Timestamp},
         paths::{setup00000::*, *},
         workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
     },
-    settings,
     setup00001::GUEST_SWAP_GBS,
 };
 
 /// Interval at which to collect thp stats
 const INTERVAL: usize = 60; // seconds
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    #[name]
+    continual_compaction: Option<usize>,
+    exp: usize,
+
+    #[name]
+    size: usize,
+    calibrate: bool,
+
+    #[name]
+    vm_size: usize,
+    #[name]
+    cores: usize,
+
+    zswap_max_pool_percent: usize,
+
+    transparent_hugepage_enabled: String,
+    transparent_hugepage_defrag: String,
+    transparent_hugepage_khugepaged_defrag: usize,
+    transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
+    transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
+}
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     fn is_usize(s: String) -> Result<(), String> {
@@ -92,63 +130,47 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: "memcached_per_page_thp_ops",
-        * continual_compaction: continual_compaction,
+    let cfg = Config {
+        workload: "memcached_per_page_thp_ops".into(),
+        continual_compaction,
         exp: 3,
 
-        * size: size,
-        calibrated: false,
+        size,
+        calibrate: false,
 
-        * vm_size: vm_size,
-        cores: cores,
+        vm_size,
+        cores,
 
         zswap_max_pool_percent: 50,
 
-        transparent_hugepage_enabled: "always",
-        transparent_hugepage_defrag: "always",
+        transparent_hugepage_enabled: "always".into(),
+        transparent_hugepage_defrag: "always".into(),
         transparent_hugepage_khugepaged_defrag: 1,
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let size = settings.get::<usize>("size");
-    let cores = settings.get::<usize>("cores");
-    let calibrate = settings.get::<bool>("calibrated");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-    let transparent_hugepage_enabled = settings.get::<&str>("transparent_hugepage_enabled");
-    let transparent_hugepage_defrag = settings.get::<&str>("transparent_hugepage_defrag");
-    let transparent_hugepage_khugepaged_defrag =
-        settings.get::<usize>("transparent_hugepage_khugepaged_defrag");
-    let transparent_hugepage_khugepaged_alloc_sleep_ms =
-        settings.get::<usize>("transparent_hugepage_khugepaged_alloc_sleep_ms");
-    let transparent_hugepage_khugepaged_scan_sleep_ms =
-        settings.get::<usize>("transparent_hugepage_khugepaged_scan_sleep_ms");
-    let continual_compaction = settings.get::<Option<usize>>("continual_compaction");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -161,8 +183,8 @@ where
         "Setup host and start VM",
         connect_and_setup_host_and_vagrant(
             &login,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
         )?
@@ -170,7 +192,7 @@ where
 
     // Environment
     ZeroSim::turn_on_zswap(&mut ushell)?;
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     // Mount guest swap space
     let research_settings = crate::common::get_remote_research_settings(&ushell)?;
@@ -185,7 +207,7 @@ where
     );
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -193,9 +215,9 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let memcached_timing_file = settings.gen_file_name("memcached_latency");
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let memcached_timing_file = cfg.gen_file_name("memcached_latency");
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -206,14 +228,14 @@ where
     // Turn on compaction and force it too happen
     crate::common::turn_on_thp(
         &vshell,
-        transparent_hugepage_enabled,
-        transparent_hugepage_defrag,
-        transparent_hugepage_khugepaged_defrag,
-        transparent_hugepage_khugepaged_alloc_sleep_ms,
-        transparent_hugepage_khugepaged_scan_sleep_ms,
+        &cfg.transparent_hugepage_enabled,
+        &cfg.transparent_hugepage_defrag,
+        cfg.transparent_hugepage_khugepaged_defrag,
+        cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+        cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
     )?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     time!(
         timers,
@@ -228,8 +250,8 @@ where
                     RESEARCH_WORKSPACE_PATH,
                     ZEROSIM_MEMCACHED_SUBMODULE
                 ),
-                server_size_mb: size << 10,
-                wk_size_gb: size,
+                server_size_mb: cfg.size << 10,
+                wk_size_gb: cfg.size,
                 allow_oom: false,
                 output_file: Some(&dir!(VAGRANT_RESULTS_DIR, memcached_timing_file)),
                 eager: false,
@@ -240,7 +262,7 @@ where
                 pintool: None,
             },
             INTERVAL,
-            continual_compaction,
+            cfg.continual_compaction,
             &dir!(VAGRANT_RESULTS_DIR, output_file),
         )?
     );
@@ -256,7 +278,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

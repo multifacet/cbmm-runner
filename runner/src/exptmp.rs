@@ -5,27 +5,26 @@
 
 use clap::{clap_app, ArgMatches};
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_locality_mem_access, run_memcached_gen_data, run_time_mmap_touch,
-            LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
-            TimeMmapTouchConfig, TimeMmapTouchPattern,
-        },
+use crate::common::{
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_locality_mem_access, run_memcached_gen_data, run_time_mmap_touch,
+        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
-    settings,
 };
 
 /// # of iterations for locality_mem_access workload
 const LOCALITY_N: usize = 10_000;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
     Memcached,
     Zeros,
@@ -34,26 +33,35 @@ enum Workload {
     HiBenchWordcount,
 }
 
-impl Workload {
-    pub fn to_str(&self) -> &str {
-        match self {
-            Workload::Memcached => "memcached_gen_data",
-            Workload::Zeros | Workload::Counter => "time_mmap_touch",
-            Workload::Locality => "locality_mem_access",
-            Workload::HiBenchWordcount => "hibench_wordcount",
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: Workload,
+    exp: String,
 
-    pub fn from_str(s: &str, pat: Option<TimeMmapTouchPattern>) -> Self {
-        match (s, pat) {
-            ("memcached_gen_data", None) => Workload::Memcached,
-            ("time_mmap_touch", Some(TimeMmapTouchPattern::Zeros)) => Workload::Zeros,
-            ("time_mmap_touch", Some(TimeMmapTouchPattern::Counter)) => Workload::Counter,
-            ("locality_mem_access", None) => Workload::Locality,
-            ("hibench_wordcount", None) => Workload::HiBenchWordcount,
-            _ => panic!("unknown workload: {:?} {:?}", s, pat),
-        }
-    }
+    #[name]
+    size: usize,
+    pattern: Option<TimeMmapTouchPattern>,
+    calibrate: bool,
+    warmup: bool,
+    pf_time: Option<u64>,
+
+    #[name]
+    vm_size: usize,
+    cores: usize,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -142,58 +150,47 @@ pub fn run(print_results_path: bool, sub_m: &ArgMatches<'_>) -> Result<(), failu
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: workload.to_str(),
-        exp: "tmp",
+    let cfg = Config {
+        workload,
+        exp: "tmp".into(),
 
-        * size: size,
+        size,
         pattern: match workload {
             Workload::Memcached | Workload::Locality | Workload::HiBenchWordcount => None,
             Workload::Zeros => Some(TimeMmapTouchPattern::Zeros),
             Workload::Counter => Some(TimeMmapTouchPattern::Counter),
         },
-        calibrated: false,
-        warmup: warmup,
-        pf_time: pf_time,
+        calibrate: false,
+        warmup,
+        pf_time,
 
-        * vm_size: vm_size,
-        cores: cores,
+        vm_size,
+        cores,
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let size = settings.get::<usize>("size");
-    let cores = settings.get::<usize>("cores");
-    let pattern = settings.get::<Option<TimeMmapTouchPattern>>("pattern");
-    let workload = Workload::from_str(settings.get::<&str>("workload"), pattern);
-    let warmup = settings.get::<bool>("warmup");
-    let calibrate = settings.get::<bool>("calibrated");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-    let pf_time = settings.get::<Option<u64>>("pf_time");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -213,8 +210,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
@@ -223,7 +220,7 @@ where
 
     // Environment
     ZeroSim::turn_on_zswap(&mut ushell)?;
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_path = &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH,);
     let zerosim_exp_path = &dir!(zerosim_path, ZEROSIM_EXPERIMENTS_SUBMODULE);
@@ -231,7 +228,7 @@ where
     // let zerosim_path_host = &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_KERNEL_SUBMODULE);
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -239,8 +236,8 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -248,11 +245,11 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Warm up
     //const WARM_UP_SIZE: usize = 50; // GB
-    if warmup {
+    if cfg.warmup {
         const WARM_UP_PATTERN: TimeMmapTouchPattern = TimeMmapTouchPattern::Zeros;
         time!(
             timers,
@@ -261,7 +258,7 @@ where
                 &vshell,
                 &TimeMmapTouchConfig {
                     exp_dir: zerosim_exp_path,
-                    pages: (size << 30) >> 12,
+                    pages: (cfg.size << 30) >> 12,
                     pattern: WARM_UP_PATTERN,
                     prefault: false,
                     pf_time: None,
@@ -277,9 +274,9 @@ where
     let freq = crate::common::get_cpu_freq(&ushell)?;
 
     // Run the workload
-    match workload {
+    match cfg.workload {
         Workload::Zeros | Workload::Counter => {
-            let pattern = pattern.unwrap();
+            let pattern = cfg.pattern.unwrap();
 
             // const PERF_MEASURE_TIME: usize = 960; // seconds
             // let perf_output_early = settings.gen_file_name("perfdata0");
@@ -301,10 +298,10 @@ where
                     &vshell,
                     &TimeMmapTouchConfig {
                         exp_dir: zerosim_exp_path,
-                        pages: (size << 30) >> 12,
+                        pages: (cfg.size << 30) >> 12,
                         pattern: pattern,
                         prefault: false,
-                        pf_time: pf_time,
+                        pf_time: cfg.pf_time,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
                         eager: false,
                         pin_core: tctx.next(),
@@ -357,11 +354,11 @@ where
                             RESEARCH_WORKSPACE_PATH,
                             ZEROSIM_MEMCACHED_SUBMODULE
                         ),
-                        server_size_mb: size << 10,
-                        wk_size_gb: size,
+                        server_size_mb: cfg.size << 10,
+                        wk_size_gb: cfg.size,
                         freq: Some(freq),
                         allow_oom: true,
-                        pf_time: pf_time,
+                        pf_time: cfg.pf_time,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
                         eager: false,
                         client_pin_core: tctx.next(),
@@ -388,19 +385,19 @@ where
             //     PERF_MEASURE_TIME,
             // ))?;
 
-            let trace_output_local = settings.gen_file_name("tracelocal");
-            let trace_output_nonlocal = settings.gen_file_name("tracenonlocal");
+            let trace_output_local = cfg.gen_file_name("tracelocal");
+            let trace_output_nonlocal = cfg.gen_file_name("tracenonlocal");
             let (_shell, spawn_handle0) = ushell.spawn(cmd!(
                 "sudo taskset -c 3 {}/target/release/zerosim-trace trace {} {} {} -t {}",
                 dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_TRACE_SUBMODULE),
                 500,     // interval
                 100_000, // buffer size
                 dir!(HOSTNAME_SHARED_RESULTS_DIR, trace_output_local),
-                pf_time.unwrap(),
+                cfg.pf_time.unwrap(),
             ))?;
 
-            let output_local = settings.gen_file_name("local");
-            let output_nonlocal = settings.gen_file_name("nonlocal");
+            let output_local = cfg.gen_file_name("local");
+            let output_nonlocal = cfg.gen_file_name("nonlocal");
 
             // Then, run the actual experiment.
             // 1) Do local accesses
@@ -429,7 +426,7 @@ where
                 500,     // interval
                 100_000, // buffer size
                 dir!(HOSTNAME_SHARED_RESULTS_DIR, trace_output_nonlocal),
-                pf_time.unwrap(),
+                cfg.pf_time.unwrap(),
             ))?;
 
             time!(
@@ -485,7 +482,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

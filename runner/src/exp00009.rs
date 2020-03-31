@@ -5,24 +5,56 @@
 
 use clap::clap_app;
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        downloads::{artifact_info, Artifact},
-        exp_0sim::*,
-        get_cpu_freq,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_memcached_gen_data, run_time_mmap_touch, MemcachedWorkloadConfig, TasksetCtx,
-            TimeMmapTouchConfig, TimeMmapTouchPattern,
-        },
-        KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
+use crate::common::{
+    downloads::{artifact_info, Artifact},
+    exp_0sim::*,
+    get_cpu_freq,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_memcached_gen_data, run_time_mmap_touch, MemcachedWorkloadConfig, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
-    settings,
+    KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    exp: usize,
+
+    #[name]
+    vm_size: usize,
+    #[name(self.cores > 1)]
+    cores: usize,
+
+    pattern: Option<TimeMmapTouchPattern>,
+    prefault: bool,
+
+    #[name(self.size.is_some())]
+    size: Option<usize>,
+    calibrate: bool,
+    warmup: bool,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
+}
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     fn is_usize(s: String) -> Result<(), String> {
@@ -91,57 +123,48 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: if pattern.is_some() {
+    let cfg = Config {
+        workload: if pattern.is_some() {
             "time_mmap_touch_host_kbuild"
         } else {
             "memcached_gen_data_host_kbuild"
-        },
+        }
+        .into(),
         exp: 9,
 
-        * vm_size: vm_size,
-        (cores > 1) cores: cores,
-        pattern: pattern,
-        prefault: prefault,
+        vm_size,
+        cores,
+        pattern,
+        prefault,
 
-        (size.is_some()) size: size,
-        calibrated: false,
-        warmup: warmup,
+        size,
+        calibrate: false,
+        warmup,
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let pattern = settings.get::<Option<TimeMmapTouchPattern>>("pattern");
-    let size = settings.get::<Option<usize>>("size");
-    let warmup = settings.get::<bool>("warmup");
-    let prefault = settings.get::<bool>("prefault");
-    let calibrate = settings.get::<bool>("calibrated");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -161,8 +184,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
@@ -171,7 +194,7 @@ where
 
     // Environment
     ZeroSim::turn_on_zswap(&mut ushell)?;
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -189,7 +212,7 @@ where
         .into();
     ushell.run(cmd!("make clean").cwd(tarball_path))?;
 
-    let size = if let Some(size) = size {
+    let size = if let Some(size) = cfg.size {
         size // GB
     } else {
         // Get the amount of memory the guest thinks it has (in KB).
@@ -200,7 +223,7 @@ where
     };
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -208,8 +231,8 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -217,10 +240,10 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Warm up
-    if warmup {
+    if cfg.warmup {
         const WARM_UP_PATTERN: TimeMmapTouchPattern = TimeMmapTouchPattern::Zeros;
         time!(
             timers,
@@ -274,7 +297,7 @@ where
     });
 
     // Run memcached or time_touch_mmap
-    if let Some(pattern) = pattern {
+    if let Some(pattern) = cfg.pattern {
         time!(
             timers,
             "Workload",
@@ -284,7 +307,7 @@ where
                     exp_dir: zerosim_exp_path,
                     pages: (size << 30) >> 12,
                     pattern: pattern,
-                    prefault: prefault,
+                    prefault: cfg.prefault,
                     pf_time: None,
                     output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
                     eager: false,
@@ -332,7 +355,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

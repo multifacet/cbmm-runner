@@ -9,19 +9,16 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        get_cpu_freq, get_user_home_dir,
-        output::OutputManager,
-        paths::*,
-        workloads::{
-            run_locality_mem_access, run_memcached_gen_data, run_time_loop, run_time_mmap_touch,
-            LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
-            TimeMmapTouchConfig, TimeMmapTouchPattern,
-        },
+use crate::common::{
+    exp_0sim::*,
+    get_cpu_freq, get_user_home_dir,
+    output::{Parametrize, Timestamp},
+    paths::*,
+    workloads::{
+        run_locality_mem_access, run_memcached_gen_data, run_time_loop, run_time_mmap_touch,
+        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
-    settings,
 };
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +36,41 @@ enum Workload {
     Memcached {
         size: usize,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    #[name]
+    app: String,
+    exp: usize,
+
+    #[name(self.n > 0)]
+    n: usize,
+    #[name(self.size > 0)]
+    size: usize,
+    #[name(self.pattern.is_some())]
+    pattern: Option<TimeMmapTouchPattern>,
+
+    workload_settings: Workload,
+
+    transparent_hugepage_enabled: String,
+    transparent_hugepage_defrag: String,
+    transparent_hugepage_khugepaged_defrag: usize,
+    transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
+    transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -143,52 +175,45 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: "bare_metal",
-        * app: workload_name,
+    let cfg = Config {
+        workload: "bare_metal".into(),
+        app: workload_name.into(),
         exp: 10,
 
-        (n > 0) n: n,
-        (size > 0) size: size,
-        (pattern.is_some()) pattern: match pattern {
-            Some(TimeMmapTouchPattern::Zeros) => "zeros",
-            Some(TimeMmapTouchPattern::Counter) => "counter",
-            None => "n/a",
-        },
+        n,
+        size,
+        pattern,
 
         workload_settings: workload,
 
-        transparent_hugepage_enabled: "always",
-        transparent_hugepage_defrag: "always",
+        transparent_hugepage_enabled: "always".into(),
+        transparent_hugepage_defrag: "always".into(),
         transparent_hugepage_khugepaged_defrag: 1,
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let workload = settings.get::<Workload>("workload_settings");
-
     // Reboot
     initial_reboot_no_vagrant(&login)?;
 
@@ -205,8 +230,8 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
-    let (output_file, params_file, time_file, _sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, _sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
         "echo '{}' > {}",
@@ -222,7 +247,7 @@ where
     let mut tctx = TasksetCtx::new(cores);
 
     // Run the workload.
-    match workload {
+    match cfg.workload_settings {
         Workload::TimeLoop { n } => {
             time!(
                 timers,
@@ -243,8 +268,8 @@ where
         }
 
         Workload::LocalityMemAccess { n } => {
-            let local_file = settings.gen_file_name("local");
-            let nonlocal_file = settings.gen_file_name("nonlocal");
+            let local_file = cfg.gen_file_name("local");
+            let nonlocal_file = cfg.gen_file_name("nonlocal");
 
             time!(timers, "Workload", {
                 run_locality_mem_access(
@@ -355,7 +380,7 @@ where
     ))?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!(
             "RESULTS: {}",
             dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)

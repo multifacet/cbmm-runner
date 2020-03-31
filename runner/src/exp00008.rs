@@ -5,20 +5,19 @@
 
 use clap::clap_app;
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        output::OutputManager,
-        paths::{setup00000::*, setup00001::*, *},
-        workloads::{
-            run_memcached_gen_data, run_memhog, run_nas_cg, MemcachedWorkloadConfig, MemhogOptions,
-            NasClass, TasksetCtx,
-        },
+use crate::common::{
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, setup00001::*, *},
+    workloads::{
+        run_memcached_gen_data, run_memhog, run_nas_cg, MemcachedWorkloadConfig, MemhogOptions,
+        NasClass, TasksetCtx,
     },
-    settings,
 };
 
 /// The amount of time (in hours) to let the NAS CG workload run.
@@ -27,7 +26,7 @@ const NAS_CG_HOURS: u64 = 6;
 /// The number of iterations for `memhog`.
 const MEMHOG_R: usize = 10;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
     Memcached,
     Cg,
@@ -42,15 +41,41 @@ impl Workload {
             Workload::Memhog => "memhog",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "memcached_gen_data" => Workload::Memcached,
-            "nas_cg" => Workload::Cg,
-            "memhog" => Workload::Memhog,
-            _ => panic!("unknown workload: {:?}", s),
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    exp: usize,
+
+    workload_settings: Workload,
+
+    #[name]
+    vm_size: usize,
+    #[name(self.cores > 1)]
+    cores: usize,
+
+    #[name]
+    factor: isize,
+
+    stats_interval: usize,
+
+    calibrate: bool,
+    warmup: bool,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -153,54 +178,46 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: format!("swap_{}", workload.to_str()),
+    let cfg = Config {
+        workload: format!("swap_{}", workload.to_str()),
         exp: 8,
 
-        calibrated: false,
-        warmup: warmup,
+        workload_settings: workload,
 
-        * vm_size: vm_size,
-        * cores: cores,
+        calibrate: false,
+        warmup,
 
-        * factor: factor,
+        vm_size,
+        cores,
+
+        factor,
 
         stats_interval: interval,
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let workload = Workload::from_str(&settings.get::<&str>("workload")[5..]);
-    let interval = settings.get::<usize>("stats_interval");
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let factor = settings.get::<isize>("factor");
-    let calibrate = settings.get::<bool>("calibrated");
-    let warmup = settings.get::<bool>("warmup");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -223,8 +240,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
@@ -252,7 +269,7 @@ where
     // trigger OOM killer.
     let size = mem_avail + (8 * swap_avail / 10); // KB
 
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -266,7 +283,7 @@ where
     );
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -274,9 +291,9 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let guest_mem_file = settings.gen_file_name("guest_mem");
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let guest_mem_file = cfg.gen_file_name("guest_mem");
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -289,12 +306,15 @@ where
         dir!(VAGRANT_RESULTS_DIR, guest_mem_file)
     ))?;
 
-    if factor != 0 {
-        vshell.run(cmd!("echo {} | sudo tee /proc/swap_extra_factor", factor))?;
+    if cfg.factor != 0 {
+        vshell.run(cmd!(
+            "echo {} | sudo tee /proc/swap_extra_factor",
+            cfg.factor
+        ))?;
     }
 
     // Warm up
-    if warmup {
+    if cfg.warmup {
         const WARM_UP_PATTERN: &str = "-z";
         time!(
             timers,
@@ -324,7 +344,7 @@ where
              cat /proc/swap_instrumentation | tee -a {} ; \
              echo done measuring",
             dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-            interval,
+            cfg.stats_interval,
             dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
         )
         .use_bash(),
@@ -340,7 +360,7 @@ where
     )?;
 
     let freq = crate::common::get_cpu_freq(&ushell)?;
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Start the hog process and give it all memory... the hope is that this gets oom killed
     // eventually, but not before some reclaim happens.
@@ -362,7 +382,7 @@ where
     vshell.run(cmd!("while [ ! -e /tmp/hog_ready ] ; do sleep 1 ; done",).use_bash())?;
 
     // Run the actual workload
-    match workload {
+    match cfg.workload_settings {
         Workload::Memcached => {
             // Start workload
             time!(
@@ -447,7 +467,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

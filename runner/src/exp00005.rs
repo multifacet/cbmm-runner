@@ -5,21 +5,50 @@
 
 use clap::clap_app;
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_nas_cg, run_time_mmap_touch, NasClass, TasksetCtx, TimeMmapTouchConfig,
-            TimeMmapTouchPattern,
-        },
+use crate::common::{
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_nas_cg, run_time_mmap_touch, NasClass, TasksetCtx, TimeMmapTouchConfig,
+        TimeMmapTouchPattern,
     },
-    settings,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    exp: usize,
+
+    calibrate: bool,
+    warmup: bool,
+
+    #[name]
+    vm_size: usize,
+    #[name]
+    cores: usize,
+
+    duration: usize,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
+}
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     fn is_usize(s: String) -> Result<(), String> {
@@ -87,50 +116,42 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: "nas_cg_class_e",
+    let cfg = Config {
+        workload: "nas_cg_class_e".into(),
         exp: 5,
 
-        calibrated: false,
-        warmup: warmup,
+        calibrate: false,
+        warmup,
 
-        * vm_size: vm_size,
-        * cores: cores,
+        vm_size,
+        cores,
 
-        duration: duration,
+        duration,
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let duration = settings.get::<usize>("duration");
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let warmup = settings.get::<bool>("warmup");
-    let calibrate = settings.get::<bool>("calibrated");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -150,8 +171,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST
@@ -160,7 +181,7 @@ where
 
     // Environment
     ZeroSim::turn_on_zswap(&mut ushell)?;
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -174,7 +195,7 @@ where
     );
 
     // Calibrate
-    if calibrate {
+    if cfg.calibrate {
         time!(
             timers,
             "Calibrate",
@@ -182,8 +203,8 @@ where
         );
     }
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -191,10 +212,10 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
-    let mut tctx = TasksetCtx::new(cores);
+    let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Warm up
-    if warmup {
+    if cfg.warmup {
         const WARM_UP_PATTERN: TimeMmapTouchPattern = TimeMmapTouchPattern::Zeros;
         time!(
             timers,
@@ -203,7 +224,7 @@ where
                 &vshell,
                 &TimeMmapTouchConfig {
                     exp_dir: zerosim_exp_path,
-                    pages: (vm_size << 30) >> 12,
+                    pages: (cfg.vm_size << 30) >> 12,
                     pattern: WARM_UP_PATTERN,
                     prefault: false,
                     pf_time: None,
@@ -216,12 +237,12 @@ where
     }
 
     // Record vmstat on guest
-    let vmstat_file = settings.gen_file_name("vmstat");
+    let vmstat_file = cfg.gen_file_name("vmstat");
     let (_shell, _vmstats_handle) = vshell.spawn(
         cmd!(
             "for (( c=1 ; c<={} ; c++ )) ; do \
              cat /proc/vmstat >> {} ; sleep 1 ; done",
-            duration,
+            cfg.duration,
             dir!(VAGRANT_RESULTS_DIR, vmstat_file)
         )
         .use_bash(),
@@ -230,13 +251,13 @@ where
     // The workload takes a very long time, so we only use the first 2 hours (of wall-clock time).
     // We start this thread that collects stats in the background and terminates after the given
     // amount of time. We spawn the workload, but don't wait for it; rather, we wait for this task.
-    let zswapstats_file = settings.gen_file_name("zswapstats");
+    let zswapstats_file = cfg.gen_file_name("zswapstats");
     let (_shell, zswapstats_handle) = ushell.spawn(
         cmd!(
             "for (( c=1 ; c<={} ; c++ )) ; do \
              sudo tail `sudo find  /sys/kernel/debug/zswap/ -type f`\
              >> {} ; sleep 1 ; done",
-            duration,
+            cfg.duration,
             dir!(HOSTNAME_SHARED_RESULTS_DIR, zswapstats_file)
         )
         .use_bash(),
@@ -252,7 +273,7 @@ where
             &mut tctx,
         )?;
 
-        std::thread::sleep(std::time::Duration::from_secs(duration as u64));
+        std::thread::sleep(std::time::Duration::from_secs(cfg.duration as u64));
 
         zswapstats_handle.join()?
     });
@@ -268,7 +289,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

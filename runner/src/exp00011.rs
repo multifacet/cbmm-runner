@@ -11,19 +11,45 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        get_cpu_freq,
-        output::OutputManager,
-        paths::{setup00000::*, *},
-        workloads::{
-            run_ycsb_workload, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx,
-            TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
-        },
+use crate::common::{
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    workloads::{
+        run_ycsb_workload, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
     },
-    settings,
 };
+
+#[derive(Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: YcsbWorkload,
+    #[name]
+    system: YcsbSystem,
+    exp: usize,
+
+    #[name]
+    vm_size: usize,
+    #[name(self.cores > 1)]
+    cores: usize,
+
+    memtrace: bool,
+    mmstats: bool,
+
+    zswap_max_pool_percent: usize,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
+}
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     fn is_usize(s: String) -> Result<(), String> {
@@ -104,9 +130,9 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: workload,
-        * system: system,
+    let cfg = Config {
+        workload,
+        system,
         exp: 11,
 
         * vm_size: vm_size,
@@ -114,35 +140,28 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
 
         zswap_max_pool_percent: 50,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let workload = settings.get::<YcsbWorkload>("workload");
-    let system = settings.get::<YcsbSystem>("system");
-    let zswap_max_pool_percent = settings.get::<usize>("zswap_max_pool_percent");
-
     // Reboot
     initial_reboot(&login)?;
 
@@ -162,8 +181,8 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ true,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST,
@@ -172,7 +191,7 @@ where
 
     // Environment
     ZeroSim::turn_on_zswap(&mut ushell)?;
-    ZeroSim::zswap_max_pool_percent(&ushell, zswap_max_pool_percent)?;
+    ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     let zerosim_exp_path = &dir!(
         "/home/vagrant",
@@ -189,8 +208,13 @@ where
         .unwrap()
         >> 20;
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (_output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&*cfg)?;
+    vshell.run(cmd!(
+        "echo '{}' > {}",
+        escape_for_bash(&params),
+        dir!(VAGRANT_RESULTS_DIR, params_file)
+    ))?;
 
     let pin_path = dir!(
         "/home/vagrant",
@@ -198,12 +222,10 @@ where
         ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
         "pin"
     );
+    let trace_file = cfg.gen_file_name(".trace");
+    let mmstats_file = cfg.gen_file_name(".mmstats");
 
-    vshell.run(cmd!(
-        "echo '{}' > {}",
-        escape_for_bash(&params),
-        dir!(VAGRANT_RESULTS_DIR, params_file)
-    ))?;
+    // TODO: support mm stats collection
 
     // Run the workload.
     time!(
@@ -212,8 +234,8 @@ where
         run_ycsb_workload(
             &vshell,
             YcsbConfig {
-                workload,
-                system,
+                workload: cfg.workload,
+                system: cfg.system,
                 ycsb_path: &dir!(
                     "/home/vagrant",
                     RESEARCH_WORKSPACE_PATH,
@@ -255,7 +277,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

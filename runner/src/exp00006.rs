@@ -5,13 +5,42 @@
 
 use clap::clap_app;
 
+use serde::{Deserialize, Serialize};
+
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{exp_0sim::*, output::OutputManager, paths::setup00000::*},
-    settings,
+use crate::common::{
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::setup00000::*,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+struct Config {
+    #[name]
+    workload: String,
+    exp: usize,
+
+    #[name]
+    vm_size: usize,
+    #[name]
+    cores: usize,
+
+    #[name(self.ktask_div.is_some())]
+    ktask_div: Option<usize>,
+
+    username: String,
+    host: String,
+
+    local_git_hash: String,
+    remote_git_hash: String,
+
+    remote_research_settings: std::collections::BTreeMap<String, String>,
+
+    #[timestamp]
+    timestamp: Timestamp,
+}
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     fn is_usize(s: String) -> Result<(), String> {
@@ -60,47 +89,47 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
     let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
-    let settings = settings! {
-        * workload: if ktask_div.is_some() { "ktask_boot_mem_init" } else { "boot_mem_init" },
+    let cfg = Config {
+        workload: if ktask_div.is_some() {
+            "ktask_boot_mem_init"
+        } else {
+            "boot_mem_init"
+        }
+        .into(),
         exp: 6,
 
-        * vm_size: vm_size,
-        * cores: cores,
+        vm_size,
+        cores,
 
-        (ktask_div.is_some()) ktask_div: ktask_div,
+        ktask_div,
 
-        username: login.username,
-        host: login.hostname,
+        username: login.username.into(),
+        host: login.hostname.into(),
 
-        local_git_hash: local_git_hash,
-        remote_git_hash: remote_git_hash,
+        local_git_hash,
+        remote_git_hash,
 
-        remote_research_settings: remote_research_settings,
+        remote_research_settings,
+
+        timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, settings)
+    run_inner(print_results_path, &login, &cfg)
 }
 
-/// Run the experiment using the settings passed. Note that because the only thing we are passed
-/// are the settings, we know that there is no information that is not recorded in the settings
-/// file.
 fn run_inner<A>(
     print_results_path: bool,
     login: &Login<A>,
-    settings: OutputManager,
+    cfg: &Config,
 ) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let vm_size = settings.get::<usize>("vm_size");
-    let cores = settings.get::<usize>("cores");
-    let ktask_div = settings.get::<Option<usize>>("ktask_div");
-
     // Collect timers on VM
     let mut timers = vec![];
 
     // We first need to set the guest kernel boot param.
-    if let Some(ktask_div) = ktask_div {
+    if let Some(ktask_div) = cfg.ktask_div {
         let ushell = SshShell::with_default_key(login.username, login.hostname)?;
         let vshell = time!(
             timers,
@@ -138,16 +167,16 @@ where
         start_vagrant(
             &ushell,
             &login.host,
-            vm_size,
-            cores,
+            cfg.vm_size,
+            cfg.cores,
             /* fast */ false,
             ZEROSIM_SKIP_HALT,
             ZEROSIM_LAPIC_ADJUST,
         )?
     );
 
-    let (output_file, params_file, time_file, sim_file) = settings.gen_standard_names();
-    let params = serde_json::to_string(&settings)?;
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let params = serde_json::to_string(&cfg)?;
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -171,7 +200,7 @@ where
     crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     if print_results_path {
-        let glob = settings.gen_file_name("*");
+        let glob = cfg.gen_file_name("*");
         println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
     }
 

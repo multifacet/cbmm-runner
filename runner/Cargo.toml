@@ -18,3 +18,4 @@ serde = { version = "1.0.87", features = [ "derive" ] }
 serde_json = "1.0.38"
 bitflags = "1.1"
 console = "0.9.1"
+runner-proc-macro = { path = "runner-proc-macro" }
