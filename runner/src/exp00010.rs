@@ -119,7 +119,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
     }
 }
 
-pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
+pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let login = Login {
         username: sub_m.value_of("USERNAME").unwrap(),
         hostname: sub_m.value_of("HOSTNAME").unwrap(),
@@ -203,14 +203,10 @@ pub fn run(print_results_path: bool, sub_m: &clap::ArgMatches<'_>) -> Result<(),
         timestamp: Timestamp::now(),
     };
 
-    run_inner(print_results_path, &login, &cfg)
+    run_inner(&login, &cfg)
 }
 
-fn run_inner<A>(
-    print_results_path: bool,
-    login: &Login<A>,
-    cfg: &Config,
-) -> Result<(), failure::Error>
+fn run_inner<A>(login: &Login<A>, cfg: &Config) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
@@ -379,13 +375,11 @@ where
         )
     ))?;
 
-    if print_results_path {
-        let glob = cfg.gen_file_name("*");
-        println!(
-            "RESULTS: {}",
-            dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)
-        );
-    }
+    let glob = cfg.gen_file_name("*");
+    println!(
+        "RESULTS: {}",
+        dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)
+    );
 
     Ok(())
 }

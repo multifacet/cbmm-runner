@@ -35,7 +35,7 @@ fn run() -> Result<(), failure::Error> {
         .arg(
             clap::Arg::with_name("PRINT_RESULTS_PATH")
                 .long("print_results_path")
-                .help("(For experiments) Print the results path as the last line of output."),
+                .help("(Obsolete) The results path is always printed."),
         )
         .subcommand(setup00000::cli_options())
         .subcommand(setup00001::cli_options())
@@ -57,8 +57,6 @@ fn run() -> Result<(), failure::Error> {
         .setting(clap::AppSettings::DisableVersion)
         .get_matches();
 
-    let print_results_path = matches.is_present("PRINT_RESULTS_PATH");
-
     match matches.subcommand() {
         ("setup00000", Some(sub_m)) => setup00000::run(sub_m),
         ("setup00001", Some(sub_m)) => setup00001::run(sub_m),
@@ -66,19 +64,19 @@ fn run() -> Result<(), failure::Error> {
 
         ("manual", Some(sub_m)) => manual::run(sub_m),
 
-        ("exptmp", Some(sub_m)) => exptmp::run(print_results_path, sub_m),
+        ("exptmp", Some(sub_m)) => exptmp::run(sub_m),
 
-        ("exp00000", Some(sub_m)) => exp00000::run(print_results_path, sub_m),
-        ("exp00002", Some(sub_m)) => exp00002::run(print_results_path, sub_m),
-        ("exp00003", Some(sub_m)) => exp00003::run(print_results_path, sub_m),
-        ("exp00004", Some(sub_m)) => exp00004::run(print_results_path, sub_m),
-        ("exp00005", Some(sub_m)) => exp00005::run(print_results_path, sub_m),
-        ("exp00006", Some(sub_m)) => exp00006::run(print_results_path, sub_m),
-        ("exp00007", Some(sub_m)) => exp00007::run(print_results_path, sub_m),
-        ("exp00008", Some(sub_m)) => exp00008::run(print_results_path, sub_m),
-        ("exp00009", Some(sub_m)) => exp00009::run(print_results_path, sub_m),
-        ("exp00010", Some(sub_m)) => exp00010::run(print_results_path, sub_m),
-        ("exp00011", Some(sub_m)) => exp00011::run(print_results_path, sub_m),
+        ("exp00000", Some(sub_m)) => exp00000::run(sub_m),
+        ("exp00002", Some(sub_m)) => exp00002::run(sub_m),
+        ("exp00003", Some(sub_m)) => exp00003::run(sub_m),
+        ("exp00004", Some(sub_m)) => exp00004::run(sub_m),
+        ("exp00005", Some(sub_m)) => exp00005::run(sub_m),
+        ("exp00006", Some(sub_m)) => exp00006::run(sub_m),
+        ("exp00007", Some(sub_m)) => exp00007::run(sub_m),
+        ("exp00008", Some(sub_m)) => exp00008::run(sub_m),
+        ("exp00009", Some(sub_m)) => exp00009::run(sub_m),
+        ("exp00010", Some(sub_m)) => exp00010::run(sub_m),
+        ("exp00011", Some(sub_m)) => exp00011::run(sub_m),
 
         _ => {
             unreachable!();
