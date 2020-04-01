@@ -409,7 +409,7 @@ where
             "xz-devel",
             "numactl-devel",
             "lsof",
-            "java-1.8.0-openjdk",
+            "java-1.8.0-openjdk-devel",
             "scl-utils",
             "glib2-devel",
             "pixman-devel",
@@ -1135,7 +1135,7 @@ where
         "ggc-gfortran",
         "libcgroup",
         "libcgroup-tools",
-        "java-1.8.0-openjdk",
+        "java-1.8.0-openjdk-devel",
         "redis",
         "perf", // for debugging
         "libevent",
