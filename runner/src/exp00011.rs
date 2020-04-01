@@ -227,8 +227,8 @@ where
         ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
         "pin"
     );
-    let trace_file = dir!(VAGRANT_RESULTS_DIR, cfg.gen_file_name(".trace"));
-    let mmstats_file = cfg.gen_file_name(".mmstats");
+    let trace_file = dir!(VAGRANT_RESULTS_DIR, cfg.gen_file_name("trace"));
+    let mmstats_file = cfg.gen_file_name("mmstats");
 
     // Set histogram parameters before workload.
     if cfg.mmstats {
