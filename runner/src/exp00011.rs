@@ -230,7 +230,16 @@ where
     let trace_file = dir!(VAGRANT_RESULTS_DIR, cfg.gen_file_name(".trace"));
     let mmstats_file = cfg.gen_file_name(".mmstats");
 
-    // TODO: support mm stats collection
+    // Set histogram parameters before workload.
+    if cfg.mmstats {
+        // Print the current numbers, 'cause why not?
+        vshell.run(cmd!("tail /proc/mm_*"))?;
+
+        // Writing to any of the params will reset the plot.
+        vshell.run(cmd!(
+            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+        ))?;
+    }
 
     // Run the workload.
     time!(
@@ -277,6 +286,14 @@ where
             }
         )?
     );
+
+    // Collect stats after the workload runs.
+    if cfg.mmstats {
+        vshell.run(cmd!(
+            "tail /proc/mm_* > {}",
+            dir!(VAGRANT_RESULTS_DIR, mmstats_file)
+        ))?;
+    }
 
     ushell.run(cmd!("date"))?;
 
