@@ -810,7 +810,7 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
         YcsbWorkload::F => "workloads/workloadf",
     };
 
-    // TODO: support for pin/memtrace
+    // TODO: fix ycsb run phase size
 
     match cfg.system {
         YcsbSystem::Memcached => {
