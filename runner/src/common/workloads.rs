@@ -810,8 +810,6 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
         YcsbWorkload::F => "workloads/workloadf",
     };
 
-    // TODO: fix ycsb run phase size
-
     match cfg.system {
         YcsbSystem::Memcached => {
             /// The number of KB a record takes.
@@ -827,9 +825,11 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
 
             start_memcached(shell, cfg.memcached.as_ref().unwrap())?;
 
+            // recordcount is used for the "load" phase, while operationcount is used for the "run
+            // phase. YCSB ignores the parameters in the alternate phases.
             let ycsb_flags = format!(
-                "-p memcached.hosts=localhost:11211 -p recordcount={}",
-                nrecords
+                "-p memcached.hosts=localhost:11211 -p recordcount={} -p operationcount={}",
+                nrecords, nrecords
             );
 
             with_shell! { shell in &cfg.ycsb_path =>
