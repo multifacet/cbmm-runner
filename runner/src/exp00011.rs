@@ -1,6 +1,6 @@
 //! Run the given YCSB workload on the remote machine in simulation and record its results.
 //!
-//! Requires `setup00000`. If `--mmstats` is used, then `setup00001` with an instrumented kernel is
+//! Requires `setup00000`. If `--mmstats` is used, then `setup00002` with an instrumented kernel is
 //! needed.
 
 use clap::clap_app;
