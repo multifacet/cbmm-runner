@@ -36,6 +36,12 @@ struct Config {
     memtrace: bool,
     mmstats: bool,
 
+    transparent_hugepage_enabled: String,
+    transparent_hugepage_defrag: String,
+    transparent_hugepage_khugepaged_defrag: usize,
+    transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
+    transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+
     zswap_max_pool_percent: usize,
 
     username: String,
@@ -147,6 +153,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         memtrace,
         mmstats,
 
+        transparent_hugepage_enabled: "always".into(),
+        transparent_hugepage_defrag: "always".into(),
+        transparent_hugepage_khugepaged_defrag: 1,
+        transparent_hugepage_khugepaged_alloc_sleep_ms: 60000, // Default Linux value
+        transparent_hugepage_khugepaged_scan_sleep_ms: 10000,  // Default Linux value
+
         zswap_max_pool_percent: 50,
 
         username: login.username.into(),
@@ -203,6 +215,16 @@ where
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
+
+    // Turn on THP.
+    crate::common::turn_on_thp(
+        &vshell,
+        &cfg.transparent_hugepage_enabled,
+        &cfg.transparent_hugepage_defrag,
+        cfg.transparent_hugepage_khugepaged_defrag,
+        cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+        cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+    )?;
 
     // Get the amount of memory the guest thinks it has (in GB).
     let size = vshell
