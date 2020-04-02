@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshError, SshShell, SshSpawnHandle};
 
+use super::oomkiller_blacklist_by_name;
+
 /// Set the apriori paging process using Swapnil's program. Requires `sudo`.
 ///
 /// This should be run only from a vagrant VM.
@@ -215,6 +217,9 @@ pub fn start_memcached(
     // Wait for memcached to start by using `memcached-tool` until we are able to connect.
     while let Err(..) = shell.run(cmd!("memcached-tool localhost:11211")) {}
 
+    // Don't let memcached get OOM killed.
+    oomkiller_blacklist_by_name(shell, "memcached")?;
+
     Ok(())
 }
 
@@ -353,6 +358,9 @@ pub fn run_nas_cg(
         )
         .cwd(&format!("{}/NPB3.4/NPB3.4-OMP", zerosim_bmk_path)),
     )?;
+
+    // Don't let the workload get OOM killed.
+    oomkiller_blacklist_by_name(shell, &format!("cg.{}.x", class))?;
 
     Ok(handle)
 }
@@ -620,6 +628,9 @@ pub fn start_redis(
 
         cmd!("redis-cli -s /tmp/redis.sock CONFIG SET save \"{} 1\"", REDIS_SNAPSHOT_FREQ_SECS),
     }
+
+    // Make sure redis doesn't get oom killed.
+    oomkiller_blacklist_by_name(shell, "redis-server")?;
 
     Ok(handle)
 }
