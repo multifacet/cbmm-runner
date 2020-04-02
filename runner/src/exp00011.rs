@@ -245,7 +245,7 @@ where
     time!(
         timers,
         "Workload",
-        run_ycsb_workload(
+        run_ycsb_workload::<spurs::SshError, _>(
             &vshell,
             YcsbConfig {
                 workload: cfg.workload,
@@ -282,7 +282,27 @@ where
                     output_file: None,
                     eager: false,
                     client_pin_core: 0,
-                })
+                }),
+                callback: || {
+                    // If we are taking a trace, sleep for 10 seconds to hopefully make a noticable
+                    // mark in the trace data.
+                    if cfg.memtrace {
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                    }
+
+                    // If we are collecting memory stats, reset them now.
+                    if cfg.mmstats {
+                        // Print the current numbers, 'cause why not?
+                        vshell.run(cmd!("tail /proc/mm_*"))?;
+
+                        // Writing to any of the params will reset the plot.
+                        vshell.run(cmd!(
+                            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+                        ))?;
+                    }
+
+                    Ok(())
+                },
             }
         )?
     );

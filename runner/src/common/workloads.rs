@@ -781,7 +781,11 @@ pub enum YcsbSystem {
 }
 
 /// Every setting of a YCSB workload.
-pub struct YcsbConfig<'s> {
+pub struct YcsbConfig<'s, E, F>
+where
+    E: std::error::Error + Sync + Send + 'static,
+    F: Fn() -> Result<(), E>,
+{
     pub workload: YcsbWorkload,
     pub system: YcsbSystem,
 
@@ -797,10 +801,20 @@ pub struct YcsbConfig<'s> {
 
     /// The path of the YCSB directory.
     pub ycsb_path: &'s str,
+
+    /// A callback to run after the loading phase is complete.
+    pub callback: F,
 }
 
 /// Run a YCSB workload, waiting to completion.
-pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failure::Error> {
+pub fn run_ycsb_workload<E, F>(
+    shell: &SshShell,
+    cfg: YcsbConfig<E, F>,
+) -> Result<(), failure::Error>
+where
+    E: std::error::Error + Sync + Send + 'static,
+    F: Fn() -> Result<(), E>,
+{
     let workload_file = match cfg.workload {
         YcsbWorkload::A => "workloads/workloada",
         YcsbWorkload::B => "workloads/workloadb",
@@ -835,6 +849,12 @@ pub fn run_ycsb_workload(shell: &SshShell, cfg: YcsbConfig) -> Result<(), failur
             with_shell! { shell in &cfg.ycsb_path =>
                 cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, ycsb_flags),
                 cmd!("memcached-tool localhost:11211"),
+            }
+
+            // Run the callback before starting the next part.
+            (cfg.callback)()?;
+
+            with_shell! { shell in &cfg.ycsb_path =>
                 cmd!("./bin/ycsb run memcached -s -P {} {}", workload_file, ycsb_flags),
             }
         }
