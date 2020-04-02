@@ -6,7 +6,10 @@ use spurs::{cmd, Execute, SshError, SshShell};
 
 use super::paths::*;
 
-pub use super::{Login, ServiceAction};
+pub use super::{
+    dump_sys_info, oomkiller_blacklist_by_name, set_kernel_printk_level, turn_off_watchdogs, Login,
+    ServiceAction,
+};
 
 /// The port that vagrant VMs forward from.
 pub const VAGRANT_PORT: u16 = 5555;
@@ -159,17 +162,6 @@ where
     Ok(())
 }
 
-/// Dump a bunch of kernel info for debugging.
-pub fn dump_sys_info(shell: &SshShell) -> Result<(), failure::Error> {
-    with_shell! { shell =>
-        cmd!("uname -a"),
-        cmd!("lsblk"),
-        cmd!("free -h"),
-    }
-
-    Ok(())
-}
-
 /// Connects to the host and to vagrant. Returns shells for both. TSC offsetting is disabled
 /// during VM startup to speed things up.
 pub fn connect_and_setup_host_and_vagrant<A>(
@@ -218,14 +210,6 @@ pub fn set_perf_scaling_gov(shell: &SshShell) -> Result<(), failure::Error> {
         kernel_path
     ))?;
 
-    Ok(())
-}
-
-/// Set the kernel `printk` level that gets logged to `dmesg`. `0` is only high-priority
-/// messages. `7` is all messages.
-pub fn set_kernel_printk_level(shell: &SshShell, level: usize) -> Result<(), failure::Error> {
-    assert!(level <= 7);
-    shell.run(cmd!("echo {} | sudo tee /proc/sys/kernel/printk", level).use_bash())?;
     Ok(())
 }
 
@@ -367,11 +351,7 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
     dump_sys_info(&vshell)?;
 
     // Don't let the OOM killer kill ssh
-    vshell.run(cmd!(
-        r"pgrep -f /usr/sbin/sshd | while read PID; do \
-            echo -1000 | sudo tee /proc/$PID/oom_score_adj;
-        done"
-    ))?;
+    oomkiller_blacklist_by_name(&vshell, "/usr/sbin/sshd")?;
 
     // Enable TSC offsetting (regardless of whether it was already off).
     ZeroSim::tsc_offsetting(shell, true)?;
@@ -380,15 +360,6 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
     ZeroSim::skip_halt(shell, skip_halt)?;
 
     Ok(vshell)
-}
-
-/// Turn off soft lockup and NMI watchdogs if possible in the shell.
-pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), failure::Error> {
-    shell.run(cmd!(
-        "echo 0 | sudo tee /proc/sys/kernel/hung_task_timeout_secs"
-    ))?;
-    shell.run(cmd!("echo 0 | sudo tee /proc/sys/kernel/watchdog").allow_error())?;
-    Ok(())
 }
 
 pub fn turn_off_swapdevs(shell: &SshShell) -> Result<(), failure::Error> {

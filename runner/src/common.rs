@@ -749,3 +749,43 @@ pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, failure
         Ok(name)
     }
 }
+
+/// Dump a bunch of kernel info for debugging.
+pub fn dump_sys_info(shell: &SshShell) -> Result<(), failure::Error> {
+    with_shell! { shell =>
+        cmd!("uname -a"),
+        cmd!("lsblk"),
+        cmd!("free -h"),
+    }
+
+    Ok(())
+}
+
+/// Set the kernel `printk` level that gets logged to `dmesg`. `0` is only high-priority
+/// messages. `7` is all messages.
+pub fn set_kernel_printk_level(shell: &SshShell, level: usize) -> Result<(), failure::Error> {
+    assert!(level <= 7);
+    shell.run(cmd!("echo {} | sudo tee /proc/sys/kernel/printk", level).use_bash())?;
+    Ok(())
+}
+
+/// Tell the OOM killer not to kill the given process.
+pub fn oomkiller_blacklist_by_name(shell: &SshShell, name: &str) -> Result<(), failure::Error> {
+    shell.run(cmd!(
+        r"pgrep -f {} | while read PID; do \
+            echo -1000 | sudo tee /proc/$PID/oom_score_adj;
+        done",
+        name
+    ))?;
+
+    Ok(())
+}
+
+/// Turn off soft lockup and NMI watchdogs if possible in the shell.
+pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), failure::Error> {
+    shell.run(cmd!(
+        "echo 0 | sudo tee /proc/sys/kernel/hung_task_timeout_secs"
+    ))?;
+    shell.run(cmd!("echo 0 | sudo tee /proc/sys/kernel/watchdog").allow_error())?;
+    Ok(())
+}
