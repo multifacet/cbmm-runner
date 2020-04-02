@@ -223,6 +223,16 @@ where
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
+    // Turn on compaction and force it too happen
+    crate::common::turn_on_thp(
+        &ushell,
+        &cfg.transparent_hugepage_enabled,
+        &cfg.transparent_hugepage_defrag,
+        cfg.transparent_hugepage_khugepaged_defrag,
+        cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+        cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+    )?;
+
     // Collect timers on VM
     let mut timers = vec![];
 
