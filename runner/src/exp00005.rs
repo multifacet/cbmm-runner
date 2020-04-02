@@ -23,8 +23,7 @@ use crate::common::{
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
-    exp: usize,
+    exp: (usize, String),
 
     calibrate: bool,
     warmup: bool,
@@ -117,8 +116,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: "nas_cg_class_e".into(),
-        exp: 5,
+        exp: (5, "nas_cg_class_e".into()),
 
         calibrate: false,
         warmup,

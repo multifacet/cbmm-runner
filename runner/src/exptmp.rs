@@ -36,8 +36,10 @@ enum Workload {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: Workload,
     exp: String,
+
+    #[name]
+    workload: Workload,
 
     #[name]
     size: usize,

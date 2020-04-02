@@ -42,10 +42,10 @@ enum Workload {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
+    exp: (usize, String),
+
     #[name]
-    app: Workload,
-    exp: usize,
+    workload: Workload,
 
     calibrate: bool,
     #[name(self.warmup)]
@@ -164,9 +164,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: "fragmentation".into(),
-        app: workload,
-        exp: 7,
+        exp: (7, "fragmentation".into()),
+
+        workload,
 
         calibrate: false,
         warmup,
@@ -320,7 +320,7 @@ where
     )?;
 
     // Run the actual workload
-    match cfg.app {
+    match cfg.workload {
         Workload::Memcached => {
             time!(
                 timers,

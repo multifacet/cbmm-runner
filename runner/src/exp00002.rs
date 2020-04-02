@@ -35,8 +35,10 @@ enum Workload {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
+    exp: (usize, String),
+
+    #[name]
     workload: Workload,
-    exp: usize,
 
     warmup: bool,
     calibrate: bool,
@@ -145,8 +147,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
+        exp: (2, "mem_ubench".into()),
+
         workload,
-        exp: 2,
 
         warmup,
         calibrate: false,

@@ -33,10 +33,10 @@ const INTERVAL: usize = 60; // seconds
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
+    exp: (usize, String),
+
     #[name]
     continual_compaction: Option<usize>,
-    exp: usize,
 
     #[name]
     size: usize,
@@ -131,9 +131,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: "memcached_per_page_thp_ops".into(),
+        exp: (3, "memcached_per_page_thp_ops".into()),
+
         continual_compaction,
-        exp: 3,
 
         size,
         calibrate: false,

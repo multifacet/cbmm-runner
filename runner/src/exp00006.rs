@@ -19,8 +19,7 @@ use crate::common::{
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
-    exp: usize,
+    exp: (usize, String),
 
     #[name]
     vm_size: usize,
@@ -90,13 +89,15 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: if ktask_div.is_some() {
-            "ktask_boot_mem_init"
-        } else {
-            "boot_mem_init"
-        }
-        .into(),
-        exp: 6,
+        exp: (
+            6,
+            if ktask_div.is_some() {
+                "ktask_boot_mem_init"
+            } else {
+                "boot_mem_init"
+            }
+            .into(),
+        ),
 
         vm_size,
         cores,

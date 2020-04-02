@@ -26,8 +26,7 @@ use crate::common::{
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
-    exp: usize,
+    exp: (usize, String),
 
     #[name]
     vm_size: usize,
@@ -124,13 +123,15 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: if pattern.is_some() {
-            "time_mmap_touch_host_kbuild"
-        } else {
-            "memcached_gen_data_host_kbuild"
-        }
-        .into(),
-        exp: 9,
+        exp: (
+            9,
+            if pattern.is_some() {
+                "time_mmap_touch_host_kbuild"
+            } else {
+                "memcached_gen_data_host_kbuild"
+            }
+            .into(),
+        ),
 
         vm_size,
         cores,

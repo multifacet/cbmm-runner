@@ -41,10 +41,9 @@ enum Workload {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
-    #[name]
-    app: String,
-    exp: usize,
+    exp: (usize, String, String),
+
+    workload: Workload,
 
     #[name(self.n > 0)]
     n: usize,
@@ -52,8 +51,6 @@ struct Config {
     size: usize,
     #[name(self.pattern.is_some())]
     pattern: Option<TimeMmapTouchPattern>,
-
-    workload_settings: Workload,
 
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -176,15 +173,13 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: "bare_metal".into(),
-        app: workload_name.into(),
-        exp: 10,
+        exp: (10, "bare_metal".into(), workload_name.into()),
+
+        workload,
 
         n,
         size,
         pattern,
-
-        workload_settings: workload,
 
         transparent_hugepage_enabled: "always".into(),
         transparent_hugepage_defrag: "always".into(),
@@ -253,7 +248,7 @@ where
     let mut tctx = TasksetCtx::new(cores);
 
     // Run the workload.
-    match cfg.workload_settings {
+    match cfg.workload {
         Workload::TimeLoop { n } => {
             time!(
                 timers,

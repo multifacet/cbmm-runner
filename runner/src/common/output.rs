@@ -14,6 +14,11 @@ impl Timestamp {
     pub fn now() -> Self {
         Self(Local::now().format("%Y-%m-%d-%H-%M-%S").to_string())
     }
+
+    #[cfg(test)]
+    pub fn test() -> Self {
+        Self("2020-04-02-12-01-35".into())
+    }
 }
 
 /// A `Parametrize` type manages all things regarding naming and tagging output with settings (i.e.
@@ -139,4 +144,56 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
     /// Returns a timestamp (the same timestamp every time) that is associated with this set of
     /// parameters.
     fn timestamp(&self) -> &Timestamp;
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
+    struct Test {
+        #[name]
+        a: usize,
+
+        #[name]
+        b: String,
+
+        #[name]
+        c: (usize, String),
+
+        #[name(self.d)]
+        d: bool,
+
+        e: (),
+
+        f: Vec<usize>,
+
+        #[timestamp]
+        timestamp: Timestamp,
+    }
+
+    #[test]
+    fn test_output_name() {
+        let mut cfg = Test {
+            a: 0xAA,
+            b: "BB".into(),
+            c: (0xCC, "CC".into()),
+            d: false,
+            e: (),
+            f: vec![0xF0, 0xFF],
+
+            timestamp: Timestamp::test(),
+        };
+
+        let test_name = cfg.gen_file_name("test");
+        assert_eq!(test_name, "a170-b_BB_-c[204,_CC_]-2020-04-02-12-01-35.test");
+
+        cfg.d = true;
+
+        let test_name = cfg.gen_file_name("test");
+        assert_eq!(
+            test_name,
+            "a170-b_BB_-c[204,_CC_]-dtrue-2020-04-02-12-01-35.test"
+        );
+    }
 }

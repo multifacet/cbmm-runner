@@ -23,10 +23,12 @@ use crate::common::{
 #[derive(Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
+    exp: (usize, String),
+
+    #[name]
     workload: YcsbWorkload,
     #[name]
     system: YcsbSystem,
-    exp: usize,
 
     #[name]
     vm_size: usize,
@@ -143,9 +145,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
+        exp: (11, "ycsb".into()),
+
         workload,
         system,
-        exp: 11,
 
         vm_size,
         cores,

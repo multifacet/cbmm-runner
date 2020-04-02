@@ -32,10 +32,10 @@ enum Workload {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
+    exp: (usize, String),
+
     #[name]
-    app: Workload,
-    exp: usize,
+    workload: Workload,
 
     #[name]
     vm_size: usize,
@@ -187,9 +187,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: "bmk".into(),
-        app: workload,
-        exp: 0,
+        exp: (0, "0sim_wkld".into()),
+
+        workload,
 
         vm_size,
         cores,
@@ -349,7 +349,7 @@ where
     let freq = get_cpu_freq(&ushell)?;
 
     // Run memcached or time_touch_mmap
-    match cfg.app {
+    match cfg.workload {
         Workload::TimeMmapTouch => {
             time!(
                 timers,

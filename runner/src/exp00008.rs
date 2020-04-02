@@ -46,10 +46,9 @@ impl Workload {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    workload: String,
-    exp: usize,
+    exp: (usize, String),
 
-    workload_settings: Workload,
+    workload: Workload,
 
     #[name]
     vm_size: usize,
@@ -179,10 +178,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
-        workload: format!("swap_{}", workload.to_str()),
-        exp: 8,
+        exp: (8, format!("swap_{}", workload.to_str())),
 
-        workload_settings: workload,
+        workload,
 
         calibrate: false,
         warmup,
@@ -378,7 +376,7 @@ where
     vshell.run(cmd!("while [ ! -e /tmp/hog_ready ] ; do sleep 1 ; done",).use_bash())?;
 
     // Run the actual workload
-    match cfg.workload_settings {
+    match cfg.workload {
         Workload::Memcached => {
             // Start workload
             time!(
