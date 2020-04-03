@@ -112,6 +112,9 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
             let val = val.replace(" ", "_");
             let val = val.replace("\"", "_");
             let val = val.replace("\'", "_");
+            let val = val.replace(",", "_");
+            let val = val.replace("[", "_");
+            let val = val.replace("]", "_");
 
             string.push_str(setting);
             string.push_str(&val);
