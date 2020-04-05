@@ -336,7 +336,15 @@ where
     if cfg.mmstats {
         vshell.run(cmd!(
             "tail /proc/mm_* > {}",
-            dir!(VAGRANT_RESULTS_DIR, mmstats_file)
+            dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
+        ))?;
+        vshell.run(cmd!(
+            "cat /proc/meminfo >> {}",
+            dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
+        ))?;
+        vshell.run(cmd!(
+            "cat /proc/vmstat >> {}",
+            dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
     }
 
