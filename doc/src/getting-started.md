@@ -3,9 +3,11 @@
 The workspace contains a bunch of tools, described in the contents section. The
 most important are the `runner` and `0sim` itself. The runner drives
 experiments and contains a library for writing and driving other experiments.
-There is an emphasis on reproducibility and ergonomic usage. `jobserver` is
-useful for running large numbers of experiments on one or more remotes with one
-or more variations of parameters.
+There is an emphasis on reproducibility and ergonomic usage. [`jobserver`][js]
+is useful for running large numbers of experiments on one or more remotes with
+one or more variations of parameters.
+
+[js]: https://github.com/mark-i-m/jobserver
 
 0. [Ensuring requirements (see above). Don't skip this or things will break.](./requirements.md)
 0. [Cloning and building the runner](#runner)

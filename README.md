@@ -43,8 +43,6 @@ Mark Mansi and Michael M. Swift. _0sim: Preparing System Software for a World wi
         - `cd runner; cargo run -- help`.
         - There is a `README.md`
         - The code itself is also pretty well-documented IMHO.
-- `jobserver/` is a self-contained jobserver and client. See that repo and the
-  client CLI for more info.
 - `bmks/` contains files needed for some benchmarks (e.g. NAS).
 - `vagrant/` contains the `Vagrantfile` used for the VMs in the experiments.
 - `0sim` is a git submodule to the repo with the kernel/simulator code.

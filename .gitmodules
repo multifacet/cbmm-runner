@@ -22,9 +22,6 @@
 [submodule "bmks/nullfs"]
 	path = bmks/nullfs
 	url = https://github.com/xrgtn/nullfs.git
-[submodule "jobserver"]
-	path = jobserver
-	url = https://github.com/mark-i-m/jobserver
 [submodule "bmks/membuffer-extract"]
 	path = bmks/membuffer-extract
 	url = https://github.com/mark-i-m/membuffer-extract.git
