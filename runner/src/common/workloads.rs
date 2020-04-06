@@ -171,7 +171,8 @@ pub struct MemcachedWorkloadConfig<'s> {
 ///
 /// `allow_oom` specifies whether memcached is allowed to OOM. This gives much simpler performance
 /// behaviors. memcached uses a large amount of the memory you give it for bookkeeping, rather
-/// than user data, so OOM will almost certainly happen.
+/// than user data, so OOM will almost certainly happen. memcached will also evict the LRU data in
+/// this case.
 ///
 /// `eager` indicates whether the workload should be run with eager paging (only in VM).
 pub fn start_memcached(

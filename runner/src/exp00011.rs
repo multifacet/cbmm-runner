@@ -288,7 +288,7 @@ where
                         RESEARCH_WORKSPACE_PATH,
                         ZEROSIM_MEMCACHED_SUBMODULE
                     ),
-                    allow_oom: true,
+                    allow_oom: false, // evict data
                     server_pin_core: None,
                     server_size_mb: size << 10,
                     pintool: if cfg.memtrace {
