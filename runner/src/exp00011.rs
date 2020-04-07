@@ -279,7 +279,7 @@ where
             cmd!(
                 "while [ ! -e /tmp/exp-stop ] ; do \
                  tail /proc/mm_* | tee -a {} ; \
-                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done \
+                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done ; \
                  sleep {} ; \
                  done ; echo done measuring",
                 dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
