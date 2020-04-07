@@ -273,7 +273,8 @@ where
 
         None
     } else if cfg.mmstats_periodic {
-        let ret = vshell.spawn(
+        let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
+        let ret = vshell2.spawn(
             cmd!(
                 "while [ ! -e /tmp/exp-stop ] ; do \
                  tail /proc/mm_* | tee -a {} ; \
@@ -286,7 +287,7 @@ where
         )?;
 
         // Wait to make sure the collection of stats has started
-        vshell.run(
+        vshell2.run(
             cmd!(
                 "while [ ! -e {} ] ; do sleep 1 ; done",
                 dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
@@ -294,7 +295,7 @@ where
             .use_bash(),
         )?;
 
-        Some(ret)
+        Some((vshell2, ret))
     } else {
         None
     };
@@ -386,7 +387,7 @@ where
         time!(
             timers,
             "Waiting for mmstats thread to halt",
-            maybe_shell_and_handle.unwrap().1.join()?
+            maybe_shell_and_handle.unwrap().1 .1.join()?
         );
     }
 
