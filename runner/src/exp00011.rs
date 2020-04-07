@@ -277,7 +277,8 @@ where
         let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
         let ret = vshell2.spawn(
             cmd!(
-                "while [ ! -e /tmp/exp-stop ] ; do \
+                "rm -f /tmp/exp-stop ; \
+                 while [ ! -e /tmp/exp-stop ] ; do \
                  tail /proc/mm_* | tee -a {} ; \
                  for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done ; \
                  sleep {} ; \

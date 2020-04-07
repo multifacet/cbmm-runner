@@ -295,12 +295,11 @@ where
     let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Record buddyinfo on the guest until signalled to stop.
-    vshell.run(cmd!("rm -f /tmp/exp-stop"))?;
-
     let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
     let (_shell, buddyinfo_handle) = vshell2.spawn(
         cmd!(
-            "while [ ! -e /tmp/exp-stop ] ; do \
+            "rm -f /tmp/exp-stop ; \
+             while [ ! -e /tmp/exp-stop ] ; do \
              cat /proc/buddyinfo | tee -a {} ; \
              sleep {} ; \
              done ; echo done measuring",
