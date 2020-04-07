@@ -273,11 +273,13 @@ where
 
         None
     } else if cfg.mmstats_periodic {
+        // Read and reset stats over PERIOD seconds.
         let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
         let ret = vshell2.spawn(
             cmd!(
                 "while [ ! -e /tmp/exp-stop ] ; do \
                  tail /proc/mm_* | tee -a {} ; \
+                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done \
                  sleep {} ; \
                  done ; echo done measuring",
                 dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
