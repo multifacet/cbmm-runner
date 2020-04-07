@@ -15,10 +15,11 @@ use crate::common::{
     output::{Parametrize, Timestamp},
     paths::{setup00000::*, *},
     workloads::{
-        run_ycsb_workload, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx,
-        TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
+        run_ycsb_workload, MemcachedWorkloadConfig, Pintool, YcsbConfig, YcsbSystem, YcsbWorkload,
     },
 };
+
+pub const PERIOD: usize = 10; // seconds
 
 #[derive(Serialize, Deserialize, Parametrize)]
 struct Config {
@@ -37,6 +38,7 @@ struct Config {
 
     memtrace: bool,
     mmstats: bool,
+    mmstats_periodic: bool,
 
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -106,6 +108,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect a memory trace of the given system.")
         (@arg MMSTATS: --mmstats
          "Collect kernel memory management stats.")
+        (@arg PERIODIC: --periodic requires[MMSTATS]
+         "Collect kernel memory management stats periodically.")
     }
 }
 
@@ -138,6 +142,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let memtrace = sub_m.is_present("MEMTRACE");
     let mmstats = sub_m.is_present("MMSTATS");
+    let periodic = sub_m.is_present("PERIODIC");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = crate::common::local_research_workspace_git_hash()?;
@@ -155,6 +160,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         memtrace,
         mmstats,
+        mmstats_periodic: periodic,
 
         transparent_hugepage_enabled: "always".into(),
         transparent_hugepage_defrag: "always".into(),
@@ -256,7 +262,7 @@ where
     let mmstats_file = cfg.gen_file_name("mmstats");
 
     // Set histogram parameters before workload.
-    if cfg.mmstats {
+    let maybe_shell_and_handle = if cfg.mmstats {
         // Print the current numbers, 'cause why not?
         vshell.run(cmd!("tail /proc/mm_*"))?;
 
@@ -264,7 +270,36 @@ where
         vshell.run(cmd!(
             "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
         ))?;
-    }
+
+        None
+    } else if cfg.mmstats_periodic {
+        let ret = vshell.spawn(
+            cmd!(
+                "while [ ! -e /tmp/exp-stop ] ; do \
+                 tail /proc/mm_* | tee -a {} ; \
+                 sleep {} ; \
+                 done ; echo done measuring",
+                dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+                PERIOD
+            )
+            .use_bash(),
+        )?;
+
+        // Wait to make sure the collection of stats has started
+        vshell.run(
+            cmd!(
+                "while [ ! -e {} ] ; do sleep 1 ; done",
+                dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+            )
+            .use_bash(),
+        )?;
+
+        Some(ret)
+    } else {
+        None
+    };
+
+    // TODO: support for redis and kc
 
     // Run the workload.
     time!(
@@ -335,17 +370,24 @@ where
     // Collect stats after the workload runs.
     if cfg.mmstats {
         vshell.run(cmd!(
-            "tail /proc/mm_* > {}",
+            "tail /proc/mm_* | tee {}",
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
         vshell.run(cmd!(
-            "cat /proc/meminfo >> {}",
+            "cat /proc/meminfo | tee -a {}",
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
         vshell.run(cmd!(
-            "cat /proc/vmstat >> {}",
+            "cat /proc/vmstat | tee -a {}",
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
+    } else if cfg.mmstats_periodic {
+        vshell.run(cmd!("touch /tmp/exp-stop"))?;
+        time!(
+            timers,
+            "Waiting for mmstats thread to halt",
+            maybe_shell_and_handle.unwrap().1.join()?
+        );
     }
 
     ushell.run(cmd!("date"))?;
