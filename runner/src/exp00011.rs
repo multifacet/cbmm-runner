@@ -262,7 +262,7 @@ where
     let mmstats_file = cfg.gen_file_name("mmstats");
 
     // Set histogram parameters before workload.
-    let maybe_shell_and_handle = if cfg.mmstats {
+    let maybe_shell_and_handle = if cfg.mmstats && !cfg.mmstats_periodic {
         // Print the current numbers, 'cause why not?
         vshell.run(cmd!("tail /proc/mm_*"))?;
 
@@ -369,7 +369,7 @@ where
     );
 
     // Collect stats after the workload runs.
-    if cfg.mmstats {
+    if cfg.mmstats && !cfg.mmstats_periodic {
         vshell.run(cmd!(
             "tail /proc/mm_* | tee {}",
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
