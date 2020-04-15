@@ -29,6 +29,7 @@ Vagrant.configure("2") do |config|
     # pass QEMU the -cpu flag twice. QEMU happens to take the second one.
     libvirt.qemuargs :value => '-cpu'
     libvirt.qemuargs :value => 'Skylake-Client,phys-bits=48'
+    libvirt.qemuargs :value => '-s'
   end
 
   config.vm.define vagrant_vm_name do |test_vm|
