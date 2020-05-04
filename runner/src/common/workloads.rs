@@ -541,6 +541,7 @@ impl RedisWorkloadHandles {
 }
 
 /// Every setting of the redis workload.
+#[derive(Debug)]
 pub struct RedisWorkloadConfig<'s> {
     /// The path of the `0sim-experiments` submodule on the remote.
     pub exp_dir: &'s str,
@@ -567,6 +568,9 @@ pub struct RedisWorkloadConfig<'s> {
     pub pf_time: Option<u64>,
     /// Indicates whether the workload should be run with eager paging.
     pub eager: bool,
+
+    /// Indicates that we should run the given pintool on the workload.
+    pub pintool: Option<Pintool<'s>>,
 }
 
 /// Spawn a `redis` server in a new shell with the given amount of memory and set some important
@@ -604,15 +608,30 @@ pub fn start_redis(
     shell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
 
     // Start the redis server
-    let handle = if let Some(server_pin_core) = cfg.server_pin_core {
-        shell.spawn(cmd!(
-            "taskset -c {} redis-server {}",
-            server_pin_core,
-            cfg.redis_conf
-        ))?
+    let taskset = if let Some(server_pin_core) = cfg.server_pin_core {
+        format!("taskset -c {} ", server_pin_core)
     } else {
-        shell.spawn(cmd!("redis-server {}", cfg.redis_conf))?
+        "".into()
     };
+
+    let pintool = match cfg.pintool {
+        Some(Pintool::MemTrace {
+            pin_path,
+            output_path,
+        }) => format!(
+            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit -- ",
+            pin_path, pin_path, output_path
+        ),
+
+        None => "".into(),
+    };
+
+    let handle = shell.spawn(cmd!(
+        "{}{}redis-server {}",
+        pintool,
+        taskset,
+        cfg.redis_conf
+    ))?;
 
     // Wait for server to start
     loop {
@@ -792,7 +811,7 @@ pub enum YcsbWorkload {
 #[derive(Debug)]
 pub enum YcsbSystem<'s> {
     Memcached(MemcachedWorkloadConfig<'s>),
-    Redis,
+    Redis(RedisWorkloadConfig<'s>),
     KyotoCabinet,
 }
 
@@ -806,14 +825,12 @@ where
 
     /// A config file for the server.
     ///
-    /// For memcached, the following config fields are ignored:
-    /// - server_size_mb
+    /// For memcached and redis, the following config fields are ignored:
     /// - client_pin_core
     /// - wk_size_gb
     /// - output_file
     /// - freq
     /// - pf_time
-    /// - eager
     pub system: YcsbSystem<'s>,
 
     /// The path of the YCSB directory.
@@ -841,11 +858,11 @@ where
         YcsbWorkload::F => "workloads/workloadf",
     };
 
+    /// The number of KB a record takes.
+    const RECORD_SIZE_KB: usize = 16;
+
     match &cfg.system {
         YcsbSystem::Memcached(cfg_memcached) => {
-            /// The number of KB a record takes.
-            const RECORD_SIZE_KB: usize = 16;
-
             // This is the number of records that would consume the memory given to memcached
             // (approximately)...
             let nrecords = (cfg_memcached.server_size_mb << 10) / RECORD_SIZE_KB;
@@ -854,7 +871,7 @@ where
             // so we make the workload a bit smaller to avoid being killed by the OOM killer.
             let nrecords = nrecords * 9 / 10;
 
-            start_memcached(shell, cfg_memcached)?;
+            start_memcached(shell, &cfg_memcached)?;
 
             // recordcount is used for the "load" phase, while operationcount is used for the "run
             // phase. YCSB ignores the parameters in the alternate phases.
@@ -876,7 +893,38 @@ where
             }
         }
 
-        YcsbSystem::Redis | YcsbSystem::KyotoCabinet => todo!(),
+        YcsbSystem::Redis(cfg_redis) => {
+            // This is the number of records that would consume the memory given to redis
+            // (approximately)...
+            let nrecords = (cfg_redis.server_size_mb << 10) / RECORD_SIZE_KB;
+
+            // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
+            // so we make the workload a bit smaller to avoid being killed by the OOM killer.
+            let nrecords = nrecords * 9 / 10;
+
+            let _handle = start_redis(shell, &cfg_redis)?;
+
+            // recordcount is used for the "load" phase, while operationcount is used for the "run
+            // phase. YCSB ignores the parameters in the alternate phases.
+            let ycsb_flags = format!(
+                "-p redis.host=localhost:11211 -p recordcount={} -p operationcount={}",
+                nrecords, nrecords
+            );
+
+            with_shell! { shell in &cfg.ycsb_path =>
+                cmd!("./bin/ycsb load redis -s -P {} {}", workload_file, ycsb_flags),
+                cmd!("redis-cli -s /tmp/redis.sock INFO"),
+            }
+
+            // Run the callback before starting the next part.
+            (cfg.callback)()?;
+
+            with_shell! { shell in &cfg.ycsb_path =>
+                cmd!("./bin/ycsb run redis -s -P {} {}", workload_file, ycsb_flags),
+            }
+        }
+
+        YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
     }
 
     Ok(())

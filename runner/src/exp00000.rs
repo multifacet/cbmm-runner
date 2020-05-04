@@ -427,7 +427,8 @@ where
                             "/home/vagrant",
                             RESEARCH_WORKSPACE_PATH,
                             ZEROSIM_NULLFS_SUBMODULE
-                        )
+                        ),
+                        pintool: None,
                     }
                 )?
                 .wait_for_client()?

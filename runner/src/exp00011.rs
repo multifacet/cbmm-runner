@@ -1,4 +1,5 @@
-//! Run the given YCSB workload on the remote machine in simulation and record its results.
+//! Run the given YCSB workload on the remote machine in simulation and record its results. This
+//! can be used to collect memory traces of workloads too.
 //!
 //! Requires `setup00000`. If `--mmstats` is used, then `setup00002` with an instrumented kernel is
 //! needed.
@@ -15,7 +16,8 @@ use crate::common::{
     output::{Parametrize, Timestamp},
     paths::{setup00000::*, *},
     workloads::{
-        run_ycsb_workload, MemcachedWorkloadConfig, Pintool, YcsbConfig, YcsbSystem, YcsbWorkload,
+        run_ycsb_workload, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, YcsbConfig,
+        YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -351,7 +353,33 @@ where
             client_pin_core: 0,
         }),
 
-        YcsbBackend::Redis => YcsbSystem::Redis,
+        YcsbBackend::Redis => YcsbSystem::Redis(RedisWorkloadConfig {
+            exp_dir: zerosim_exp_path,
+            server_size_mb: size << 10,
+            server_pin_core: None,
+            redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
+            nullfs: &dir!(
+                "/home/vagrant",
+                RESEARCH_WORKSPACE_PATH,
+                ZEROSIM_NULLFS_SUBMODULE
+            ),
+            pintool: if cfg.memtrace {
+                Some(Pintool::MemTrace {
+                    pin_path: &pin_path,
+                    output_path: &trace_file,
+                })
+            } else {
+                None
+            },
+
+            // Ignored:
+            wk_size_gb: 0,
+            eager: false,
+            freq: None,
+            pf_time: None,
+            client_pin_core: 0,
+            output_file: None,
+        }),
 
         YcsbBackend::KyotoCabinet => YcsbSystem::KyotoCabinet,
     };
