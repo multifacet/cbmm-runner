@@ -21,6 +21,14 @@ use crate::common::{
 
 pub const PERIOD: usize = 10; // seconds
 
+/// Which backend to use for YCSB.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum YcsbBackend {
+    Memcached,
+    Redis,
+    KyotoCabinet,
+}
+
 #[derive(Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
@@ -29,7 +37,7 @@ struct Config {
     #[name]
     workload: YcsbWorkload,
     #[name]
-    system: YcsbSystem,
+    system: YcsbBackend,
 
     #[name]
     vm_size: usize,
@@ -134,9 +142,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     };
 
     let system = match () {
-        () if sub_m.is_present("MEMCACHED") => YcsbSystem::Memcached,
-        () if sub_m.is_present("REDIS") => YcsbSystem::Redis,
-        () if sub_m.is_present("KC") => YcsbSystem::KyotoCabinet,
+        () if sub_m.is_present("MEMCACHED") => YcsbBackend::Memcached,
+        () if sub_m.is_present("REDIS") => YcsbBackend::Redis,
+        () if sub_m.is_present("KC") => YcsbBackend::KyotoCabinet,
         _ => unreachable!(),
     };
 
@@ -303,9 +311,72 @@ where
         None
     };
 
-    // TODO: support for redis and kc
-
     // Run the workload.
+
+    let ycsb_path = dir!(
+        "/home/vagrant",
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_YCSB_SUBMODULE
+    );
+
+    let memcached_path = dir!(
+        "/home/vagrant",
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_MEMCACHED_SUBMODULE
+    );
+
+    let system = match cfg.system {
+        YcsbBackend::Memcached => YcsbSystem::Memcached(MemcachedWorkloadConfig {
+            user: "vagrant",
+            exp_dir: zerosim_exp_path,
+            memcached: &memcached_path,
+            allow_oom: false, // evict data
+            server_pin_core: None,
+            server_size_mb: size << 10,
+            pintool: if cfg.memtrace {
+                Some(Pintool::MemTrace {
+                    pin_path: &pin_path,
+                    output_path: &trace_file,
+                })
+            } else {
+                None
+            },
+
+            // Ignored:
+            wk_size_gb: 0,
+            freq: None,
+            pf_time: None,
+            output_file: None,
+            eager: false,
+            client_pin_core: 0,
+        }),
+
+        YcsbBackend::Redis => YcsbSystem::Redis,
+
+        YcsbBackend::KyotoCabinet => YcsbSystem::KyotoCabinet,
+    };
+
+    let callback = || {
+        // If we are taking a trace, sleep for 10 seconds to hopefully make a noticable
+        // mark in the trace data.
+        if cfg.memtrace {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+
+        // If we are collecting memory stats, reset them now.
+        if cfg.mmstats {
+            // Print the current numbers, 'cause why not?
+            vshell.run(cmd!("tail /proc/mm_*"))?;
+
+            // Writing to any of the params will reset the plot.
+            vshell.run(cmd!(
+                "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+            ))?;
+        }
+
+        Ok(())
+    };
+
     time!(
         timers,
         "Workload",
@@ -313,60 +384,9 @@ where
             &vshell,
             YcsbConfig {
                 workload: cfg.workload,
-                system: cfg.system,
-                ycsb_path: &dir!(
-                    "/home/vagrant",
-                    RESEARCH_WORKSPACE_PATH,
-                    ZEROSIM_YCSB_SUBMODULE
-                ),
-                memcached: Some(MemcachedWorkloadConfig {
-                    user: "vagrant",
-                    exp_dir: zerosim_exp_path,
-                    memcached: &dir!(
-                        "/home/vagrant",
-                        RESEARCH_WORKSPACE_PATH,
-                        ZEROSIM_MEMCACHED_SUBMODULE
-                    ),
-                    allow_oom: false, // evict data
-                    server_pin_core: None,
-                    server_size_mb: size << 10,
-                    pintool: if cfg.memtrace {
-                        Some(Pintool::MemTrace {
-                            pin_path: &pin_path,
-                            output_path: &trace_file,
-                        })
-                    } else {
-                        None
-                    },
-
-                    // Ignored:
-                    wk_size_gb: 0,
-                    freq: None,
-                    pf_time: None,
-                    output_file: None,
-                    eager: false,
-                    client_pin_core: 0,
-                }),
-                callback: || {
-                    // If we are taking a trace, sleep for 10 seconds to hopefully make a noticable
-                    // mark in the trace data.
-                    if cfg.memtrace {
-                        std::thread::sleep(std::time::Duration::from_secs(10));
-                    }
-
-                    // If we are collecting memory stats, reset them now.
-                    if cfg.mmstats {
-                        // Print the current numbers, 'cause why not?
-                        vshell.run(cmd!("tail /proc/mm_*"))?;
-
-                        // Writing to any of the params will reset the plot.
-                        vshell.run(cmd!(
-                            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
-                        ))?;
-                    }
-
-                    Ok(())
-                },
+                system,
+                ycsb_path: &ycsb_path,
+                callback,
             }
         )?
     );

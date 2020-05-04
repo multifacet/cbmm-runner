@@ -32,6 +32,7 @@ pub fn vagrant_setup_apriori_paging_process(shell: &SshShell, prog: &str) -> Res
 }
 
 /// Keeps track of which guest vCPUs have been assigned.
+#[derive(Debug)]
 pub struct TasksetCtx {
     /// The total number of vCPUs.
     ncores: usize,
@@ -56,6 +57,7 @@ impl TasksetCtx {
 }
 
 /// Indicates a Intel PIN pintool to run, along with the needed parameters.
+#[derive(Debug)]
 pub enum Pintool<'s> {
     /// Collect a memory trace.
     MemTrace {
@@ -74,6 +76,7 @@ pub enum TimeMmapTouchPattern {
 }
 
 /// Settings for a run of the `time_mmap_touch` workload.
+#[derive(Debug)]
 pub struct TimeMmapTouchConfig<'s> {
     /// The path of the `0sim-experiments` submodule on the remote.
     pub exp_dir: &'s str,
@@ -132,6 +135,7 @@ pub fn run_time_mmap_touch(
 }
 
 /// The configuration of a memcached workload.
+#[derive(Debug)]
 pub struct MemcachedWorkloadConfig<'s> {
     /// The path of the `0sim-experiments` submodule on the remote.
     pub exp_dir: &'s str,
@@ -785,9 +789,9 @@ pub enum YcsbWorkload {
 }
 
 /// Which backend to use for YCSB.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum YcsbSystem {
-    Memcached,
+#[derive(Debug)]
+pub enum YcsbSystem<'s> {
+    Memcached(MemcachedWorkloadConfig<'s>),
     Redis,
     KyotoCabinet,
 }
@@ -799,9 +803,10 @@ where
     F: Fn() -> Result<(), E>,
 {
     pub workload: YcsbWorkload,
-    pub system: YcsbSystem,
 
-    /// A config file for memcached. The following fields are ignored:
+    /// A config file for the server.
+    ///
+    /// For memcached, the following config fields are ignored:
     /// - server_size_mb
     /// - client_pin_core
     /// - wk_size_gb
@@ -809,7 +814,7 @@ where
     /// - freq
     /// - pf_time
     /// - eager
-    pub memcached: Option<MemcachedWorkloadConfig<'s>>,
+    pub system: YcsbSystem<'s>,
 
     /// The path of the YCSB directory.
     pub ycsb_path: &'s str,
@@ -836,20 +841,20 @@ where
         YcsbWorkload::F => "workloads/workloadf",
     };
 
-    match cfg.system {
-        YcsbSystem::Memcached => {
+    match &cfg.system {
+        YcsbSystem::Memcached(cfg_memcached) => {
             /// The number of KB a record takes.
             const RECORD_SIZE_KB: usize = 16;
 
             // This is the number of records that would consume the memory given to memcached
             // (approximately)...
-            let nrecords = (cfg.memcached.as_ref().unwrap().server_size_mb << 10) / RECORD_SIZE_KB;
+            let nrecords = (cfg_memcached.server_size_mb << 10) / RECORD_SIZE_KB;
 
             // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
             // so we make the workload a bit smaller to avoid being killed by the OOM killer.
             let nrecords = nrecords * 9 / 10;
 
-            start_memcached(shell, cfg.memcached.as_ref().unwrap())?;
+            start_memcached(shell, cfg_memcached)?;
 
             // recordcount is used for the "load" phase, while operationcount is used for the "run
             // phase. YCSB ignores the parameters in the alternate phases.
