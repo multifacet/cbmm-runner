@@ -327,6 +327,13 @@ where
         ZEROSIM_MEMCACHED_SUBMODULE
     );
 
+    let redis_conf_path = dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+    let nullfs_path = dir!(
+        "/home/vagrant",
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_NULLFS_SUBMODULE
+    );
+
     let system = match cfg.system {
         YcsbBackend::Memcached => YcsbSystem::Memcached(MemcachedWorkloadConfig {
             user: "vagrant",
@@ -357,12 +364,8 @@ where
             exp_dir: zerosim_exp_path,
             server_size_mb: size << 10,
             server_pin_core: None,
-            redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-            nullfs: &dir!(
-                "/home/vagrant",
-                RESEARCH_WORKSPACE_PATH,
-                ZEROSIM_NULLFS_SUBMODULE
-            ),
+            redis_conf: &redis_conf_path,
+            nullfs: &nullfs_path,
             pintool: if cfg.memtrace {
                 Some(Pintool::MemTrace {
                     pin_path: &pin_path,
