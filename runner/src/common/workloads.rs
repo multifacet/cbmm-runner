@@ -908,8 +908,7 @@ where
             // recordcount is used for the "load" phase, while operationcount is used for the "run
             // phase. YCSB ignores the parameters in the alternate phases.
             let ycsb_flags = format!(
-                "-p redis.host=localhost -p redis.port=11211 \
-                 -p recordcount={} -p operationcount={}",
+                "-p redis.socket=/tmp/redis.sock -p recordcount={} -p operationcount={}",
                 nrecords, nrecords
             );
 
