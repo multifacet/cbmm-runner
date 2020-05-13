@@ -601,7 +601,7 @@ fn set_up_host_iptables(ushell: &SshShell) -> Result<(), failure::Error> {
 
         // allow loopback/local traffic
         cmd!("sudo iptables -A INPUT -i lo -p all -j ACCEPT"),
-        cmd!("sudo iptables -A INPUT -o lo -p all -j ACCEPT"),
+        cmd!("sudo iptables -A OUTPUT -o lo -p all -j ACCEPT"),
 
         // allow established/related traffic
         cmd!("sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"),
