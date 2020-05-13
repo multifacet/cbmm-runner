@@ -593,6 +593,9 @@ where
 
 fn set_up_host_iptables(ushell: &SshShell) -> Result<(), failure::Error> {
     with_shell! { ushell =>
+        // set policy to ACCEPT so we won't get locked out!
+        cmd!("sudo iptables -P INPUT ACCEPT"),
+
         // flush all rules
         cmd!("sudo iptables -F"),
 
