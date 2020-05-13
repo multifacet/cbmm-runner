@@ -621,7 +621,7 @@ fn set_up_host_iptables(ushell: &SshShell) -> Result<(), failure::Error> {
 
         // reject all other traffic
         cmd!("sudo iptables -A INPUT -j REJECT"),
-        cmd!("sudo iptables -P INPUT REJECT"),
+        cmd!("sudo iptables -P INPUT DROP"),
 
         // print and save iptables
         cmd!("sudo iptables -L -v"),
