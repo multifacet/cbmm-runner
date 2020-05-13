@@ -245,6 +245,7 @@ where
         install_host_dependencies(&mut ushell, &cfg)?;
     }
     set_up_host_devices(&ushell, &cfg)?;
+    set_up_host_iptables(&ushell)?;
     clone_research_workspace(&ushell, &cfg)?;
     install_host_kernel(&ushell, &cfg)?;
 
@@ -586,6 +587,43 @@ where
             crate::common::set_remote_research_setting(&ushell, "swap-devices", &swap_devices)?;
         }
     }
+
+    Ok(())
+}
+
+fn set_up_host_iptables(ushell: &SshShell) -> Result<(), failure::Error> {
+    with_shell! { ushell =>
+        // flush all rules
+        cmd!("sudo iptables -F"),
+
+        // allow loopback/local traffic
+        cmd!("sudo iptables -A INPUT -i lo -p all -j ACCEPT"),
+        cmd!("sudo iptables -A INPUT -o lo -p all -j ACCEPT"),
+
+        // allow established/related traffic
+        cmd!("sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"),
+        cmd!("sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+
+        // allow ssh
+        cmd!("sudo iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
+        cmd!("sudo iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+
+        // allow ssh to guest
+        cmd!("sudo iptables -A INPUT -p tcp --dport 5555 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
+        cmd!("sudo iptables -A OUTPUT -p tcp --sport 5555 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+
+        // allow rsync
+        cmd!("sudo iptables -A INPUT -p tcp --dport 873 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
+        cmd!("sudo iptables -A OUTPUT -p tcp --sport 873 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+
+        // reject all other traffic
+        cmd!("sudo iptables -A INPUT -j REJECT"),
+        cmd!("sudo iptables -P INPUT REJECT"),
+
+        // print and save iptables
+        cmd!("sudo iptables -L -v"),
+        cmd!("sudo service iptables save"),
+    };
 
     Ok(())
 }
