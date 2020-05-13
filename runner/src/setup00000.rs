@@ -619,9 +619,12 @@ fn set_up_host_iptables(ushell: &SshShell) -> Result<(), failure::Error> {
         cmd!("sudo iptables -A INPUT -p tcp --dport 873 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
         cmd!("sudo iptables -A OUTPUT -p tcp --sport 873 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
 
-        // reject all other traffic
-        cmd!("sudo iptables -A INPUT -j REJECT"),
-        cmd!("sudo iptables -P INPUT DROP"),
+        // reject all other traffic (and log for debugging)
+        cmd!("sudo iptables -N LOGGING"),
+        cmd!("sudo iptables -A INPUT -j LOGGING"),
+        cmd!("sudo iptables -A LOGGING -m limit --limit 2/min -j LOG \
+             --log-prefix \"iptables-dropped: \" --log-level 4"),
+        cmd!("sudo iptables -A LOGGING -j REJECT"),
 
         // print and save iptables
         cmd!("sudo iptables -L -v"),
