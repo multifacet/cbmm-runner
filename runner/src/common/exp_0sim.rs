@@ -307,7 +307,6 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
     skip_halt: bool,
     lapic_adjust: bool,
 ) -> Result<SshShell, failure::Error> {
-    crate::common::service(shell, "firewalld", ServiceAction::Stop)?;
     crate::common::service(shell, "nfs-idmapd", ServiceAction::Restart)?;
     crate::common::service(shell, "libvirtd", ServiceAction::Restart)?;
 

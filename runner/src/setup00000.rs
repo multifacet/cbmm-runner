@@ -67,6 +67,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) If we should clone the workspace, this is the Github personal access \
           token or password for cloning the repo.")
 
+        (@arg FIREWALL: --firewall
+         "(Optional) Set up firewall rules properly.")
+
         (@arg HOST_KERNEL: +takes_value --host_kernel
          "(Optional) The git branch to compile the kernel from (e.g. --host_kernel master)")
 
@@ -126,6 +129,10 @@ where
     /// The PAT or password to clone/update the workspace with, if needed.
     secret: Option<&'a str>,
 
+    /// Should we set up firewall rules? This is needed for the guest to be able to properly
+    /// connect to the host, the internet, etc.
+    firewall: bool,
+
     /// The branch to build the kernel from.
     git_branch: Option<&'a str>,
 
@@ -175,6 +182,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let clone_wkspc = sub_m.is_present("CLONE_WKSPC");
     let secret = sub_m.value_of("SECRET");
 
+    let firewall = sub_m.is_present("FIREWALL");
+
     let git_branch = sub_m.value_of("HOST_KERNEL");
 
     let host_bmks = sub_m.is_present("HOST_BMKS");
@@ -202,6 +211,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mapper_device,
         swap_devices,
         unstable_names,
+        firewall,
         git_branch,
         clone_wkspc,
         secret,
@@ -245,7 +255,7 @@ where
         install_host_dependencies(&mut ushell, &cfg)?;
     }
     set_up_host_devices(&ushell, &cfg)?;
-    set_up_host_iptables(&ushell)?;
+    set_up_host_iptables(&ushell, &cfg)?;
     clone_research_workspace(&ushell, &cfg)?;
     install_host_kernel(&ushell, &cfg)?;
 
@@ -424,10 +434,10 @@ where
             "wget",
             "libevent",
             "libevent-devel",
-            "firewalld",
             "automake",
             "rpmdevtools",
             "python3",
+            "iptables-services",
         ]),
 
         // Add user to libvirt group after installing
@@ -591,45 +601,57 @@ where
     Ok(())
 }
 
-fn set_up_host_iptables(ushell: &SshShell) -> Result<(), failure::Error> {
-    with_shell! { ushell =>
-        // set policy to ACCEPT so we won't get locked out!
-        cmd!("sudo iptables -P INPUT ACCEPT"),
+fn set_up_host_iptables<A>(
+    ushell: &SshShell,
+    cfg: &SetupConfig<'_, A>,
+) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+{
+    if cfg.firewall {
+        // disable firewalld, enable iptables services
+        crate::common::service(ushell, "firewalld", ServiceAction::Disable)?;
+        crate::common::service(ushell, "iptables", ServiceAction::Enable)?;
 
-        // flush all rules
-        cmd!("sudo iptables -F"),
+        with_shell! { ushell =>
+            // set policy to ACCEPT so we won't get locked out!
+            cmd!("sudo iptables -P INPUT ACCEPT"),
 
-        // allow loopback/local traffic
-        cmd!("sudo iptables -A INPUT -i lo -p all -j ACCEPT"),
-        cmd!("sudo iptables -A OUTPUT -o lo -p all -j ACCEPT"),
+            // flush all rules
+            cmd!("sudo iptables -F"),
 
-        // allow established/related traffic
-        cmd!("sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"),
-        cmd!("sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+            // allow loopback/local traffic
+            cmd!("sudo iptables -A INPUT -i lo -p all -j ACCEPT"),
+            cmd!("sudo iptables -A OUTPUT -o lo -p all -j ACCEPT"),
 
-        // allow ssh
-        cmd!("sudo iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
-        cmd!("sudo iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+            // allow established/related traffic
+            cmd!("sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"),
+            cmd!("sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
 
-        // allow ssh to guest
-        cmd!("sudo iptables -A INPUT -p tcp --dport 5555 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
-        cmd!("sudo iptables -A OUTPUT -p tcp --sport 5555 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+            // allow ssh
+            cmd!("sudo iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
+            cmd!("sudo iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
 
-        // allow rsync
-        cmd!("sudo iptables -A INPUT -p tcp --dport 873 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
-        cmd!("sudo iptables -A OUTPUT -p tcp --sport 873 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
+            // allow ssh to guest
+            cmd!("sudo iptables -A INPUT -p tcp --dport 5555 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
+            cmd!("sudo iptables -A OUTPUT -p tcp --sport 5555 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
 
-        // reject all other traffic (and log for debugging)
-        cmd!("sudo iptables -N LOGGING"),
-        cmd!("sudo iptables -A INPUT -j LOGGING"),
-        cmd!("sudo iptables -A LOGGING -m limit --limit 2/min -j LOG \
-             --log-prefix \"iptables-dropped: \" --log-level 4"),
-        cmd!("sudo iptables -A LOGGING -j REJECT"),
+            // allow rsync
+            cmd!("sudo iptables -A INPUT -p tcp --dport 873 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"),
+            cmd!("sudo iptables -A OUTPUT -p tcp --sport 873 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
 
-        // print and save iptables
-        cmd!("sudo iptables -L -v"),
-        cmd!("sudo service iptables save"),
-    };
+            // reject all other traffic (and log for debugging)
+            cmd!("sudo iptables -N LOGGING"),
+            cmd!("sudo iptables -A INPUT -j LOGGING"),
+            cmd!("sudo iptables -A LOGGING -m limit --limit 2/min -j LOG \
+                 --log-prefix \"iptables-dropped: \" --log-level 4"),
+            cmd!("sudo iptables -A LOGGING -j REJECT"),
+
+            // print and save iptables
+            cmd!("sudo iptables -L -v"),
+            cmd!("sudo service iptables save"),
+        };
+    }
 
     Ok(())
 }
@@ -952,17 +974,6 @@ where
 
     // Disable TSC offsetting so that setup runs faster
     ZeroSim::tsc_offsetting(&ushell, false)?;
-
-    // Disable firewalld if it is running because it causes VM issues. When we do that, we need to
-    // reastart libvirtd.
-    let firewall_up = ushell.run(cmd!("sudo firewall-cmd --state")).is_ok(); // returns 252 if not running
-    if firewall_up {
-        ushell.run(cmd!("sudo firewall-cmd --permanent --add-service=nfs"))?;
-        ushell.run(cmd!("sudo firewall-cmd --permanent --add-service=rpc-bind"))?;
-        ushell.run(cmd!("sudo firewall-cmd --permanent --add-service=mountd"))?;
-        ushell.run(cmd!("sudo firewall-cmd --reload"))?;
-        crate::common::service(&ushell, "firewalld", ServiceAction::Disable)?;
-    }
 
     // Make sure libvirtd is running.
     crate::common::service(&ushell, "libvirtd", ServiceAction::Restart)?;
