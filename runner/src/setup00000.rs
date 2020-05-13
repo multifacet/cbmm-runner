@@ -641,6 +641,7 @@ where
             cmd!("sudo iptables -A OUTPUT -p tcp --sport 873 -m conntrack --ctstate ESTABLISHED -j ACCEPT"),
 
             // reject all other traffic (and log for debugging)
+            cmd!("sudo iptables -X LOGGING || true"),
             cmd!("sudo iptables -N LOGGING"),
             cmd!("sudo iptables -A INPUT -j LOGGING"),
             cmd!("sudo iptables -A LOGGING -m limit --limit 2/min -j LOG \
