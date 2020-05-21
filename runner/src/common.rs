@@ -644,6 +644,7 @@ pub fn build_kernel(
 }
 
 /// Something that may be done to a service.
+#[allow(dead_code)]
 pub enum ServiceAction {
     /// Start the service if it is not active. Otherwise, do nothing.
     Start,
