@@ -2,7 +2,8 @@
 //! workload is made to consume all of the guest memory (which is less than the amount given to
 //! QEMU/KVM because of VM overhead).
 //!
-//! Requires `setup00000`.
+//! Requires `setup00000`. If `--mmstats` is used, then `setup00002` with an instrumented kernel is
+//! needed.
 
 use clap::clap_app;
 
@@ -28,6 +29,9 @@ const NAS_CG_HOURS: u64 = 6;
 
 /// The number of iterations for `memhog`.
 const MEMHOG_R: usize = 10;
+
+/// Period to record stats.
+const PERIOD: usize = 10; // seconds
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -60,6 +64,8 @@ struct Config {
     cores: usize,
 
     stats_interval: usize,
+    mmstats: bool,
+    mmstats_periodic: bool,
 
     zswap_max_pool_percent: usize,
 
@@ -110,6 +116,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The number of cores of the VM (defaults to 1)")
         (@arg EAGER_PAGING: --eager
          "Run the workload with eager paging")
+        (@arg MMSTATS: --mmstats
+         "Collect kernel memory management stats.")
+        (@arg PERIODIC: --periodic requires[MMSTATS]
+         "Collect kernel memory management stats periodically.")
     }
 }
 
@@ -124,6 +134,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .unwrap()
         .parse::<usize>()
         .unwrap();
+    let mmstats = sub_m.is_present("MMSTATS");
+    let periodic = sub_m.is_present("PERIODIC");
 
     let workload = match () {
         () if sub_m.is_present("memcached") => Workload::Memcached,
@@ -177,6 +189,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         cores,
 
         stats_interval: interval,
+        mmstats,
+        mmstats_periodic: periodic,
 
         zswap_max_pool_percent: 50,
 
@@ -317,6 +331,51 @@ where
         )
         .use_bash(),
     )?;
+
+    // Collect mm stats
+    let mmstats_file = cfg.gen_file_name("mmstats");
+
+    // Set histogram parameters before workload.
+    let maybe_shell_and_handle = if cfg.mmstats && !cfg.mmstats_periodic {
+        // Print the current numbers, 'cause why not?
+        vshell.run(cmd!("tail /proc/mm_*"))?;
+
+        // Writing to any of the params will reset the plot.
+        vshell.run(cmd!(
+            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+        ))?;
+
+        None
+    } else if cfg.mmstats_periodic {
+        // Read and reset stats over PERIOD seconds.
+        let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
+        let ret = vshell2.spawn(
+            cmd!(
+                "rm -f /tmp/exp-stop ; \
+                 while [ ! -e /tmp/exp-stop ] ; do \
+                 tail /proc/mm_* | tee -a {} ; \
+                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done ; \
+                 sleep {} ; \
+                 done ; echo done measuring",
+                dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+                PERIOD
+            )
+            .use_bash(),
+        )?;
+
+        // Wait to make sure the collection of stats has started
+        vshell2.run(
+            cmd!(
+                "while [ ! -e {} ] ; do sleep 1 ; done",
+                dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+            )
+            .use_bash(),
+        )?;
+
+        Some((vshell2, ret))
+    } else {
+        None
+    };
 
     // Run the actual workload
     match cfg.workload {
@@ -461,6 +520,29 @@ where
                 )?
             });
         }
+    }
+
+    // Collect stats after the workload runs.
+    if cfg.mmstats && !cfg.mmstats_periodic {
+        vshell.run(cmd!(
+            "tail /proc/mm_* | tee {}",
+            dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
+        ))?;
+        vshell.run(cmd!(
+            "cat /proc/meminfo | tee -a {}",
+            dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
+        ))?;
+        vshell.run(cmd!(
+            "cat /proc/vmstat | tee -a {}",
+            dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
+        ))?;
+    } else if cfg.mmstats_periodic {
+        vshell.run(cmd!("touch /tmp/exp-stop"))?;
+        time!(
+            timers,
+            "Waiting for mmstats thread to halt",
+            maybe_shell_and_handle.unwrap().1 .1.join()?
+        );
     }
 
     vshell.run(cmd!("touch /tmp/exp-stop"))?;
