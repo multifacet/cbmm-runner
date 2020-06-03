@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::common::{
+use crate::{
     exp_0sim::*,
     output::{Parametrize, Timestamp},
     paths::{setup00000::*, *},
@@ -148,9 +148,9 @@ pub fn run(sub_m: &ArgMatches<'_>) -> Result<(), failure::Error> {
         .map(|s| s.to_string().parse::<u64>().unwrap());
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
-    let local_git_hash = crate::common::local_research_workspace_git_hash()?;
-    let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let local_git_hash = crate::local_research_workspace_git_hash()?;
+    let remote_git_hash = crate::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = crate::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         workload,
@@ -269,7 +269,7 @@ where
     }
 
     // We want to use rdtsc as the time source, so find the cpu freq:
-    let freq = crate::common::get_cpu_freq(&ushell)?;
+    let freq = crate::get_cpu_freq(&ushell)?;
 
     // Run the workload
     match cfg.workload {
@@ -448,7 +448,7 @@ where
 
         Workload::HiBenchWordcount => {
             // Hadoop should be run as non-root user.
-            let vshell = crate::common::exp_0sim::connect_to_vagrant_as_user(&login.host)?;
+            let vshell = crate::exp_0sim::connect_to_vagrant_as_user(&login.host)?;
 
             let zerosim_hadoop = dir!(zerosim_path, ZEROSIM_BENCHMARKS_DIR, ZEROSIM_HADOOP_PATH);
             let hibench_home = dir!(&zerosim_hadoop, "HiBench");
@@ -473,11 +473,11 @@ where
 
     vshell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::common::timings_str(timers.as_slice()),
+        crate::timings_str(timers.as_slice()),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;
 
-    crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
+    crate::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     let glob = cfg.gen_file_name("*");
     println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
