@@ -116,8 +116,8 @@ impl ZeroSim {
         )?;
 
         // KSM is also not working right
-        crate::common::service(shell, "ksm", ServiceAction::Disable)?;
-        crate::common::service(shell, "ksmtuned", ServiceAction::Disable)?;
+        crate::service(shell, "ksm", ServiceAction::Disable)?;
+        crate::service(shell, "ksmtuned", ServiceAction::Disable)?;
 
         shell.run(cmd!("echo ztier | sudo tee /sys/module/zswap/parameters/zpool").use_bash())?;
         shell.run(cmd!("echo y | sudo tee /sys/module/zswap/parameters/enabled").use_bash())?;
@@ -198,7 +198,7 @@ pub fn setup_swapping(shell: &SshShell) -> Result<(), failure::Error> {
 
 /// Set the scaling governor to "performance".
 pub fn set_perf_scaling_gov(shell: &SshShell) -> Result<(), failure::Error> {
-    let user_home = crate::common::get_user_home_dir(shell)?;
+    let user_home = crate::get_user_home_dir(shell)?;
 
     let kernel_path = format!(
         "{}/{}/{}",
@@ -307,12 +307,12 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
     skip_halt: bool,
     lapic_adjust: bool,
 ) -> Result<SshShell, failure::Error> {
-    crate::common::service(shell, "nfs-idmapd", ServiceAction::Restart)?;
-    crate::common::service(shell, "libvirtd", ServiceAction::Restart)?;
+    crate::service(shell, "nfs-idmapd", ServiceAction::Restart)?;
+    crate::service(shell, "libvirtd", ServiceAction::Restart)?;
 
     // Disable KSM because it creates a lot of overhead when the host is oversubscribed
-    crate::common::service(shell, "ksm", ServiceAction::Disable)?;
-    crate::common::service(shell, "ksmtuned", ServiceAction::Disable)?;
+    crate::service(shell, "ksm", ServiceAction::Disable)?;
+    crate::service(shell, "ksmtuned", ServiceAction::Disable)?;
 
     gen_vagrantfile(shell, memgb, cores)?;
 
@@ -519,19 +519,17 @@ pub fn create_thin_swap(
 /// swap devices of the right size are used (according to `list_swapdevs`).
 pub fn turn_on_swapdevs(shell: &SshShell) -> Result<(), failure::Error> {
     // Find out what swap devs are there
-    let settings = crate::common::get_remote_research_settings(shell)?;
+    let settings = crate::get_remote_research_settings(shell)?;
 
     if let (Some(dm_meta), Some(dm_data)) = (
-        crate::common::get_remote_research_setting(&settings, "dm-meta")?,
-        crate::common::get_remote_research_setting(&settings, "dm-data")?,
+        crate::get_remote_research_setting(&settings, "dm-meta")?,
+        crate::get_remote_research_setting(&settings, "dm-data")?,
     ) {
         // If a thinly-provisioned swap space is setup, load and mount it.
         return turn_on_thin_swap(shell, dm_meta, dm_data);
     }
 
-    let devs = if let Some(devs) =
-        crate::common::get_remote_research_setting(&settings, "swap-devices")?
-    {
+    let devs = if let Some(devs) = crate::get_remote_research_setting(&settings, "swap-devices")? {
         devs
     } else {
         list_swapdevs(shell)?
@@ -552,9 +550,9 @@ pub fn turn_on_swapdevs(shell: &SshShell) -> Result<(), failure::Error> {
 /// swap devices of the right size are used (according to `list_swapdevs`).
 pub fn turn_on_ssdswap(shell: &SshShell) -> Result<(), failure::Error> {
     // Find out what swap devs are there
-    let settings = crate::common::get_remote_research_settings(shell)?;
+    let settings = crate::get_remote_research_settings(shell)?;
     let devs = if let Some(dm_data) =
-        crate::common::get_remote_research_setting::<String>(&settings, "dm-data")?
+        crate::get_remote_research_setting::<String>(&settings, "dm-data")?
     {
         // If the swap device in use is a thin swap
         vec![
@@ -562,9 +560,7 @@ pub fn turn_on_ssdswap(shell: &SshShell) -> Result<(), failure::Error> {
             "mapper/mythin".into(),
             "mapper/mypool".into(),
         ]
-    } else if let Some(devs) =
-        crate::common::get_remote_research_setting(&settings, "swap-devices")?
-    {
+    } else if let Some(devs) = crate::get_remote_research_setting(&settings, "swap-devices")? {
         devs
     } else {
         list_swapdevs(shell)?
@@ -682,14 +678,10 @@ pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(
         cmd!(r#"sed -i 's/^vagrant_vcpus = 1$/vagrant_vcpus = {}/' Vagrantfile"#, cores),
     }
 
-    let user_home = crate::common::get_user_home_dir(shell)?;
+    let user_home = crate::get_user_home_dir(shell)?;
     let vagrant_full_path = &format!("{}/{}", user_home, vagrant_path).replace("/", r#"\/"#);
-    let vm_shared_full_path = &format!(
-        "{}/{}",
-        user_home,
-        crate::common::setup00000::HOSTNAME_SHARED_DIR
-    )
-    .replace("/", r#"\/"#);
+    let vm_shared_full_path =
+        &format!("{}/{}", user_home, crate::setup00000::HOSTNAME_SHARED_DIR).replace("/", r#"\/"#);
     let research_workspace_full_path =
         &format!("{}/{}", user_home, RESEARCH_WORKSPACE_PATH).replace("/", r#"\/"#);
 

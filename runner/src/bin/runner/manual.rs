@@ -9,7 +9,7 @@ use clap::{clap_app, ArgMatches};
 
 use spurs::{cmd, Execute, SshShell};
 
-use crate::common::{
+use runner::{
     exp_0sim::{
         initial_reboot, set_kernel_printk_level, set_perf_scaling_gov, setup_swapping,
         start_vagrant, turn_on_ssdswap, ZeroSim, VAGRANT_CORES, VAGRANT_MEM, ZEROSIM_LAPIC_ADJUST,
@@ -106,7 +106,7 @@ pub fn run(sub_m: &ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let mut ushell = SshShell::with_default_key(login.username, login.host)?;
 
-    let user_home = crate::common::get_user_home_dir(&ushell)?;
+    let user_home = runner::get_user_home_dir(&ushell)?;
     let zerosim_exp_path_host = &format!(
         "{}/{}/{}",
         user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_EXPERIMENTS_SUBMODULE

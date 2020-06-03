@@ -5,23 +5,25 @@
 
 use clap::clap_app;
 
-use serde::{Deserialize, Serialize};
-
-use spurs::{cmd, Execute, SshShell};
-use spurs_util::escape_for_bash;
-
-use crate::common::{
+use runner::{
+    dir,
     downloads::{artifact_info, Artifact},
     exp_0sim::*,
     get_cpu_freq,
     output::{Parametrize, Timestamp},
     paths::{setup00000::*, *},
+    time,
     workloads::{
         run_memcached_gen_data, run_time_mmap_touch, MemcachedWorkloadConfig, TasksetCtx,
         TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
     KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
 };
+
+use serde::{Deserialize, Serialize};
+
+use spurs::{cmd, Execute, SshShell};
+use spurs_util::escape_for_bash;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
@@ -118,9 +120,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let prefault = sub_m.is_present("PREFAULT");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
-    let local_git_hash = crate::common::local_research_workspace_git_hash()?;
-    let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let local_git_hash = runner::local_research_workspace_git_hash()?;
+    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         exp: (
@@ -271,7 +273,7 @@ where
 
         let kernel_info = artifact_info(Artifact::Linux);
         move || {
-            crate::common::build_kernel(
+            runner::build_kernel(
                 &ushell2,
                 KernelSrc::Tar {
                     tarball_path: kernel_info.name.into(),
@@ -345,11 +347,11 @@ where
 
     vshell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::common::timings_str(timers.as_slice()),
+        runner::timings_str(timers.as_slice()),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;
 
-    crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
+    runner::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     let glob = cfg.gen_file_name("*");
     println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));

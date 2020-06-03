@@ -9,15 +9,17 @@ use clap::clap_app;
 
 use failure::ResultExt;
 
-use spurs::{cmd, Execute, SshShell};
-
-use crate::common::{
+use runner::{
+    dir,
     downloads::{artifact_info, download, download_and_extract, Artifact},
     exp_0sim::*,
     get_user_home_dir,
     paths::{setup00000::*, *},
-    KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login, ServiceAction,
+    with_shell, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login,
+    ServiceAction,
 };
+
+use spurs::{cmd, Execute, SshShell};
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     clap_app! { setup00000 =>
@@ -59,7 +61,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
 
         (@arg CLONE_WKSPC: --clone_wkspc
          "(Optional) If passed, clone the workspace on the remote (or update if already cloned \
-         using the git access method in src/common.rs. If the method uses HTTPS to access a \
+         using the git access method in src/lib.rs. If the method uses HTTPS to access a \
          private repository, the --secret option must also be passed giving the GitHub personal \
          access token or password.")
 
@@ -493,7 +495,7 @@ where
     // Build and Install QEMU 4.0.0 from source
     let qemu_info = download_and_extract(ushell, Artifact::Qemu, user_home, None)?;
     let qemu_dir = qemu_info.name.trim_end_matches(".tar.xz");
-    let ncores = crate::common::get_num_cores(&ushell)?;
+    let ncores = runner::get_num_cores(&ushell)?;
 
     with_shell! { ushell in qemu_dir =>
         cmd!("./configure"),
@@ -517,7 +519,7 @@ where
                                sudo tee /lib/udev/rules.d/99-kvm.rules"#
     ))?;
 
-    crate::common::service(&ushell, "libvirtd", ServiceAction::Restart)?;
+    runner::service(&ushell, "libvirtd", ServiceAction::Restart)?;
 
     Ok(())
 }
@@ -526,7 +528,7 @@ fn set_up_host_devices<A>(ushell: &SshShell, cfg: &SetupConfig<'_, A>) -> Result
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    use crate::common::get_device_id;
+    use runner::get_device_id;
 
     let user_home = &get_user_home_dir(&ushell)?;
 
@@ -570,8 +572,8 @@ where
         create_thin_swap(&ushell, DM_META_FILE, &mapper_device)?;
 
         // Save so that we can mount on reboot.
-        crate::common::set_remote_research_setting(&ushell, "dm-meta", DM_META_FILE)?;
-        crate::common::set_remote_research_setting(&ushell, "dm-data", mapper_device)?;
+        runner::set_remote_research_setting(&ushell, "dm-meta", DM_META_FILE)?;
+        runner::set_remote_research_setting(&ushell, "dm-data", mapper_device)?;
     } else if let Some(swap_devs) = &cfg.swap_devices {
         if swap_devs.is_empty() {
             let unpartitioned =
@@ -594,7 +596,7 @@ where
                 swap_devices.push(dev);
             }
 
-            crate::common::set_remote_research_setting(&ushell, "swap-devices", &swap_devices)?;
+            runner::set_remote_research_setting(&ushell, "swap-devices", &swap_devices)?;
         }
     }
 
@@ -610,8 +612,8 @@ where
 {
     if cfg.firewall {
         // disable firewalld, enable iptables services
-        crate::common::service(ushell, "firewalld", ServiceAction::Disable)?;
-        crate::common::service(ushell, "iptables", ServiceAction::Enable)?;
+        runner::service(ushell, "firewalld", ServiceAction::Disable)?;
+        runner::service(ushell, "iptables", ServiceAction::Enable)?;
 
         with_shell! { ushell =>
             // set policy to ACCEPT so we won't get locked out!
@@ -683,7 +685,7 @@ where
             ZEROSIM_YCSB_SUBMODULE,
         ];
 
-        crate::common::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
+        runner::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
     }
 
     Ok(())
@@ -728,9 +730,9 @@ where
             ZEROSIM_KERNEL_SUBMODULE
         );
 
-        let git_hash = crate::common::research_workspace_git_hash(ushell)?;
+        let git_hash = runner::research_workspace_git_hash(ushell)?;
 
-        crate::common::build_kernel(
+        runner::build_kernel(
             &ushell,
             KernelSrc::Git {
                 repo_path: kernel_path.clone(),
@@ -741,7 +743,7 @@ where
                 base_config: KernelBaseConfigSource::Current,
                 extra_options: &config_set,
             },
-            Some(&crate::common::gen_local_version(git_branch, &git_hash)),
+            Some(&runner::gen_local_version(git_branch, &git_hash)),
             KernelPkgType::Rpm,
         )?;
 
@@ -817,7 +819,7 @@ fn build_host_benchmarks<A>(
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let ncores = crate::common::get_num_cores(&ushell)?;
+    let ncores = runner::get_num_cores(&ushell)?;
 
     // Build 0sim trace tool
     ushell.run(
@@ -956,7 +958,7 @@ where
     ushell.run(cmd!("chmod +x images/"))?;
     ushell.run(cmd!("sudo chown {}:qemu images/", cfg.login.username))?;
 
-    crate::common::service(&ushell, "libvirtd", ServiceAction::Start)?;
+    runner::service(&ushell, "libvirtd", ServiceAction::Start)?;
 
     let def_exists = ushell
         .run(cmd!("sudo virsh pool-list --all | grep -q default"))
@@ -981,11 +983,11 @@ where
     ZeroSim::tsc_offsetting(&ushell, false)?;
 
     // Make sure libvirtd is running.
-    crate::common::service(&ushell, "libvirtd", ServiceAction::Restart)?;
+    runner::service(&ushell, "libvirtd", ServiceAction::Restart)?;
 
     // Make sure NFS accepts UDP.
     ushell.run(cmd!(r"sed 's/\[nfsd\]/[nfsd]\nudp=y/' /etc/nfs.conf"))?;
-    crate::common::service(&ushell, "nfs-server", ServiceAction::Restart)?;
+    runner::service(&ushell, "nfs-server", ServiceAction::Restart)?;
 
     Ok(())
 }
@@ -1019,7 +1021,7 @@ where
     ushell.run(cmd!("mkdir -p {}", HOSTNAME_SHARED_RESULTS_DIR))?;
 
     ushell.run(cmd!("cp Vagrantfile.bk Vagrantfile").cwd(vagrant_path))?;
-    crate::common::gen_new_vagrantdomain(
+    runner::gen_new_vagrantdomain(
         &ushell,
         if cfg.centos7 {
             VAGRANT_CENTOS7_BOX
@@ -1241,7 +1243,7 @@ fn install_guest_kernel(
     let guest_config_base_name = std::path::Path::new(guest_config).file_name().unwrap();
 
     let kernel_info = download(ushell, Artifact::Linux, user_home, None)?;
-    crate::common::build_kernel(
+    runner::build_kernel(
         &ushell,
         KernelSrc::Tar {
             tarball_path: kernel_info.name.into(),
@@ -1336,7 +1338,7 @@ fn vm_setup_hadoop(
         ZEROSIM_HADOOP_PATH
     );
 
-    crate::common::setup_passphraseless_local_ssh(vushell)?;
+    runner::setup_passphraseless_local_ssh(vushell)?;
 
     // Add hadoop env vars to shell profile.
     let user_home = vushell.run(cmd!("echo $HOME"))?.stdout;
@@ -1353,8 +1355,8 @@ fn vm_setup_hadoop(
     ))?;
 
     // Download and untar hadoop and spark.
-    crate::common::hadoop::download_hadoop_tarball(&ushell, &hadoop_path)?;
-    crate::common::hadoop::download_spark_tarball(&ushell, &hadoop_path)?;
+    runner::hadoop::download_hadoop_tarball(&ushell, &hadoop_path)?;
+    runner::hadoop::download_spark_tarball(&ushell, &hadoop_path)?;
 
     // Copy config options into place. These already have settings set, so we don't need to do a
     // lot of adjusting on the fly.

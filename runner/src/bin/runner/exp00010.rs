@@ -4,22 +4,24 @@
 
 use clap::clap_app;
 
-use serde::{Deserialize, Serialize};
-
-use spurs::{cmd, Execute, SshShell};
-use spurs_util::escape_for_bash;
-
-use crate::common::{
+use runner::{
+    dir,
     exp_0sim::*,
     get_cpu_freq, get_user_home_dir,
     output::{Parametrize, Timestamp},
     paths::*,
+    time,
     workloads::{
         run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
         run_time_mmap_touch, LocalityMemAccessConfig, LocalityMemAccessMode,
         MemcachedWorkloadConfig, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
+
+use serde::{Deserialize, Serialize};
+
+use spurs::{cmd, Execute, SshShell};
+use spurs_util::escape_for_bash;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -188,9 +190,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let eager = sub_m.is_present("EAGER");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
-    let local_git_hash = crate::common::local_research_workspace_git_hash()?;
-    let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let local_git_hash = runner::local_research_workspace_git_hash()?;
+    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         exp: (10, "bare_metal".into(), workload_name.into()),
@@ -240,7 +242,7 @@ where
     );
 
     // Turn on compaction and force it too happen
-    crate::common::turn_on_thp(
+    runner::turn_on_thp(
         &ushell,
         &cfg.transparent_hugepage_enabled,
         &cfg.transparent_hugepage_defrag,
@@ -265,7 +267,7 @@ where
         )
     ))?;
 
-    let cores = crate::common::get_num_cores(&ushell)?;
+    let cores = runner::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
 
     // Run the workload.
@@ -412,7 +414,7 @@ where
 
     ushell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::common::timings_str(timers.as_slice()),
+        runner::timings_str(timers.as_slice()),
         dir!(
             user_home,
             setup00000::HOSTNAME_SHARED_RESULTS_DIR,

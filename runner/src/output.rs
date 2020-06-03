@@ -38,8 +38,8 @@ impl Timestamp {
 /// `Parametrize` can be derived automatically for many types using a custom derive macro. Here is
 /// an example usage:
 ///
-/// ```rust
-/// use crate::common::output::{Parametrize, Timestamp};
+/// ```rust,ignore
+/// use crate::output::{Parametrize, Timestamp};
 ///
 /// use serde::{Serialize, Deserialize};
 ///
@@ -152,6 +152,7 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate as runner;
 
     #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
     struct Test {

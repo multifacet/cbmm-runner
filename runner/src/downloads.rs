@@ -1,6 +1,6 @@
 //! Utilities for downloading stuff.
 //!
-//! NOTE: for utilities for Hadoop/Spark see `crate::common::hadoop`, as they are especially
+//! NOTE: for utilities for Hadoop/Spark see `crate::hadoop`, as they are especially
 //! painful.
 
 use spurs::{cmd, Execute, SshShell};

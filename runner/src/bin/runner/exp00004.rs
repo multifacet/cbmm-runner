@@ -6,18 +6,20 @@
 
 use clap::clap_app;
 
-use serde::{Deserialize, Serialize};
-
-use spurs::{cmd, Execute, SshShell};
-use spurs_util::escape_for_bash;
-
-use crate::common::{
+use runner::{
+    dir,
     exp_0sim::*,
     get_user_home_dir,
     output::{Parametrize, Timestamp},
     paths::*,
+    time,
     workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
 };
+
+use serde::{Deserialize, Serialize};
+
+use spurs::{cmd, Execute, SshShell};
+use spurs_util::escape_for_bash;
 
 /// Interval at which to collect thp stats
 const INTERVAL: usize = 60; // seconds
@@ -78,9 +80,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
     let ushell = SshShell::with_default_key(&login.username, &login.host)?;
-    let local_git_hash = crate::common::local_research_workspace_git_hash()?;
-    let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let local_git_hash = runner::local_research_workspace_git_hash()?;
+    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         exp: (4, "memcached_thp_ops_per_page_bare_metal".into()),
@@ -143,7 +145,7 @@ where
     ushell.run(cmd!("sudo swapon /dev/sda3"))?;
 
     // Turn on compaction and force it to happen
-    crate::common::turn_on_thp(
+    runner::turn_on_thp(
         &ushell,
         &cfg.transparent_hugepage_enabled,
         &cfg.transparent_hugepage_defrag,
@@ -152,7 +154,7 @@ where
         cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
     )?;
 
-    let cores = crate::common::get_num_cores(&ushell)?;
+    let cores = runner::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
 
     // Run workload
@@ -188,7 +190,7 @@ where
 
     ushell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::common::timings_str(timers.as_slice()),
+        runner::timings_str(timers.as_slice()),
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, time_file)
     ))?;
 

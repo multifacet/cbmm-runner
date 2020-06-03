@@ -12,20 +12,21 @@
 
 use clap::clap_app;
 
+use runner::{
+    dir,
+    exp_0sim::*,
+    output::{Parametrize, Timestamp},
+    paths::{setup00000::*, *},
+    time,
+    workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
+};
+
 use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
-use crate::{
-    common::{
-        exp_0sim::*,
-        output::{Parametrize, Timestamp},
-        paths::{setup00000::*, *},
-        workloads::{run_memcached_and_capture_thp, MemcachedWorkloadConfig, TasksetCtx},
-    },
-    setup00001::GUEST_SWAP_GBS,
-};
+use crate::setup00001::GUEST_SWAP_GBS;
 
 /// Interval at which to collect thp stats
 const INTERVAL: usize = 60; // seconds
@@ -126,9 +127,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .map(|value| value.parse::<usize>().unwrap());
 
     let ushell = SshShell::with_default_key(&login.username, &login.host)?;
-    let local_git_hash = crate::common::local_research_workspace_git_hash()?;
-    let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let local_git_hash = runner::local_research_workspace_git_hash()?;
+    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         exp: (3, "memcached_per_page_thp_ops".into()),
@@ -191,9 +192,9 @@ where
     ZeroSim::zswap_max_pool_percent(&ushell, cfg.zswap_max_pool_percent)?;
 
     // Mount guest swap space
-    let research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let research_settings = runner::get_remote_research_settings(&ushell)?;
     let guest_swap: &str =
-        crate::common::get_remote_research_setting(&research_settings, "guest_swap")?.unwrap();
+        runner::get_remote_research_setting(&research_settings, "guest_swap")?.unwrap();
     vshell.run(cmd!("sudo swapon {}", guest_swap))?;
 
     let zerosim_exp_path = &dir!(
@@ -222,7 +223,7 @@ where
     ))?;
 
     // Turn on compaction and force it too happen
-    crate::common::turn_on_thp(
+    runner::turn_on_thp(
         &vshell,
         &cfg.transparent_hugepage_enabled,
         &cfg.transparent_hugepage_defrag,
@@ -267,11 +268,11 @@ where
 
     vshell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::common::timings_str(timers.as_slice()),
+        runner::timings_str(timers.as_slice()),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;
 
-    crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
+    runner::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     let glob = cfg.gen_file_name("*");
     println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));

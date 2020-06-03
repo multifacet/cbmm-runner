@@ -4,14 +4,15 @@
 
 use clap::clap_app;
 
-use spurs::{cmd, Execute};
-
-use crate::common::{
+use runner::{
+    dir,
     exp_0sim::*,
     get_user_home_dir,
     paths::{setup00000::*, setup00001::*, *},
-    GitRepo, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login,
+    with_shell, GitRepo, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login,
 };
+
+use spurs::{cmd, Execute};
 
 pub const GUEST_SWAP_GBS: usize = 10;
 
@@ -159,7 +160,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let guest_config_base_name = std::path::Path::new(guest_config).file_name().unwrap();
 
-    crate::common::build_kernel(
+    runner::build_kernel(
         &ushell,
         KernelSrc::Git {
             repo_path: kernel_path,
@@ -173,7 +174,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             )),
             extra_options: &kernel_config,
         },
-        Some(&crate::common::gen_local_version(git_branch, git_hash)),
+        Some(&runner::gen_local_version(git_branch, git_hash)),
         KernelPkgType::Rpm,
     )?;
 
@@ -217,7 +218,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         cmd!("sudo chmod 0600 {}", VAGRANT_GUEST_SWAPFILE),
         cmd!("sudo chown root:root {}", VAGRANT_GUEST_SWAPFILE),
     }
-    crate::common::set_remote_research_setting(&ushell, "guest_swap", VAGRANT_GUEST_SWAPFILE)?;
+    runner::set_remote_research_setting(&ushell, "guest_swap", VAGRANT_GUEST_SWAPFILE)?;
 
     // update grub to choose this entry (new kernel) by default
     vshell.run(cmd!("sudo grub2-set-default 0"))?;

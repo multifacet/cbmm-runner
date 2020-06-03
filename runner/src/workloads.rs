@@ -22,9 +22,9 @@ pub fn vagrant_setup_apriori_paging_process(shell: &SshShell, prog: &str) -> Res
         "{}/apriori_paging_set_process {}",
         dir![
             "/home/vagrant",
-            crate::common::paths::RESEARCH_WORKSPACE_PATH,
-            crate::common::paths::ZEROSIM_BENCHMARKS_DIR,
-            crate::common::paths::ZEROSIM_SWAPNIL_PATH
+            crate::paths::RESEARCH_WORKSPACE_PATH,
+            crate::paths::ZEROSIM_BENCHMARKS_DIR,
+            crate::paths::ZEROSIM_SWAPNIL_PATH
         ],
         prog
     ))?;
@@ -322,7 +322,6 @@ pub fn run_memcached_and_capture_thp(
     Ok(())
 }
 
-#[allow(dead_code)]
 /// NAS Parallel Benchmark workload size classes. See online documentation.
 pub enum NasClass {
     E,
@@ -701,11 +700,8 @@ pub fn run_redis_gen_data(
 /// workload takes a really long time, so we start it in a spawned shell and return the join handle
 /// rather than waiting for the workload to return.
 ///
-/// NOTE: The amount of virtual memory used by the workload is
-///
-///     `(dim * dim) * 4 * 2` bytes
-///
-/// so if you want a workload of size `t` GB, use `dim = sqrt(t << 27)`.
+/// NOTE: The amount of virtual memory used by the workload is `(dim * dim) * 4 * 2` bytes so if
+/// you want a workload of size `t` GB, use `dim = sqrt(t << 27)`.
 ///
 /// - `bmk_dir` is the path to the `Metis` directory in the workspace on the remote.
 /// - `dim` is the dimension of the matrix (one side), which is assumed to be square.

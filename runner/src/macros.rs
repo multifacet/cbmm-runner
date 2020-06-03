@@ -1,6 +1,7 @@
 //! Useful macros.
 
 /// Time the given operations and push the time to the given `Vec<(String, Duration)>`.
+#[macro_export]
 macro_rules! time {
     ($timers:ident, $label:literal, $expr:expr) => {{
         let start = std::time::Instant::now();
@@ -12,6 +13,7 @@ macro_rules! time {
 }
 
 /// Given an ordered list of path components, combine them into a path string.
+#[macro_export]
 macro_rules! dir {
     ($first:expr $(, $part:expr)* $(,)?) => {{
         #[allow(unused_mut)]
@@ -27,6 +29,7 @@ macro_rules! dir {
 }
 
 /// Run a bunch of commands with the same shell and optionally the same CWD.
+#[macro_export]
 macro_rules! with_shell {
     ($shell:ident $(in $cwd:expr)? => $($cmd:expr),+ $(,)?) => {{
         let cmds = vec![$($cmd),+];

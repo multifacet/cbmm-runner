@@ -45,7 +45,6 @@ pub const RESEARCH_WORKSPACE_REPO: GitRepo<'_, '_> = GitRepo::HttpsPrivate {
 };
 
 /// A git repository.
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum GitRepo<'a, 's> {
     /// Use HTTPS to clone a public repo (no access control).
@@ -449,7 +448,6 @@ pub fn turn_on_thp(
 /// What type of package to produce from the kernel build?
 pub enum KernelPkgType {
     /// `bindeb-pkg`
-    #[allow(dead_code)]
     Deb,
     /// `binrpm-pkg`
     Rpm,
@@ -470,21 +468,18 @@ pub enum KernelSrc {
     /// The given tarball, which will be untarred and built as is. We assume that the name of the
     /// unpacked source directory is the same as the tarball name without the `.tar.gz`, `.tar.xz`,
     /// or `.tgz` extension.
-    #[allow(dead_code)]
     Tar { tarball_path: String },
 }
 
 /// Where to get the base config (on top of which we will apply additional changes)?
 pub enum KernelBaseConfigSource {
     /// Use `make defconfig`
-    #[allow(dead_code)]
     Defconfig,
 
     /// Use the running kernel.
     Current,
 
     /// Use the config from the given path.
-    #[allow(dead_code)]
     Path(String),
 }
 
@@ -644,7 +639,6 @@ pub fn build_kernel(
 }
 
 /// Something that may be done to a service.
-#[allow(dead_code)]
 pub enum ServiceAction {
     /// Start the service if it is not active. Otherwise, do nothing.
     Start,
@@ -654,7 +648,6 @@ pub enum ServiceAction {
     Restart,
     /// Disable and stop the service if it is active. Otherwise, do nothing.
     Disable,
-    #[allow(dead_code)]
     /// Enable the service, but do not start it. Requires that the service exist.
     Enable,
 }

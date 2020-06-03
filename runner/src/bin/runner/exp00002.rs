@@ -4,20 +4,22 @@
 
 use clap::clap_app;
 
-use serde::{Deserialize, Serialize};
-
-use spurs::{cmd, Execute, SshShell};
-use spurs_util::escape_for_bash;
-
-use crate::common::{
+use runner::{
+    dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
     paths::{setup00000::*, *},
+    time,
     workloads::{
         run_locality_mem_access, run_time_loop, run_time_mmap_touch, LocalityMemAccessConfig,
         LocalityMemAccessMode, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
+
+use serde::{Deserialize, Serialize};
+
+use spurs::{cmd, Execute, SshShell};
+use spurs_util::escape_for_bash;
 
 /// Which workload to run?
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
@@ -142,9 +144,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     };
 
     let ushell = SshShell::with_default_key(&login.username, &login.host)?;
-    let local_git_hash = crate::common::local_research_workspace_git_hash()?;
-    let remote_git_hash = crate::common::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = crate::common::get_remote_research_settings(&ushell)?;
+    let local_git_hash = runner::local_research_workspace_git_hash()?;
+    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         exp: (2, "mem_ubench".into()),
@@ -332,11 +334,11 @@ where
 
     vshell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::common::timings_str(timers.as_slice()),
+        runner::timings_str(timers.as_slice()),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;
 
-    crate::common::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
+    runner::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
     let glob = cfg.gen_file_name("*");
     println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
