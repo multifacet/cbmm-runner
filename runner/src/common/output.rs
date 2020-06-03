@@ -189,14 +189,14 @@ mod test {
         };
 
         let test_name = cfg.gen_file_name("test");
-        assert_eq!(test_name, "a170-b_BB_-c[204,_CC_]-2020-04-02-12-01-35.test");
+        assert_eq!(test_name, "a170-b_BB_-c_204__CC__-2020-04-02-12-01-35.test");
 
         cfg.d = true;
 
         let test_name = cfg.gen_file_name("test");
         assert_eq!(
             test_name,
-            "a170-b_BB_-c[204,_CC_]-dtrue-2020-04-02-12-01-35.test"
+            "a170-b_BB_-c_204__CC__-dtrue-2020-04-02-12-01-35.test"
         );
     }
 }
