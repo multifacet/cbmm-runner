@@ -15,9 +15,9 @@ use crate::common::{
     output::{Parametrize, Timestamp},
     paths::*,
     workloads::{
-        run_locality_mem_access, run_memcached_gen_data, run_time_loop, run_time_mmap_touch,
-        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, TasksetCtx,
-        TimeMmapTouchConfig, TimeMmapTouchPattern,
+        run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
+        run_time_mmap_touch, LocalityMemAccessConfig, LocalityMemAccessMode,
+        MemcachedWorkloadConfig, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -36,6 +36,9 @@ enum Workload {
     Memcached {
         size: usize,
     },
+    Mix {
+        size: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
@@ -51,6 +54,8 @@ struct Config {
     size: usize,
     #[name(self.pattern.is_some())]
     pattern: Option<TimeMmapTouchPattern>,
+    #[name(self.eager)]
+    eager: bool,
 
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -113,6 +118,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg SIZE: +required +takes_value {is_usize}
              "The number of GBs of the workload (e.g. 500)")
         )
+        (@subcommand mix =>
+            (about: "Run the `mix` workload.")
+            (@arg SIZE: +required +takes_value {is_usize}
+             "The number of GBs of the workload (e.g. 500)")
+        )
+        (@arg EAGER: --eager
+         "(optional) Use eager paging; requires a kernel that has eager paging.")
     }
 }
 
@@ -164,8 +176,16 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             (Workload::Memcached { size }, "memcached", 0, size, None)
         }
 
+        ("mix", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+
+            (Workload::Mix { size }, "mix", 0, size, None)
+        }
+
         _ => unreachable!(),
     };
+
+    let eager = sub_m.is_present("EAGER");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = crate::common::local_research_workspace_git_hash()?;
@@ -180,6 +200,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         n,
         size,
         pattern,
+        eager,
 
         transparent_hugepage_enabled: "always".into(),
         transparent_hugepage_defrag: "always".into(),
@@ -213,7 +234,7 @@ where
 
     let user_home = &get_user_home_dir(&ushell)?;
     let zerosim_exp_path = &dir!(
-        user_home.as_str(),
+        user_home,
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
@@ -238,7 +259,7 @@ where
         "echo '{}' > {}",
         escape_for_bash(&params),
         dir!(
-            user_home.as_str(),
+            user_home,
             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
             params_file
         )
@@ -258,7 +279,7 @@ where
                     zerosim_exp_path,
                     n,
                     &dir!(
-                        user_home.as_str(),
+                        user_home,
                         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                         output_file
                     ),
@@ -281,7 +302,7 @@ where
                         n: n,
                         threads: None,
                         output_file: &dir!(
-                            user_home.as_str(),
+                            user_home,
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             local_file
                         ),
@@ -296,7 +317,7 @@ where
                         n: n,
                         threads: None,
                         output_file: &dir!(
-                            user_home.as_str(),
+                            user_home,
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             nonlocal_file
                         ),
@@ -319,7 +340,7 @@ where
                         prefault: false,
                         pf_time: None,
                         output_file: Some(&dir!(
-                            user_home.as_str(),
+                            user_home,
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             output_file
                         )),
@@ -364,6 +385,25 @@ where
                 )?
             );
         }
+
+        Workload::Mix { size } => {
+            let freq = get_cpu_freq(&ushell)?;
+
+            time!(timers, "Workload", {
+                run_mix(
+                    &ushell,
+                    zerosim_exp_path,
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE),
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE),
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE),
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF),
+                    freq,
+                    size >> 20,
+                    cfg.eager,
+                    &mut tctx,
+                )?
+            });
+        }
     }
 
     ushell.run(cmd!("date"))?;
@@ -374,7 +414,7 @@ where
         "echo -e '{}' > {}",
         crate::common::timings_str(timers.as_slice()),
         dir!(
-            user_home.as_str(),
+            user_home,
             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
             time_file
         )
