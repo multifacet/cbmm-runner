@@ -135,8 +135,8 @@ where
     /// connect to the host, the internet, etc.
     firewall: bool,
 
-    /// The branch to build the kernel from.
-    git_branch: Option<&'a str>,
+    /// The git branch/hash/tag to compile the kernel from (e.g. master or v4.10).
+    commitish: Option<&'a str>,
 
     /// Should we build host benchmarks?
     host_bmks: bool,
@@ -186,7 +186,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let firewall = sub_m.is_present("FIREWALL");
 
-    let git_branch = sub_m.value_of("HOST_KERNEL");
+    let commitish = sub_m.value_of("HOST_KERNEL");
 
     let host_bmks = sub_m.is_present("HOST_BMKS");
 
@@ -214,7 +214,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         swap_devices,
         unstable_names,
         firewall,
-        git_branch,
+        commitish,
         clone_wkspc,
         secret,
         host_bmks,
@@ -698,7 +698,7 @@ where
     let user_home = &get_user_home_dir(&ushell)?;
 
     // clone the research workspace and build/install the 0sim kernel.
-    if let Some(git_branch) = cfg.git_branch {
+    if let Some(commitish) = cfg.commitish {
         let mut config_set = vec![
             // turn on 0sim
             ("CONFIG_ZSWAP", true),
@@ -736,14 +736,13 @@ where
             &ushell,
             KernelSrc::Git {
                 repo_path: kernel_path.clone(),
-                git_branch: git_branch.into(),
-                is_tag: false,
+                commitish: commitish.into(),
             },
             KernelConfig {
                 base_config: KernelBaseConfigSource::Current,
                 extra_options: &config_set,
             },
-            Some(&runner::gen_local_version(git_branch, &git_hash)),
+            Some(&runner::gen_local_version(commitish, &git_hash)),
             KernelPkgType::Rpm,
         )?;
 

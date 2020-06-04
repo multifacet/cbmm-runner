@@ -26,8 +26,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg GIT_BRANCH: +required +takes_value
-         "The git branch to compile the kernel from (e.g. master)")
+        (@arg COMMITISH: +required +takes_value
+         "The git branch/hash/tag to compile the kernel from (e.g. master or v4.10)")
     }
 }
 
@@ -37,7 +37,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         hostname: sub_m.value_of("HOSTNAME").unwrap(),
         host: sub_m.value_of("HOSTNAME").unwrap(),
     };
-    let git_branch = sub_m.value_of("GIT_BRANCH").unwrap();
+    let commitish = sub_m.value_of("COMMITISH").unwrap();
 
     // Connect to the remote.
     let (ushell, vshell) =
@@ -85,8 +85,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         &ushell,
         KernelSrc::Git {
             repo_path: kernel_path.clone(),
-            git_branch: git_branch.into(),
-            is_tag: false,
+            commitish: commitish.into(),
         },
         KernelConfig {
             base_config: KernelBaseConfigSource::Path(dir!(
@@ -95,7 +94,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             )),
             extra_options: CONFIG_SET,
         },
-        Some(&runner::gen_local_version(git_branch, git_hash)),
+        Some(&runner::gen_local_version(commitish, git_hash)),
         KernelPkgType::Rpm,
     )?;
 

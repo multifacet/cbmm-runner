@@ -455,14 +455,13 @@ pub enum KernelPkgType {
 
 /// Where to build the kernel from?
 pub enum KernelSrc {
-    /// The given git repo and branch.
+    /// The given git repo and commitish (a branch, tag, commit hash, etc, as accepted by git).
     ///
     /// The repo should already be cloned at the give path. This function will checkout the given
     /// branch, though, so the repo should be clean.
     Git {
         repo_path: String,
-        git_branch: String,
-        is_tag: bool,
+        commitish: String,
     },
 
     /// The given tarball, which will be untarred and built as is. We assume that the name of the
@@ -514,12 +513,21 @@ pub fn build_kernel(
     let source_path = match source {
         KernelSrc::Git {
             repo_path,
-            git_branch,
-            is_tag,
+            commitish,
         } => {
-            ushell.run(cmd!("git checkout {}", git_branch).cwd(&repo_path))?;
+            ushell.run(cmd!("git checkout {}", commitish).cwd(&repo_path))?;
 
-            if !is_tag {
+            // If the git HEAD is detached, we should not attempt to `git pull` the latest changes,
+            // as that doesn't make any sense.
+            let is_detached = ushell
+                .run(
+                    cmd!("git symbolic-ref -q HEAD")
+                        .cwd(&repo_path)
+                        .allow_error(),
+                )
+                .is_err();
+
+            if !is_detached {
                 ushell.run(cmd!("git pull").cwd(&repo_path))?;
             }
 

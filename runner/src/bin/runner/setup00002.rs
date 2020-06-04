@@ -33,11 +33,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg SSH: --ssh +takes_value
              "The git repository to compile the kernel from as an SSH address.")
         )
-        (@arg GIT_BRANCH: +required +takes_value
-         "The git branch to compile the kernel from (e.g. master)")
-        (@arg IS_TAG: --tag
-         "Pass if GIT_BRANCH is not a branch but a tag \
-         (NOTE: this needs to be passed before )")
+        (@arg COMMITISH: +required +takes_value
+         "The git branch/hash/tag to compile the kernel from (e.g. master or v4.10)")
         (@arg SECRET: --secret +takes_value requires[HTTPS] requires[GIT_USERNAME]
          "A secret token for accessing a private repository")
         (@arg GIT_USERNAME: --username +takes_value requires[HTTPS] requires[SECRET]
@@ -116,8 +113,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         }
     }
     .git_repo_access_url(secret);
-    let git_branch = sub_m.value_of("GIT_BRANCH").unwrap();
-    let is_tag = sub_m.is_present("IS_TAG");
+    let commitish = sub_m.value_of("COMMITISH").unwrap();
     let kernel_config: Vec<_> = sub_m
         .values_of("CONFIGS")
         .map(|values| {
@@ -135,7 +131,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     ZeroSim::tsc_offsetting(&ushell, false)?;
 
     // Clone the given kernel, if needed.
-    let kernel_path = pathify(&git_repo, git_branch);
+    let kernel_path = pathify(&git_repo, commitish);
     ushell.run(cmd!(
         "[ -e {} ] || git clone {} {}",
         kernel_path,
@@ -164,8 +160,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         &ushell,
         KernelSrc::Git {
             repo_path: kernel_path,
-            git_branch: git_branch.into(),
-            is_tag,
+            commitish: commitish.into(),
         },
         KernelConfig {
             base_config: KernelBaseConfigSource::Path(dir!(
@@ -174,7 +169,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             )),
             extra_options: &kernel_config,
         },
-        Some(&runner::gen_local_version(git_branch, git_hash)),
+        Some(&runner::gen_local_version(commitish, git_hash)),
         KernelPkgType::Rpm,
     )?;
 
