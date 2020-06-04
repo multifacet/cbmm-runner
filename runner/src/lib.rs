@@ -520,11 +520,7 @@ pub fn build_kernel(
             // If the git HEAD is detached, we should not attempt to `git pull` the latest changes,
             // as that doesn't make any sense.
             let is_detached = ushell
-                .run(
-                    cmd!("git symbolic-ref -q HEAD")
-                        .cwd(&repo_path)
-                        .allow_error(),
-                )
+                .run(cmd!("git symbolic-ref -q HEAD").cwd(&repo_path))
                 .is_err();
 
             if !is_detached {
