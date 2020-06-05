@@ -358,7 +358,7 @@ where
             freq: None,
             pf_time: None,
             output_file: None,
-            eager: false,
+            eager: None,
             client_pin_core: 0,
         }),
 
@@ -379,7 +379,7 @@ where
 
             // Ignored:
             wk_size_gb: 0,
-            eager: false,
+            eager: None,
             freq: None,
             pf_time: None,
             client_pin_core: 0,

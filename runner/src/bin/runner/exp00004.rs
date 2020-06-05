@@ -171,7 +171,7 @@ where
                 wk_size_gb: cfg.size,
                 allow_oom: true,
                 output_file: None,
-                eager: false,
+                eager: None,
                 client_pin_core: tctx.next(),
                 server_pin_core: None,
                 freq: None,

@@ -225,7 +225,7 @@ where
                     prefault: false,
                     pf_time: None,
                     output_file: None,
-                    eager: false,
+                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -265,7 +265,7 @@ where
             zerosim_bmk_path,
             NasClass::F,
             Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-            /* eager */ false,
+            /* eager */ None,
             &mut tctx,
         )?;
 

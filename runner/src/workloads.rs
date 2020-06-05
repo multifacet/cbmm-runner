@@ -10,24 +10,17 @@ use super::oomkiller_blacklist_by_name;
 
 /// Set the apriori paging process using Swapnil's program. Requires `sudo`.
 ///
-/// This should be run only from a vagrant VM.
-///
 /// For example, to cause `ls` to be eagerly paged:
 ///
 /// ```rust,ignore
-/// vagrant_setup_apriori_paging_process(&shell, "ls")?;
+/// setup_apriori_paging_process(&shell, "ls")?;
 /// ```
-pub fn vagrant_setup_apriori_paging_process(shell: &SshShell, prog: &str) -> Result<(), SshError> {
-    shell.run(cmd!(
-        "{}/apriori_paging_set_process {}",
-        dir![
-            "/home/vagrant",
-            crate::paths::RESEARCH_WORKSPACE_PATH,
-            crate::paths::ZEROSIM_BENCHMARKS_DIR,
-            crate::paths::ZEROSIM_SWAPNIL_PATH
-        ],
-        prog
-    ))?;
+pub fn setup_apriori_paging_process(
+    shell: &SshShell,
+    swapnil_path: &str,
+    prog: &str,
+) -> Result<(), SshError> {
+    shell.run(cmd!("{}/apriori_paging_set_process {}", swapnil_path, prog))?;
     Ok(())
 }
 
@@ -96,7 +89,7 @@ pub struct TimeMmapTouchConfig<'s> {
     /// Specifies the page fault time if TSC offsetting is to try to account for it.
     pub pf_time: Option<u64>,
     /// Indicates whether the workload should be run with eager paging (only in VM).
-    pub eager: bool,
+    pub eager: Option<&'s str>,
 }
 
 /// Run the `time_mmap_touch` workload on the remote `shell`. Requires `sudo`.
@@ -109,8 +102,8 @@ pub fn run_time_mmap_touch(
         TimeMmapTouchPattern::Zeros => "-z",
     };
 
-    if cfg.eager {
-        vagrant_setup_apriori_paging_process(shell, "time_mmap_touch")?;
+    if let Some(swapnil_path) = cfg.eager {
+        setup_apriori_paging_process(shell, swapnil_path, "time_mmap_touch")?;
     }
 
     shell.run(
@@ -164,7 +157,7 @@ pub struct MemcachedWorkloadConfig<'s> {
     /// Specifies the page fault time if TSC offsetting is to try to account for it.
     pub pf_time: Option<u64>,
     /// Indicates whether the workload should be run with eager paging.
-    pub eager: bool,
+    pub eager: Option<&'s str>,
 
     /// Indicates that we should run the given pintool on the workload.
     pub pintool: Option<Pintool<'s>>,
@@ -178,13 +171,14 @@ pub struct MemcachedWorkloadConfig<'s> {
 /// than user data, so OOM will almost certainly happen. memcached will also evict the LRU data in
 /// this case.
 ///
-/// `eager` indicates whether the workload should be run with eager paging (only in VM).
+/// `eager` indicates whether the workload should be run with eager paging (only in VM); if so, the
+/// path to Swapnil's scripts must be passed.
 pub fn start_memcached(
     shell: &SshShell,
     cfg: &MemcachedWorkloadConfig<'_>,
 ) -> Result<(), failure::Error> {
-    if cfg.eager {
-        vagrant_setup_apriori_paging_process(shell, "memcached")?;
+    if let Some(swapnil_path) = cfg.eager {
+        setup_apriori_paging_process(shell, swapnil_path, "memcached")?;
     }
 
     // We need to update the system vma limit because malloc may cause it to be hit for
@@ -335,13 +329,14 @@ pub enum NasClass {
 /// - `zerosim_bmk_path` is the path to the `bmks` directory of `0sim-workspace`.
 /// - `output_file` is the file to which the workload will write its output. If `None`, then
 ///   `/dev/null` is used.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM).
+/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
+///   the path to Swapnil's scripts must be passed.
 pub fn run_nas_cg(
     shell: &SshShell,
     zerosim_bmk_path: &str,
     class: NasClass,
     output_file: Option<&str>,
-    eager: bool,
+    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<(SshShell, SshSpawnHandle), failure::Error> {
     let class = match class {
@@ -349,8 +344,8 @@ pub fn run_nas_cg(
         NasClass::F => "F",
     };
 
-    if eager {
-        vagrant_setup_apriori_paging_process(shell, &format!("cg.{}.x", class))?;
+    if let Some(swapnil_path) = eager {
+        setup_apriori_paging_process(shell, swapnil_path, &format!("cg.{}.x", class))?;
     }
 
     let handle = shell.spawn(
@@ -385,18 +380,19 @@ bitflags! {
 /// - `r` is the number of times to call `memhog`, not the value of `-r`. `-r` is always passed a
 ///   value of `1`. If `None`, then run indefinitely.
 /// - `size_kb` is the number of kilobytes to mmap and touch.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM).
+/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
+///   the path to Swapnil's scripts must be passed.
 pub fn run_memhog(
     shell: &SshShell,
     exp_dir: &str,
     r: Option<usize>,
     size_kb: usize,
     opts: MemhogOptions,
-    eager: bool,
+    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<(SshShell, SshSpawnHandle), SshError> {
-    if eager {
-        vagrant_setup_apriori_paging_process(shell, "memhog")?;
+    if let Some(swapnil_path) = eager {
+        setup_apriori_paging_process(shell, swapnil_path, "memhog")?;
     }
 
     shell.spawn(cmd!(
@@ -431,17 +427,18 @@ pub fn run_memhog(
 /// - `exp_dir` is the path of the 0sim-experiments submodule.
 /// - `n` is the number of times to loop.
 /// - `output_file` is the location to put the output.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM).
+/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
+///   the path to Swapnil's scripts must be passed.
 pub fn run_time_loop(
     shell: &SshShell,
     exp_dir: &str,
     n: usize,
     output_file: &str,
-    eager: bool,
+    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<(), failure::Error> {
-    if eager {
-        vagrant_setup_apriori_paging_process(shell, "time_loop")?;
+    if let Some(swapnil_path) = eager {
+        setup_apriori_paging_process(shell, swapnil_path, "time_loop")?;
     }
 
     shell.run(
@@ -483,8 +480,8 @@ pub struct LocalityMemAccessConfig<'s> {
     /// The location to write the output for the workload.
     pub output_file: &'s str,
 
-    /// Turn on eager paging.
-    pub eager: bool,
+    /// Turn on eager paging. The path to Swapnil's scripts must be passed.
+    pub eager: Option<&'s str>,
 }
 
 /// Run the `locality_mem_access` workload on the remote of the given number of iterations.
@@ -502,8 +499,8 @@ pub fn run_locality_mem_access(
         LocalityMemAccessMode::Random => "-n",
     };
 
-    if cfg.eager {
-        vagrant_setup_apriori_paging_process(shell, "locality_mem_access")?;
+    if let Some(swapnil_path) = cfg.eager {
+        setup_apriori_paging_process(shell, swapnil_path, "locality_mem_access")?;
     }
 
     shell.run(
@@ -565,8 +562,9 @@ pub struct RedisWorkloadConfig<'s> {
     pub freq: Option<usize>,
     /// Specifies the page fault time if TSC offsetting is to try to account for it.
     pub pf_time: Option<u64>,
-    /// Indicates whether the workload should be run with eager paging.
-    pub eager: bool,
+    /// Indicates whether the workload should be run with eager paging. The path to Swapnil's
+    /// scripts must be passed.
+    pub eager: Option<&'s str>,
 
     /// Indicates that we should run the given pintool on the workload.
     pub pintool: Option<Pintool<'s>>,
@@ -592,8 +590,8 @@ pub fn start_redis(
     // Set overcommit
     shell.run(cmd!("echo 1 | sudo tee /proc/sys/vm/overcommit_memory"))?;
 
-    if cfg.eager {
-        vagrant_setup_apriori_paging_process(shell, "redis-server")?;
+    if let Some(swapnil_path) = cfg.eager {
+        setup_apriori_paging_process(shell, swapnil_path, "redis-server")?;
     }
 
     // Delete any previous database
@@ -705,16 +703,17 @@ pub fn run_redis_gen_data(
 ///
 /// - `bmk_dir` is the path to the `Metis` directory in the workspace on the remote.
 /// - `dim` is the dimension of the matrix (one side), which is assumed to be square.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM).
+/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
+///   the path to Swapnil's scripts must be passed.
 pub fn run_metis_matrix_mult(
     shell: &SshShell,
     bmk_dir: &str,
     dim: usize,
-    eager: bool,
+    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<(SshShell, SshSpawnHandle), SshError> {
-    if eager {
-        vagrant_setup_apriori_paging_process(shell, "matrix_mult2")?;
+    if let Some(swapnil_path) = eager {
+        setup_apriori_paging_process(shell, swapnil_path, "matrix_mult2")?;
     }
 
     shell.spawn(
@@ -743,7 +742,8 @@ pub fn run_metis_matrix_mult(
 /// - `redis_conf` is the path to the `redis.conf` file on the remote.
 /// - `freq` is the _host_ CPU frequency in MHz.
 /// - `size_gb` is the total amount of memory of the mix workload in GB.
-/// - `eager` indicates whether the workload should be run with eager paging.
+/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
+///   the path to Swapnil's scripts must be passed.
 pub fn run_mix(
     shell: &SshShell,
     exp_dir: &str,
@@ -753,7 +753,7 @@ pub fn run_mix(
     redis_conf: &str,
     freq: usize,
     size_gb: usize,
-    eager: bool,
+    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<(), failure::Error> {
     let redis_handles = run_redis_gen_data(
@@ -766,7 +766,7 @@ pub fn run_mix(
             freq: Some(freq),
             pf_time: None,
             output_file: None,
-            eager: true,
+            eager,
             client_pin_core: tctx.next(),
             server_pin_core: None,
             redis_conf,

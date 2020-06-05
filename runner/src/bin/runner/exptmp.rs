@@ -263,7 +263,7 @@ where
                     prefault: false,
                     pf_time: None,
                     output_file: None,
-                    eager: false,
+                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -303,7 +303,7 @@ where
                         prefault: false,
                         pf_time: cfg.pf_time,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                        eager: false,
+                        eager: None,
                         pin_core: tctx.next(),
                     }
                 )?
@@ -360,7 +360,7 @@ where
                         allow_oom: true,
                         pf_time: cfg.pf_time,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                        eager: false,
+                        eager: None,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
@@ -413,7 +413,7 @@ where
                         n: LOCALITY_N,
                         threads: None,
                         output_file: &dir!(VAGRANT_RESULTS_DIR, output_local),
-                        eager: false,
+                        eager: None,
                     }
                 )?
             );
@@ -440,7 +440,7 @@ where
                         n: LOCALITY_N,
                         threads: None,
                         output_file: &dir!(VAGRANT_RESULTS_DIR, output_nonlocal),
-                        eager: false,
+                        eager: None,
                     }
                 )?
             );

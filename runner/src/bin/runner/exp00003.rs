@@ -251,7 +251,7 @@ where
                 wk_size_gb: cfg.size,
                 allow_oom: false,
                 output_file: Some(&dir!(VAGRANT_RESULTS_DIR, memcached_timing_file)),
-                eager: false,
+                eager: None,
                 client_pin_core: tctx.next(),
                 server_pin_core: None,
                 freq: None,

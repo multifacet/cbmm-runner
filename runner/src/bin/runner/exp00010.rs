@@ -267,6 +267,18 @@ where
         )
     ))?;
 
+    let swapnil_path = dir!(
+        user_home,
+        runner::paths::RESEARCH_WORKSPACE_PATH,
+        runner::paths::ZEROSIM_BENCHMARKS_DIR,
+        runner::paths::ZEROSIM_SWAPNIL_PATH
+    );
+    let eager = if cfg.eager {
+        Some(swapnil_path.as_str())
+    } else {
+        None
+    };
+
     let cores = runner::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
 
@@ -285,7 +297,7 @@ where
                         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                         output_file
                     ),
-                    /* eager */ false,
+                    eager,
                     &mut tctx,
                 )?
             );
@@ -308,7 +320,7 @@ where
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             local_file
                         ),
-                        eager: false,
+                        eager,
                     },
                 )?;
                 run_locality_mem_access(
@@ -323,7 +335,7 @@ where
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             nonlocal_file
                         ),
-                        eager: false,
+                        eager,
                     },
                 )?;
             });
@@ -346,7 +358,7 @@ where
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             output_file
                         )),
-                        eager: false,
+                        eager,
                         pin_core: tctx.next(),
                     }
                 )?
@@ -379,7 +391,7 @@ where
                             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                             output_file
                         )),
-                        eager: false,
+                        eager,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
@@ -401,7 +413,7 @@ where
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF),
                     freq,
                     size >> 20,
-                    cfg.eager,
+                    eager,
                     &mut tctx,
                 )?
             });
