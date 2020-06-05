@@ -428,6 +428,7 @@ where
             "pixman-devel",
             "zlib-devel",
             "fuse-devel",
+            "fuse",
             "memcached",
             "libcgroup",
             "libcgroup-tools",
