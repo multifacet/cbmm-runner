@@ -1,7 +1,8 @@
 SRCS = identity_map \
 	   check_mapping \
 	   apriori_paging_reset_stats \
-	   apriori_paging_set_process
+	   apriori_paging_set_process \
+	   eager_paging
 
 LIBS = -lpthread
 all: ${SRCS}
