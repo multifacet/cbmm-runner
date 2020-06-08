@@ -432,7 +432,7 @@ where
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE),
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF),
                     freq,
-                    size >> 20,
+                    size,
                     eager,
                     &mut tctx,
                 )?
