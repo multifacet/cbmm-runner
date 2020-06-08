@@ -1,6 +1,7 @@
 //! Run a workload on bare-metal (e.g. AWS).
 //!
-//! Requires `setup00000` with the appropriate kernel.
+//! Requires `setup00000` with the appropriate kernel. If mmstats is passed, an instrumented kernel
+//! needs to be installed.
 
 use clap::clap_app;
 
@@ -65,6 +66,8 @@ struct Config {
     transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
 
+    mmstats: bool,
+
     username: String,
     host: String,
 
@@ -127,6 +130,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
+        (@arg MMSTATS: --memstats
+         "(optional) Collect latency histograms for memory management ops; \
+          requires a kernel that has instrumentation.")
     }
 }
 
@@ -188,6 +194,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     };
 
     let eager = sub_m.is_present("EAGER");
+    let mmstats = sub_m.is_present("MMSTATS");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -209,6 +216,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_khugepaged_defrag: 1,
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
+
+        mmstats,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -255,6 +264,7 @@ where
     let mut timers = vec![];
 
     let (output_file, params_file, time_file, _sim_file) = cfg.gen_standard_names();
+    let mmstats_file = cfg.gen_file_name("mmstats");
     let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
@@ -281,6 +291,16 @@ where
 
     let cores = runner::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
+
+    if cfg.mmstats {
+        // Print the current numbers, 'cause why not?
+        ushell.run(cmd!("tail /proc/mm_*"))?;
+
+        // Writing to any of the params will reset the plot.
+        ushell.run(cmd!(
+            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+        ))?;
+    }
 
     // Run the workload.
     match cfg.workload {
@@ -418,6 +438,18 @@ where
                 )?
             });
         }
+    }
+
+    if cfg.mmstats {
+        let mmstats_file = dir!(
+            user_home,
+            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+            &mmstats_file
+        );
+
+        ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
+        ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
+        ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
     }
 
     ushell.run(cmd!("date"))?;
