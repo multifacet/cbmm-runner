@@ -515,6 +515,7 @@ pub fn build_kernel(
             repo_path,
             commitish,
         } => {
+            ushell.run(cmd!("git fetch origin").cwd(&repo_path))?;
             ushell.run(cmd!("git checkout {}", commitish).cwd(&repo_path))?;
 
             // If the git HEAD is detached, we should not attempt to `git pull` the latest changes,
@@ -524,7 +525,7 @@ pub fn build_kernel(
                 .is_err();
 
             if !is_detached {
-                ushell.run(cmd!("git pull").cwd(&repo_path))?;
+                ushell.run(cmd!("git reset --hard origin/{}", commitish).cwd(&repo_path))?;
             }
 
             get_absolute_path(ushell, &repo_path)?
