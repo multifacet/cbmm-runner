@@ -617,6 +617,7 @@ pub fn build_kernel(
             nprocess,
             make_target,
             if let Some(kernel_local_version) = kernel_local_version {
+                let kernel_local_version = kernel_local_version.replace("/", "-");
                 format!("LOCALVERSION=-{}", kernel_local_version)
             } else {
                 "".into()
@@ -631,6 +632,7 @@ pub fn build_kernel(
                 nprocess,
                 make_target,
                 if let Some(kernel_local_version) = kernel_local_version {
+                    let kernel_local_version = kernel_local_version.replace("/", "-");
                     format!("LOCALVERSION=-{}", kernel_local_version)
                 } else {
                     "".into()
