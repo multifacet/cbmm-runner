@@ -1205,6 +1205,7 @@ where
         "numactl-devel",
         "fuse-devel",
         "wget",
+        "python3",
     ]))?;
 
     install_rust(vrshell)?;
