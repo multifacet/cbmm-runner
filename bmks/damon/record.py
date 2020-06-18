@@ -13,7 +13,7 @@ import time
 
 import _damon
 
-def do_record(target, is_target_cmd, init_regions, attrs, old_attrs):
+def do_record(target, is_target_cmd, init_regions, attrs, old_attrs, wait):
     if os.path.isfile(attrs.rfile_path):
         os.rename(attrs.rfile_path, attrs.rfile_path + '.old')
 
@@ -35,7 +35,7 @@ def do_record(target, is_target_cmd, init_regions, attrs, old_attrs):
     print('Press Ctrl+C to stop')
     if is_target_cmd:
         p.wait()
-    while True:
+    while wait:
         # damon will turn it off by itself if the target tasks are terminated.
         if not _damon.is_damon_running():
             break
@@ -72,6 +72,8 @@ def set_argparser(parser):
             default=1024*1024, help='length of record result buffer')
     parser.add_argument('-o', '--out', metavar='<file path>', type=str,
             default='damon.data', help='output file path')
+    parser.add_argument('-w', '--wait',
+            default=False, help='wait for process termination')
 
 def default_paddr_region():
     "Largest System RAM region becomes the default"
@@ -119,17 +121,17 @@ def main(args=None):
     if target == 'paddr':   # physical memory address space
         if not init_regions:
             init_regions = [default_paddr_region()]
-        do_record(target, False, init_regions, new_attrs, orig_attrs)
+        do_record(target, False, init_regions, new_attrs, orig_attrs, args.wait)
     elif not subprocess.call('which %s > /dev/null' % target_fields[0],
             shell=True, executable='/bin/bash'):
-        do_record(target, True, init_regions, new_attrs, orig_attrs)
+        do_record(target, True, init_regions, new_attrs, orig_attrs, args.wait)
     else:
         try:
             pid = int(target)
         except:
             print('target \'%s\' is neither a command, nor a pid' % target)
             exit(1)
-        do_record(target, False, init_regions, new_attrs, orig_attrs)
+        do_record(target, False, init_regions, new_attrs, orig_attrs, args.wait)
 
 if __name__ == '__main__':
     main()
