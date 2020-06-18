@@ -32,16 +32,18 @@ def do_record(target, is_target_cmd, init_regions, attrs, old_attrs, wait):
         cleanup_exit(old_attrs, -3)
     while not _damon.is_damon_running():
         time.sleep(1)
-    print('Press Ctrl+C to stop')
     if is_target_cmd:
+        print('Press Ctrl+C to stop')
         p.wait()
     while wait:
+        print('Press Ctrl+C to stop')
         # damon will turn it off by itself if the target tasks are terminated.
         if not _damon.is_damon_running():
             break
         time.sleep(1)
 
-    cleanup_exit(old_attrs, 0)
+    if wait:
+        cleanup_exit(old_attrs, 0)
 
 def cleanup_exit(orig_attrs, exit_code):
     if _damon.is_damon_running():
