@@ -155,6 +155,9 @@ pub mod paths {
     /// Path to Swapnil's scripts within the benchmarks dir.
     pub const ZEROSIM_SWAPNIL_PATH: &str = "swapnil_scripts";
 
+    /// Path to DAMON scripts within the benchmarks dir.
+    pub const DAMON_PATH: &str = "damon";
+
     /// Path to the `vagrant` subdirectory where `gen_vagrantfile` will do its work.
     pub const VAGRANT_SUBDIRECTORY: &str = "vagrant";
 

@@ -1,6 +1,6 @@
 //! Run the given workload on the remote machine in simulation and record its results.
 //!
-//! Requires `setup00000`.
+//! Requires `setup00000`. If `--damon` is used, then `setup00002` with the DAMON kernel is needed.
 
 use clap::clap_app;
 
@@ -13,8 +13,8 @@ use runner::{
     time,
     workloads::{
         run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data, run_time_mmap_touch,
-        MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx, TimeMmapTouchConfig,
-        TimeMmapTouchPattern,
+        Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -67,6 +67,8 @@ struct Config {
 
     #[name(self.memtrace)]
     memtrace: bool,
+    #[name(self.damon)]
+    damon: bool,
 
     username: String,
     host: String,
@@ -124,9 +126,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg DISABLE_ZSWAP: --disable_zswap
          "(Optional; not recommended) Disable zswap, forcing the hypervisor to \
          actually swap to disk")
-        (@arg MEMTRACE: --memtrace
+        (@arg MEMTRACE: --memtrace conflicts_with[DAMON]
          "(Optional) collect a memory access trace of the workload. This could be multiple \
          gigabytes in size.")
+        (@arg DAMON: --damon conflicts_with[MEMTRACE]
+         "Collect DAMON page access history data")
     }
 }
 
@@ -182,6 +186,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let multicore_offsetting = sub_m.is_present("MULTICORE_OFFSETTING");
 
     let memtrace = sub_m.is_present("MEMTRACE");
+    let damon = sub_m.is_present("DAMON");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -211,6 +216,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         zerosim_delay,
 
         memtrace,
+        damon,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -313,8 +319,14 @@ where
     );
 
     // Only used for memtrace.
-    let output_path = cfg.gen_file_name("trace");
-    let output_path = dir!(VAGRANT_RESULTS_DIR, output_path);
+    let trace_path = cfg.gen_file_name("trace");
+    let trace_path = dir!(VAGRANT_RESULTS_DIR, trace_path);
+
+    // Only used for DAMON.
+    let damon_output_path = cfg.gen_file_name("damon");
+    let damon_output_path = dir!(VAGRANT_RESULTS_DIR, damon_output_path);
+
+    let damon_path = dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR, DAMON_PATH);
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -397,12 +409,20 @@ where
                         server_pin_core: None,
                         pintool: if cfg.memtrace {
                             Some(Pintool::MemTrace {
-                                output_path: &output_path,
+                                output_path: &trace_path,
                                 pin_path: &pin_path,
                             })
                         } else {
                             None
                         },
+                        damon: if cfg.damon {
+                            Some(Damon {
+                                output_path: &damon_output_path,
+                                damon_path: &damon_path,
+                            })
+                        } else {
+                            None
+                        }
                     }
                 )?
             );

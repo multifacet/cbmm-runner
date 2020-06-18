@@ -403,6 +403,7 @@ where
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
+                        damon: None,
                     }
                 )?
             );

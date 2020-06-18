@@ -61,6 +61,15 @@ pub enum Pintool<'s> {
     },
 }
 
+/// Indicates the use of DAMON to trace page access rates.
+#[derive(Debug)]
+pub struct Damon<'s> {
+    /// The path to the `damon/` directory. This should be accessible in the VM.
+    pub damon_path: &'s str,
+    /// The file path and name to output the trace to.
+    pub output_path: &'s str,
+}
+
 /// The different patterns supported by the `time_mmap_touch` workload.
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TimeMmapTouchPattern {
@@ -161,6 +170,9 @@ pub struct MemcachedWorkloadConfig<'s> {
 
     /// Indicates that we should run the given pintool on the workload.
     pub pintool: Option<Pintool<'s>>,
+
+    /// Indicates that we should run the workload under DAMON.
+    pub damon: Option<Damon<'s>>,
 }
 
 /// Start a `memcached` server in daemon mode as the given user with the given amount of memory.
@@ -218,6 +230,15 @@ pub fn start_memcached(
 
     // Don't let memcached get OOM killed.
     oomkiller_blacklist_by_name(shell, "memcached")?;
+
+    // Start DAMON if needed.
+    if let Some(damon) = &cfg.damon {
+        shell.run(cmd!(
+            "{}/damo record -o {} `pidof memcached`",
+            damon.output_path,
+            damon.damon_path
+        ))?;
+    }
 
     Ok(())
 }

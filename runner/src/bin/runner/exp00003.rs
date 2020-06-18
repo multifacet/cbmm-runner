@@ -257,6 +257,7 @@ where
                 freq: None,
                 pf_time: None,
                 pintool: None,
+                damon: None,
             },
             INTERVAL,
             cfg.continual_compaction,

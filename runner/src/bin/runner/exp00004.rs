@@ -177,6 +177,7 @@ where
                 freq: None,
                 pf_time: None,
                 pintool: None,
+                damon: None,
             },
             INTERVAL,
             /* continual_compaction */ None,

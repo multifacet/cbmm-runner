@@ -2,7 +2,7 @@
 //! can be used to collect memory traces of workloads too.
 //!
 //! Requires `setup00000`. If `--mmstats` is used, then `setup00002` with an instrumented kernel is
-//! needed.
+//! needed. If `--damon` is used, then `setup00002` with the DAMON kernel is needed.
 
 use clap::clap_app;
 
@@ -13,8 +13,8 @@ use runner::{
     paths::{setup00000::*, *},
     time,
     workloads::{
-        run_ycsb_workload, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, YcsbConfig,
-        YcsbSystem, YcsbWorkload,
+        run_ycsb_workload, Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig,
+        YcsbConfig, YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -51,6 +51,7 @@ struct Config {
     memtrace: bool,
     mmstats: bool,
     mmstats_periodic: bool,
+    damon: bool,
 
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -116,12 +117,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg KC: --kyotocabinet
              "Use kyotocabinet as the YCSB backend.")
         )
-        (@arg MEMTRACE: --memtrace
+        (@arg MEMTRACE: --memtrace conflicts_with[DAMON]
          "Collect a memory trace of the given system.")
         (@arg MMSTATS: --mmstats
          "Collect kernel memory management stats.")
         (@arg PERIODIC: --periodic requires[MMSTATS]
          "Collect kernel memory management stats periodically.")
+        (@arg DAMON: --damon conflicts_with[MEMTRACE]
+         "Collect DAMON page access history data")
     }
 }
 
@@ -155,6 +158,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let memtrace = sub_m.is_present("MEMTRACE");
     let mmstats = sub_m.is_present("MMSTATS");
     let periodic = sub_m.is_present("PERIODIC");
+    let damon = sub_m.is_present("DAMON");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -173,6 +177,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         memtrace,
         mmstats,
         mmstats_periodic: periodic,
+        damon,
 
         transparent_hugepage_enabled: "always".into(),
         transparent_hugepage_defrag: "always".into(),
@@ -237,7 +242,7 @@ where
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
-    // Turn on THP.
+    // Turn on THP in guest.
     runner::turn_on_thp(
         &vshell,
         &cfg.transparent_hugepage_enabled,
@@ -272,6 +277,10 @@ where
     );
     let trace_file = dir!(VAGRANT_RESULTS_DIR, cfg.gen_file_name("trace"));
     let mmstats_file = cfg.gen_file_name("mmstats");
+    let damon_output_path = cfg.gen_file_name("damon");
+    let damon_output_path = dir!(VAGRANT_RESULTS_DIR, damon_output_path);
+
+    let damon_path = dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR, DAMON_PATH);
 
     // Set histogram parameters before workload.
     let maybe_shell_and_handle = if cfg.mmstats && !cfg.mmstats_periodic {
@@ -348,6 +357,14 @@ where
                 Some(Pintool::MemTrace {
                     pin_path: &pin_path,
                     output_path: &trace_file,
+                })
+            } else {
+                None
+            },
+            damon: if cfg.damon {
+                Some(Damon {
+                    damon_path: &damon_path,
+                    output_path: &damon_output_path,
                 })
             } else {
                 None
