@@ -403,6 +403,14 @@ pub fn get_cpu_freq(shell: &SshShell) -> Result<usize, failure::Error> {
     }
 }
 
+/// Turn off ASLR.
+pub fn disable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
+    shell.run(cmd!(
+        "echo 0 | sudo tee /proc/sys/kernel/randomize_va_space"
+    ))?;
+    Ok(())
+}
+
 /// Turn on THP on the remote using the given settings. Requires `sudo`.
 pub fn turn_on_thp(
     shell: &SshShell,

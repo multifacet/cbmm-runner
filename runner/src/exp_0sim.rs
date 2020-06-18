@@ -352,6 +352,9 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
     // Don't let the OOM killer kill ssh
     oomkiller_blacklist_by_name(&vshell, "/usr/sbin/sshd")?;
 
+    // Disable ASLR in guest.
+    super::disable_aslr(&vshell)?;
+
     // Enable TSC offsetting (regardless of whether it was already off).
     ZeroSim::tsc_offsetting(shell, true)?;
 
