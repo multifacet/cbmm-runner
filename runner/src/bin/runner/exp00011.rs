@@ -280,7 +280,12 @@ where
     let damon_output_path = cfg.gen_file_name("damon");
     let damon_output_path = dir!(VAGRANT_RESULTS_DIR, damon_output_path);
 
-    let damon_path = dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR, DAMON_PATH);
+    let damon_path = dir!(
+        "/home/vagrant",
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_BENCHMARKS_DIR,
+        DAMON_PATH
+    );
 
     // Set histogram parameters before workload.
     let maybe_shell_and_handle = if cfg.mmstats && !cfg.mmstats_periodic {
