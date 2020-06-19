@@ -235,8 +235,8 @@ pub fn start_memcached(
     if let Some(damon) = &cfg.damon {
         shell.run(cmd!(
             "sudo {}/damo record -o {} `pidof memcached`",
+            damon.damon_path,
             damon.output_path,
-            damon.damon_path
         ))?;
     }
 
