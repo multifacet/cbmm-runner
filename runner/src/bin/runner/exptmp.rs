@@ -388,7 +388,7 @@ where
 
             let trace_output_local = cfg.gen_file_name("tracelocal");
             let trace_output_nonlocal = cfg.gen_file_name("tracenonlocal");
-            let (_shell, spawn_handle0) = ushell.spawn(cmd!(
+            let spawn_handle0 = ushell.spawn(cmd!(
                 "sudo taskset -c 3 {}/target/release/zerosim-trace trace {} {} {} -t {}",
                 dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_TRACE_SUBMODULE),
                 500,     // interval
@@ -419,9 +419,9 @@ where
                 )?
             );
 
-            let _ = spawn_handle0.join()?;
+            let _ = spawn_handle0.join().1?;
 
-            let (_shell, spawn_handle0) = ushell.spawn(cmd!(
+            let spawn_handle0 = ushell.spawn(cmd!(
                 "sudo taskset -c 3 {}/target/release/zerosim-trace trace {} {} {} -t {}",
                 dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_TRACE_SUBMODULE),
                 500,     // interval
@@ -446,7 +446,7 @@ where
                 )?
             );
 
-            let _ = spawn_handle0.join()?;
+            let _ = spawn_handle0.join().1?;
         }
 
         Workload::HiBenchWordcount => {

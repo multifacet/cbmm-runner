@@ -359,7 +359,7 @@ pub fn run_nas_cg(
     output_file: Option<&str>,
     eager: Option<&str>,
     tctx: &mut TasksetCtx,
-) -> Result<(SshShell, SshSpawnHandle), failure::Error> {
+) -> Result<SshSpawnHandle, failure::Error> {
     let class = match class {
         NasClass::E => "E",
         NasClass::F => "F",
@@ -411,7 +411,7 @@ pub fn run_memhog(
     opts: MemhogOptions,
     eager: Option<&str>,
     tctx: &mut TasksetCtx,
-) -> Result<(SshShell, SshSpawnHandle), SshError> {
+) -> Result<SshSpawnHandle, SshError> {
     if let Some(swapnil_path) = eager {
         setup_apriori_paging_process(shell, swapnil_path, "memhog")?;
     }
@@ -544,15 +544,13 @@ pub fn run_locality_mem_access(
 }
 
 pub struct RedisWorkloadHandles {
-    pub server_shell: SshShell,
     pub server_spawn_handle: SshSpawnHandle,
-    pub client_shell: SshShell,
     pub client_spawn_handle: SshSpawnHandle,
 }
 
 impl RedisWorkloadHandles {
     pub fn wait_for_client(self) -> Result<(), failure::Error> {
-        self.client_spawn_handle.join()?;
+        self.client_spawn_handle.join().1?;
         Ok(())
     }
 }
@@ -607,7 +605,7 @@ pub struct RedisWorkloadConfig<'s> {
 pub fn start_redis(
     shell: &SshShell,
     cfg: &RedisWorkloadConfig<'_>,
-) -> Result<(SshShell, SshSpawnHandle), failure::Error> {
+) -> Result<SshSpawnHandle, failure::Error> {
     // Set overcommit
     shell.run(cmd!("echo 1 | sudo tee /proc/sys/vm/overcommit_memory"))?;
 
@@ -683,10 +681,10 @@ pub fn run_redis_gen_data(
     cfg: &RedisWorkloadConfig<'_>,
 ) -> Result<RedisWorkloadHandles, failure::Error> {
     // Start server
-    let (server_shell, server_spawn_handle) = start_redis(&shell, cfg)?;
+    let server_spawn_handle = start_redis(&shell, cfg)?;
 
     // Run workload
-    let (client_shell, client_spawn_handle) = shell.spawn(
+    let client_spawn_handle = shell.spawn(
         cmd!(
             "taskset -c {} ./target/release/redis_gen_data unix:/tmp/redis.sock \
              {} {} {} | tee {} ; echo redis_gen_data done",
@@ -708,9 +706,7 @@ pub fn run_redis_gen_data(
     )?;
 
     Ok(RedisWorkloadHandles {
-        server_shell,
         server_spawn_handle,
-        client_shell,
         client_spawn_handle,
     })
 }
@@ -732,7 +728,7 @@ pub fn run_metis_matrix_mult(
     dim: usize,
     eager: Option<&str>,
     tctx: &mut TasksetCtx,
-) -> Result<(SshShell, SshSpawnHandle), SshError> {
+) -> Result<SshSpawnHandle, SshError> {
     if let Some(swapnil_path) = eager {
         setup_apriori_paging_process(shell, swapnil_path, "matrix_mult2")?;
     }
@@ -809,7 +805,7 @@ pub fn run_mix(
     )?;
 
     // Wait for redis client to finish
-    redis_handles.client_spawn_handle.join()?;
+    redis_handles.client_spawn_handle.join().1?;
 
     Ok(())
 }

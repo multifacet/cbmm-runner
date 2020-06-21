@@ -234,7 +234,7 @@ where
 
     // Record vmstat on guest
     let vmstat_file = cfg.gen_file_name("vmstat");
-    let (_shell, _vmstats_handle) = vshell.spawn(
+    let _vmstats_handle = vshell.spawn(
         cmd!(
             "for (( c=1 ; c<={} ; c++ )) ; do \
              cat /proc/vmstat >> {} ; sleep 1 ; done",
@@ -248,7 +248,7 @@ where
     // We start this thread that collects stats in the background and terminates after the given
     // amount of time. We spawn the workload, but don't wait for it; rather, we wait for this task.
     let zswapstats_file = cfg.gen_file_name("zswapstats");
-    let (_shell, zswapstats_handle) = ushell.spawn(
+    let zswapstats_handle = ushell.spawn(
         cmd!(
             "for (( c=1 ; c<={} ; c++ )) ; do \
              sudo tail `sudo find  /sys/kernel/debug/zswap/ -type f`\
@@ -271,7 +271,7 @@ where
 
         std::thread::sleep(std::time::Duration::from_secs(cfg.duration as u64));
 
-        zswapstats_handle.join()?
+        zswapstats_handle.join().1?
     });
 
     ushell.run(cmd!("date"))?;

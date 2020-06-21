@@ -465,7 +465,7 @@ where
         time!(
             timers,
             "Waiting for mmstats thread to halt",
-            maybe_shell_and_handle.unwrap().1 .1.join()?
+            maybe_shell_and_handle.unwrap().1.join().1?
         );
     }
 

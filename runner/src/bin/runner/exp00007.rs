@@ -324,7 +324,7 @@ where
 
     // Record buddyinfo on the guest until signalled to stop.
     let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
-    let (_shell, buddyinfo_handle) = vshell2.spawn(
+    let buddyinfo_handle = vshell2.spawn(
         cmd!(
             "rm -f /tmp/exp-stop ; \
              while [ ! -e /tmp/exp-stop ] ; do \
@@ -438,8 +438,8 @@ where
                     eager,
                     &mut tctx,
                 )?
-                .1
-                .join()?
+                .join()
+                .1?
             );
         }
 
@@ -502,8 +502,8 @@ where
                     eager,
                     &mut tctx,
                 )?
-                .1
-                .join()?
+                .join()
+                .1?
             });
         }
 
@@ -556,7 +556,7 @@ where
         time!(
             timers,
             "Waiting for mmstats thread to halt",
-            maybe_shell_and_handle.unwrap().1 .1.join()?
+            maybe_shell_and_handle.unwrap().1.join().1?
         );
     }
 
@@ -564,7 +564,7 @@ where
     time!(
         timers,
         "Waiting for buddyinfo thread to halt",
-        buddyinfo_handle.join()?
+        buddyinfo_handle.join().1?
     );
 
     ushell.run(cmd!("date"))?;

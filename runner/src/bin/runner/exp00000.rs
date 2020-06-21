@@ -477,8 +477,8 @@ where
                     /* eager */ None,
                     &mut tctx,
                 )?
-                .1
-                .join()?
+                .join()
+                .1?
             );
         }
     }
