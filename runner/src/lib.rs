@@ -156,6 +156,12 @@ pub mod paths {
     /// Path to Swapnil's scripts within the benchmarks dir.
     pub const ZEROSIM_SWAPNIL_PATH: &str = "swapnil_scripts";
 
+    /// The name of the eager paging script.
+    /// - For the 0sim paper (ASPLOS '20), use `apriori_paging_set_process`.
+    /// - For experiments after June 2020, use `eager_paging`.
+    //pub const EAGER_PAGING_SCRIPT: &str = "apriori_paging_set_process";
+    pub const EAGER_PAGING_SCRIPT: &str = "eager_paging";
+
     /// Path to DAMON scripts within the benchmarks dir.
     pub const DAMON_PATH: &str = "damon";
 

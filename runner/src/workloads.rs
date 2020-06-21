@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshError, SshShell, SshSpawnHandle};
 
-use super::oomkiller_blacklist_by_name;
+use super::{oomkiller_blacklist_by_name, paths::EAGER_PAGING_SCRIPT};
 
 /// Set the apriori paging process using Swapnil's program. Requires `sudo`.
 ///
@@ -20,7 +20,7 @@ pub fn setup_apriori_paging_process(
     swapnil_path: &str,
     prog: &str,
 ) -> Result<(), SshError> {
-    shell.run(cmd!("{}/apriori_paging_set_process {}", swapnil_path, prog))?;
+    shell.run(cmd!("{}/{} {}", swapnil_path, EAGER_PAGING_SCRIPT, prog))?;
     Ok(())
 }
 
