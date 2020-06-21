@@ -5,6 +5,7 @@
 use clap::clap_app;
 
 use runner::{
+    background::{BackgroundContext, BackgroundTask},
     dir,
     exp_0sim::*,
     get_cpu_freq,
@@ -22,6 +23,8 @@ use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
+
+pub const PERIOD: usize = 10; // seconds
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -69,6 +72,8 @@ struct Config {
     memtrace: bool,
     #[name(self.damon)]
     damon: bool,
+    #[name(self.meminfo_periodic)]
+    meminfo_periodic: bool,
 
     username: String,
     host: String,
@@ -131,6 +136,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          gigabytes in size.")
         (@arg DAMON: --damon conflicts_with[MEMTRACE]
          "Collect DAMON page access history data")
+        (@arg MEMINFO_PERIODIC: --meminfo_periodic
+         "Collect /proc/meminfo data periodically")
     }
 }
 
@@ -187,6 +194,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let memtrace = sub_m.is_present("MEMTRACE");
     let damon = sub_m.is_present("DAMON");
+    let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -217,6 +225,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         memtrace,
         damon,
+        meminfo_periodic,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -332,6 +341,21 @@ where
         ZEROSIM_BENCHMARKS_DIR,
         DAMON_PATH
     );
+
+    // Only used for meminfo_periodic.
+    let meminfo_file = cfg.gen_file_name("meminfo");
+    let mut bgctx = BackgroundContext::new(&vshell);
+    if cfg.meminfo_periodic {
+        bgctx.spawn(BackgroundTask {
+            name: "meminfo",
+            period: PERIOD,
+            cmd: format!(
+                "cat /proc/meminfo | tee -a {}",
+                dir!(VAGRANT_RESULTS_DIR, &meminfo_file),
+            ),
+            ensure_started: dir!(VAGRANT_RESULTS_DIR, &meminfo_file),
+        })?;
+    }
 
     vshell.run(cmd!(
         "echo '{}' > {}",
@@ -482,6 +506,12 @@ where
             );
         }
     }
+
+    time!(
+        timers,
+        "Waiting for meminfo thread to halt",
+        bgctx.notify_and_join_all()?
+    );
 
     ushell.run(cmd!("date"))?;
 

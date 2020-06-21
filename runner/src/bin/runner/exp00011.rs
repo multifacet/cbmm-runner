@@ -53,6 +53,7 @@ struct Config {
     mmstats: bool,
     mmstats_periodic: bool,
     damon: bool,
+    meminfo_periodic: bool,
 
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -126,6 +127,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect kernel memory management stats periodically.")
         (@arg DAMON: --damon conflicts_with[MEMTRACE]
          "Collect DAMON page access history data")
+        (@arg MEMINFO_PERIODIC: --meminfo_periodic
+         "Collect /proc/meminfo data periodically")
     }
 }
 
@@ -160,6 +163,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mmstats = sub_m.is_present("MMSTATS");
     let periodic = sub_m.is_present("PERIODIC");
     let damon = sub_m.is_present("DAMON");
+    let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -179,6 +183,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mmstats,
         mmstats_periodic: periodic,
         damon,
+        meminfo_periodic,
 
         transparent_hugepage_enabled: "always".into(),
         transparent_hugepage_defrag: "always".into(),
@@ -278,6 +283,7 @@ where
     );
     let trace_file = dir!(VAGRANT_RESULTS_DIR, cfg.gen_file_name("trace"));
     let mmstats_file = cfg.gen_file_name("mmstats");
+    let meminfo_file = cfg.gen_file_name("meminfo");
     let damon_output_path = cfg.gen_file_name("damon");
     let damon_output_path = dir!(VAGRANT_RESULTS_DIR, damon_output_path);
 
@@ -310,6 +316,19 @@ where
                 dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
             ),
             ensure_started: dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+        })?;
+    }
+
+    // Maybe collect meminfo
+    if cfg.meminfo_periodic {
+        bgctx.spawn(BackgroundTask {
+            name: "meminfo",
+            period: PERIOD,
+            cmd: format!(
+                "cat /proc/meminfo | tee -a {}",
+                dir!(VAGRANT_RESULTS_DIR, &meminfo_file),
+            ),
+            ensure_started: dir!(VAGRANT_RESULTS_DIR, &meminfo_file),
         })?;
     }
 
