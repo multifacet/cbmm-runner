@@ -7,6 +7,7 @@
 use clap::clap_app;
 
 use runner::{
+    background::{BackgroundContext, BackgroundTask},
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -288,7 +289,7 @@ where
     );
 
     // Set histogram parameters before workload.
-    let maybe_shell_and_handle = if cfg.mmstats && !cfg.mmstats_periodic {
+    if cfg.mmstats && !cfg.mmstats_periodic {
         // Print the current numbers, 'cause why not?
         vshell.run(cmd!("tail /proc/mm_*"))?;
 
@@ -296,38 +297,21 @@ where
         vshell.run(cmd!(
             "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
         ))?;
+    }
 
-        None
-    } else if cfg.mmstats_periodic {
-        // Read and reset stats over PERIOD seconds.
-        let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
-        let ret = vshell2.spawn(
-            cmd!(
-                "rm -f /tmp/exp-stop ; \
-                 while [ ! -e /tmp/exp-stop ] ; do \
-                 tail /proc/mm_* | tee -a {} ; \
-                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done ; \
-                 sleep {} ; \
-                 done ; echo done measuring",
+    let mut bgctx = BackgroundContext::new(&vshell);
+    if cfg.mmstats_periodic {
+        bgctx.spawn(BackgroundTask {
+            name: "histograms",
+            period: PERIOD,
+            cmd: format!(
+                "tail /proc/mm_* | tee -a {} ; \
+                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done",
                 dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
-                PERIOD
-            )
-            .use_bash(),
-        )?;
-
-        // Wait to make sure the collection of stats has started
-        vshell2.run(
-            cmd!(
-                "while [ ! -e {} ] ; do sleep 1 ; done",
-                dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
-            )
-            .use_bash(),
-        )?;
-
-        Some((vshell2, ret))
-    } else {
-        None
-    };
+            ),
+            ensure_started: dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+        })?;
+    }
 
     // Run the workload.
 
@@ -461,11 +445,10 @@ where
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
     } else if cfg.mmstats_periodic {
-        vshell.run(cmd!("touch /tmp/exp-stop"))?;
         time!(
             timers,
             "Waiting for mmstats thread to halt",
-            maybe_shell_and_handle.unwrap().1.join().1?
+            bgctx.notify_and_join_all()?
         );
     }
 

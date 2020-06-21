@@ -14,6 +14,7 @@ mod macros;
 #[macro_use]
 pub mod output;
 
+pub mod background;
 pub mod downloads;
 pub mod exp_0sim;
 pub mod hadoop;

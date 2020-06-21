@@ -8,6 +8,7 @@
 use clap::clap_app;
 
 use runner::{
+    background::{BackgroundContext, BackgroundTask},
     dir,
     exp_0sim::*,
     get_cpu_freq,
@@ -31,9 +32,6 @@ const NAS_CG_HOURS: u64 = 6;
 
 /// The number of iterations for `memhog`.
 const MEMHOG_R: usize = 10;
-
-/// Period to record stats.
-const PERIOD: usize = 10; // seconds
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -323,34 +321,22 @@ where
     let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Record buddyinfo on the guest until signalled to stop.
-    let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
-    let buddyinfo_handle = vshell2.spawn(
-        cmd!(
-            "rm -f /tmp/exp-stop ; \
-             while [ ! -e /tmp/exp-stop ] ; do \
-             cat /proc/buddyinfo | tee -a {} ; \
-             sleep {} ; \
-             done ; echo done measuring",
+    let mut bgctx = BackgroundContext::new(&vshell);
+    bgctx.spawn(BackgroundTask {
+        name: "buddyinfo",
+        period: cfg.stats_interval,
+        cmd: format!(
+            "cat /proc/buddyinfo | tee -a {}",
             dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-            cfg.stats_interval
-        )
-        .use_bash(),
-    )?;
-
-    // Wait to make sure the collection of stats has started
-    vshell.run(
-        cmd!(
-            "while [ ! -e {} ] ; do sleep 1 ; done",
-            dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-        )
-        .use_bash(),
-    )?;
+        ),
+        ensure_started: dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
+    })?;
 
     // Collect mm stats
     let mmstats_file = cfg.gen_file_name("mmstats");
 
     // Set histogram parameters before workload.
-    let maybe_shell_and_handle = if cfg.mmstats && !cfg.mmstats_periodic {
+    if cfg.mmstats && !cfg.mmstats_periodic {
         // Print the current numbers, 'cause why not?
         vshell.run(cmd!("tail /proc/mm_*"))?;
 
@@ -358,38 +344,21 @@ where
         vshell.run(cmd!(
             "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
         ))?;
+    }
 
-        None
-    } else if cfg.mmstats_periodic {
+    if cfg.mmstats_periodic {
         // Read and reset stats over PERIOD seconds.
-        let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
-        let ret = vshell2.spawn(
-            cmd!(
-                "rm -f /tmp/exp-stop ; \
-                 while [ ! -e /tmp/exp-stop ] ; do \
-                 tail /proc/mm_* | tee -a {} ; \
-                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done ; \
-                 sleep {} ; \
-                 done ; echo done measuring",
+        bgctx.spawn(BackgroundTask {
+            name: "histograms",
+            period: cfg.stats_interval,
+            cmd: format!(
+                "tail /proc/mm_* | tee -a {} ; \
+                 for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done",
                 dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
-                PERIOD
-            )
-            .use_bash(),
-        )?;
-
-        // Wait to make sure the collection of stats has started
-        vshell2.run(
-            cmd!(
-                "while [ ! -e {} ] ; do sleep 1 ; done",
-                dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
-            )
-            .use_bash(),
-        )?;
-
-        Some((vshell2, ret))
-    } else {
-        None
-    };
+            ),
+            ensure_started: dir!(VAGRANT_RESULTS_DIR, &mmstats_file),
+        })?;
+    }
 
     // Run the actual workload
     match cfg.workload {
@@ -551,20 +520,12 @@ where
             "cat /proc/vmstat | tee -a {}",
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
-    } else if cfg.mmstats_periodic {
-        vshell.run(cmd!("touch /tmp/exp-stop"))?;
-        time!(
-            timers,
-            "Waiting for mmstats thread to halt",
-            maybe_shell_and_handle.unwrap().1.join().1?
-        );
     }
 
-    vshell.run(cmd!("touch /tmp/exp-stop"))?;
     time!(
         timers,
-        "Waiting for buddyinfo thread to halt",
-        buddyinfo_handle.join().1?
+        "Waiting for data collection threads to halt",
+        bgctx.notify_and_join_all()?
     );
 
     ushell.run(cmd!("date"))?;

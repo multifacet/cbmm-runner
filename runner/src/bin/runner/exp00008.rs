@@ -6,6 +6,7 @@
 use clap::clap_app;
 
 use runner::{
+    background::{BackgroundContext, BackgroundTask},
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -328,31 +329,16 @@ where
     }
 
     // Record swap_instrumentation on the guest until signalled to stop.
-    let vshell2 = connect_to_vagrant_as_root(login.hostname)?;
-    let buddyinfo_handle = vshell2.spawn(
-        cmd!(
-            "rm -f /tmp/exp-stop ; \
-             while [ ! -e /tmp/exp-stop ] ; do \
-             cat /proc/swap_instrumentation | tee -a {} ; \
-             sleep {} ; \
-             done ; \
-             cat /proc/swap_instrumentation | tee -a {} ; \
-             echo done measuring",
+    let mut bgctx = BackgroundContext::new(&vshell);
+    bgctx.spawn(BackgroundTask {
+        name: "swap-instrumentation",
+        period: cfg.stats_interval,
+        cmd: format!(
+            "cat /proc/swap_instrumentation | tee -a {}",
             dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-            cfg.stats_interval,
-            dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-        )
-        .use_bash(),
-    )?;
-
-    // Wait to make sure the collection of stats has started
-    vshell.run(
-        cmd!(
-            "while [ ! -e {} ] ; do sleep 1 ; done",
-            dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
-        )
-        .use_bash(),
-    )?;
+        ),
+        ensure_started: dir!(VAGRANT_RESULTS_DIR, output_file.as_str()),
+    })?;
 
     let freq = runner::get_cpu_freq(&ushell)?;
     let mut tctx = TasksetCtx::new(cfg.cores);
@@ -445,11 +431,10 @@ where
         }
     }
 
-    vshell.run(cmd!("touch /tmp/exp-stop"))?;
     time!(
         timers,
         "Waiting for swap_instrumentation thread to halt",
-        buddyinfo_handle.join().1?
+        bgctx.notify_and_join_all()?
     );
 
     ushell.run(cmd!("date"))?;
