@@ -92,7 +92,7 @@ impl BackgroundTask<'_> {
         let handle = shell.spawn(cmd)?;
 
         // Ensure that it has started.
-        shell.run(cmd!("while [ ! -e {} ] ; do sleep 1 ; done", stop_file_path).use_bash())?;
+        shell.run(cmd!("while [ ! -e {} ] ; do sleep 1 ; done", self.ensure_started).use_bash())?;
 
         Ok(handle)
     }
