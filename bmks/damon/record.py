@@ -126,10 +126,12 @@ def main(args=None):
         do_record(target, False, init_regions, new_attrs, orig_attrs, args.wait)
     elif not subprocess.call('which %s > /dev/null' % target_fields[0],
             shell=True, executable='/bin/bash'):
+        print("Assuming %s is executable" % target)
         do_record(target, True, init_regions, new_attrs, orig_attrs, args.wait)
     else:
         try:
             pid = int(target)
+            print("Assuming %s is PID" % target)
         except:
             print('target \'%s\' is neither a command, nor a pid' % target)
             exit(1)
