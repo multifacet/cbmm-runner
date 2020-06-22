@@ -471,6 +471,13 @@ where
         );
     }
 
+    // Tell damon to write data, if needed.
+    if cfg.damon {
+        vshell.run(cmd!(
+            "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
+        ))?;
+    }
+
     ushell.run(cmd!("date"))?;
 
     vshell.run(cmd!(
