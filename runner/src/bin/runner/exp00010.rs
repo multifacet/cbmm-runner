@@ -6,6 +6,7 @@
 use clap::clap_app;
 
 use runner::{
+    background::{BackgroundContext, BackgroundTask},
     dir,
     exp_0sim::*,
     get_cpu_freq, get_user_home_dir,
@@ -23,6 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
+
+pub const PERIOD: usize = 10; // seconds
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -67,6 +70,7 @@ struct Config {
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
 
     mmstats: bool,
+    meminfo_periodic: bool,
 
     username: String,
     host: String,
@@ -133,6 +137,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MMSTATS: --memstats
          "(optional) Collect latency histograms for memory management ops; \
           requires a kernel that has instrumentation.")
+        (@arg MEMINFO_PERIODIC: --meminfo_periodic
+         "Collect /proc/meminfo data periodically")
     }
 }
 
@@ -195,6 +201,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let eager = sub_m.is_present("EAGER");
     let mmstats = sub_m.is_present("MMSTATS");
+    let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -218,6 +225,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
 
         mmstats,
+        meminfo_periodic,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -265,6 +273,7 @@ where
 
     let (output_file, params_file, time_file, _sim_file) = cfg.gen_standard_names();
     let mmstats_file = cfg.gen_file_name("mmstats");
+    let meminfo_file = cfg.gen_file_name("meminfo");
     let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
@@ -300,6 +309,28 @@ where
         ushell.run(cmd!(
             "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
         ))?;
+    }
+
+    // Maybe collect meminfo
+    let mut bgctx = BackgroundContext::new(&ushell);
+    if cfg.meminfo_periodic {
+        bgctx.spawn(BackgroundTask {
+            name: "meminfo",
+            period: PERIOD,
+            cmd: format!(
+                "cat /proc/meminfo | tee -a {}",
+                dir!(
+                    user_home,
+                    setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                    &meminfo_file
+                ),
+            ),
+            ensure_started: dir!(
+                user_home,
+                setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                &meminfo_file
+            ),
+        })?;
     }
 
     // Run the workload.
@@ -451,6 +482,14 @@ where
         ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
+    }
+
+    if cfg.meminfo_periodic {
+        time!(
+            timers,
+            "Waiting for data collectioned threads to halt",
+            bgctx.notify_and_join_all()?
+        );
     }
 
     ushell.run(cmd!("date"))?;
