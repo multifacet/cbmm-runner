@@ -463,10 +463,12 @@ where
             "cat /proc/vmstat | tee -a {}",
             dir!(VAGRANT_RESULTS_DIR, &mmstats_file)
         ))?;
-    } else if cfg.mmstats_periodic {
+    }
+
+    if cfg.mmstats_periodic || cfg.meminfo_periodic {
         time!(
             timers,
-            "Waiting for mmstats thread to halt",
+            "Waiting for data collectioned threads to halt",
             bgctx.notify_and_join_all()?
         );
     }
