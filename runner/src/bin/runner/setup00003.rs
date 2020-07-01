@@ -13,7 +13,7 @@ use runner::{
 use spurs::{cmd, Execute};
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    clap_app! { setup00002 =>
+    clap_app! { setup00003 =>
         (about: "Sets up the given _centos_ with the given kernel. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
