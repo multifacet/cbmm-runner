@@ -6,6 +6,7 @@ mod manual;
 mod setup00000;
 mod setup00001;
 mod setup00002;
+mod setup00003;
 
 // Experiment routines
 mod exptmp;
@@ -36,6 +37,7 @@ fn run() -> Result<(), failure::Error> {
         .subcommand(setup00000::cli_options())
         .subcommand(setup00001::cli_options())
         .subcommand(setup00002::cli_options())
+        .subcommand(setup00003::cli_options())
         .subcommand(manual::cli_options())
         .subcommand(exptmp::cli_options())
         .subcommand(exp00000::cli_options())
@@ -57,6 +59,7 @@ fn run() -> Result<(), failure::Error> {
         ("setup00000", Some(sub_m)) => setup00000::run(sub_m),
         ("setup00001", Some(sub_m)) => setup00001::run(sub_m),
         ("setup00002", Some(sub_m)) => setup00002::run(sub_m),
+        ("setup00003", Some(sub_m)) => setup00003::run(sub_m),
 
         ("manual", Some(sub_m)) => manual::run(sub_m),
 
