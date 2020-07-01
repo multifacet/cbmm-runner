@@ -172,7 +172,11 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .stdout;
     let kernel_rpm = kernel_rpm.trim();
 
-    ushell.run(cmd!("sudo rpm -ivh --force {}", kernel_rpm))?;
+    ushell.run(cmd!(
+        "sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
+        user_home,
+        kernel_rpm
+    ))?;
 
     // update grub to choose this entry (new kernel) by default
     ushell.run(cmd!("sudo grub2-set-default 0"))?;
