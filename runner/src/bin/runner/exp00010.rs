@@ -1,7 +1,7 @@
 //! Run a workload on bare-metal (e.g. AWS).
 //!
 //! Requires `setup00000` with the appropriate kernel. If mmstats is passed, an instrumented kernel
-//! needs to be installed.
+//! needs to be installed. If `--damon` is used, then `setup00002` with the DAMON kernel is needed.
 
 use clap::clap_app;
 
@@ -15,7 +15,7 @@ use runner::{
     time,
     workloads::{
         run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
-        run_time_mmap_touch, LocalityMemAccessConfig, LocalityMemAccessMode,
+        run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
         MemcachedWorkloadConfig, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
@@ -71,6 +71,7 @@ struct Config {
 
     mmstats: bool,
     meminfo_periodic: bool,
+    damon: bool,
 
     username: String,
     host: String,
@@ -139,6 +140,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           requires a kernel that has instrumentation.")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically")
+        (@arg DAMON: --damon conflicts_with[MEMTRACE]
+         "Collect DAMON page access history data")
     }
 }
 
@@ -202,6 +205,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let eager = sub_m.is_present("EAGER");
     let mmstats = sub_m.is_present("MMSTATS");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
+    let damon = sub_m.is_present("DAMON");
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -226,6 +230,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         mmstats,
         meminfo_periodic,
+        damon,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -274,6 +279,20 @@ where
     let (output_file, params_file, time_file, _sim_file) = cfg.gen_standard_names();
     let mmstats_file = cfg.gen_file_name("mmstats");
     let meminfo_file = cfg.gen_file_name("meminfo");
+    let damon_output_path = cfg.gen_file_name("damon");
+    let damon_output_path = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        damon_output_path
+    );
+
+    let damon_path = dir!(
+        "/home/vagrant",
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_BENCHMARKS_DIR,
+        DAMON_PATH
+    );
+
     let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
@@ -446,7 +465,14 @@ where
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
-                        damon: None,
+                        damon: if cfg.damon {
+                            Some(Damon {
+                                damon_path: &damon_path,
+                                output_path: &damon_output_path,
+                            })
+                        } else {
+                            None
+                        },
                     }
                 )?
             );
@@ -490,6 +516,15 @@ where
             "Waiting for data collectioned threads to halt",
             bgctx.notify_and_join_all()?
         );
+    }
+
+    // Tell damon to write data, if needed.
+    if cfg.damon {
+        time!(timers, "Waiting for DAMON to flush data buffers", {
+            ushell.run(cmd!(
+                "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
+            ))?;
+        })
     }
 
     ushell.run(cmd!("date"))?;

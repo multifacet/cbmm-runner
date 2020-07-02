@@ -475,9 +475,11 @@ where
 
     // Tell damon to write data, if needed.
     if cfg.damon {
-        vshell.run(cmd!(
-            "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
-        ))?;
+        time!(timers, "Waiting for DAMON to flush data buffers", {
+            vshell.run(cmd!(
+                "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
+            ))?;
+        })
     }
 
     ushell.run(cmd!("date"))?;
