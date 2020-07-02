@@ -287,7 +287,7 @@ where
     );
 
     let damon_path = dir!(
-        "/home/vagrant",
+        user_home,
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_BENCHMARKS_DIR,
         DAMON_PATH
