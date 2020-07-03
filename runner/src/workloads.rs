@@ -71,6 +71,8 @@ pub struct Damon<'s> {
 
     /// The interval (in ms) with which to sample the address space.
     pub sample_interval: usize,
+    /// The interval (in ms) with which to aggregate samples.
+    pub aggregate_interval: usize,
 }
 
 /// The different patterns supported by the `time_mmap_touch` workload.
@@ -237,9 +239,10 @@ pub fn start_memcached(
     // Start DAMON if needed.
     if let Some(damon) = &cfg.damon {
         shell.run(cmd!(
-            "sudo {}/damo record -s {} -o {} `pidof memcached`",
+            "sudo {}/damo record -s {} -a {} -o {} `pidof memcached`",
             damon.damon_path,
             damon.sample_interval,
+            damon.aggregate_interval,
             damon.output_path,
         ))?;
     }

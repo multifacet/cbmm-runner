@@ -448,7 +448,8 @@ where
                             Some(Damon {
                                 output_path: &damon_output_path,
                                 damon_path: &damon_path,
-                                sample_interval: 5000, // ms
+                                sample_interval: 5 * 1000,      // ms
+                                aggregate_interval: 100 * 1000, // ms
                             })
                         } else {
                             None
