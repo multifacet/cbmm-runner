@@ -373,6 +373,7 @@ where
                 Some(Damon {
                     damon_path: &damon_path,
                     output_path: &damon_output_path,
+                    sample_interval: 5000, // ms
                 })
             } else {
                 None

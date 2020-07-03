@@ -26,6 +26,7 @@ use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
 pub const PERIOD: usize = 10; // seconds
+pub const DEFAULT_DAMON_SAMPLE_INTERVAL: usize = 5000; // msecs
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -72,6 +73,7 @@ struct Config {
     mmstats: bool,
     meminfo_periodic: bool,
     damon: bool,
+    damon_sample_interval: usize,
 
     username: String,
     host: String,
@@ -139,9 +141,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(optional) Collect latency histograms for memory management ops; \
           requires a kernel that has instrumentation.")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
-         "Collect /proc/meminfo data periodically")
+         "Collect /proc/meminfo data periodically.")
         (@arg DAMON: --damon conflicts_with[MEMTRACE]
-         "Collect DAMON page access history data")
+         "Collect DAMON page access history data.")
+        (@arg DAMON_SAMPLE_INT: --damon_sample_interval requires[DAMON] +takes_value {is_usize}
+         "The interval with which DAMON samples access data.")
     }
 }
 
@@ -206,6 +210,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mmstats = sub_m.is_present("MMSTATS");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
     let damon = sub_m.is_present("DAMON");
+    let damon_sample_interval = sub_m
+        .value_of("DAMON_SAMPLE_INT")
+        .map(|s| s.parse().unwrap())
+        .unwrap_or(DEFAULT_DAMON_SAMPLE_INTERVAL);
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -231,6 +239,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mmstats,
         meminfo_periodic,
         damon,
+        damon_sample_interval,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -469,6 +478,7 @@ where
                             Some(Damon {
                                 damon_path: &damon_path,
                                 output_path: &damon_output_path,
+                                sample_interval: cfg.damon_sample_interval,
                             })
                         } else {
                             None

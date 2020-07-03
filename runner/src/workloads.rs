@@ -68,6 +68,9 @@ pub struct Damon<'s> {
     pub damon_path: &'s str,
     /// The file path and name to output the trace to.
     pub output_path: &'s str,
+
+    /// The interval (in ms) with which to sample the address space.
+    pub sample_interval: usize,
 }
 
 /// The different patterns supported by the `time_mmap_touch` workload.
@@ -234,8 +237,9 @@ pub fn start_memcached(
     // Start DAMON if needed.
     if let Some(damon) = &cfg.damon {
         shell.run(cmd!(
-            "sudo {}/damo record -o {} `pidof memcached`",
+            "sudo {}/damo record -s {} -o {} `pidof memcached`",
             damon.damon_path,
+            damon.sample_interval,
             damon.output_path,
         ))?;
     }
