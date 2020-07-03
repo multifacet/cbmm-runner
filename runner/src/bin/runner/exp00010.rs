@@ -99,19 +99,19 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The username on the remote (e.g. markm)")
         (@subcommand time_loop =>
             (about: "Run the `time_loop` workload.")
-            (@arg N: +required +takes_value {validator::usize}
+            (@arg N: +required +takes_value {validator::is::<usize>}
              "The number of iterations of the workload (e.g. 50000000), preferably \
               divisible by 8 for `locality_mem_access`")
             )
         (@subcommand locality_mem_access =>
             (about: "Run the `locality_mem_access` workload.")
-            (@arg N: +required +takes_value {validator::usize}
+            (@arg N: +required +takes_value {validator::is::<usize>}
              "The number of iterations of the workload (e.g. 50000000), preferably \
               divisible by 8 for `locality_mem_access`")
         )
         (@subcommand time_mmap_touch =>
             (about: "Run the `time_mmap_touch` workload.")
-            (@arg SIZE: +required +takes_value {validator::usize}
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
             (@group PATTERN =>
                 (@attributes +required)
@@ -121,12 +121,12 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@subcommand memcached =>
             (about: "Run the `memcached` workload.")
-            (@arg SIZE: +required +takes_value {validator::usize}
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
         )
         (@subcommand mix =>
             (about: "Run the `mix` workload.")
-            (@arg SIZE: +required +takes_value {validator::usize}
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
         )
         (@arg EAGER: --eager

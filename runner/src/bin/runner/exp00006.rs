@@ -6,6 +6,7 @@
 use clap::clap_app;
 
 use runner::{
+    cli::validator,
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -44,13 +45,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00006 =>
         (about: "Run experiment 00006. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -59,13 +53,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +takes_value {is_usize} +required
+        (@arg VMSIZE: +takes_value {validator::is::<usize>} +required
          "The number of GBs of the VM")
-        (@arg CORES: +takes_value {is_usize} +required
+        (@arg CORES: +takes_value {validator::is::<usize>} +required
          "The number of cores of the VM")
         (@group KTASK_DIV =>
             (@attributes +required)
-            (@arg DIV: +takes_value {is_usize}
+            (@arg DIV: +takes_value {validator::is::<usize>}
              "The scaling factor to pass a boot parameter. The max number of threads \
               in ktask is set to `CORES / KTASK_DIV`. 4 is the default for \
               normal ktask.")

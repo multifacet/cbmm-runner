@@ -6,6 +6,7 @@
 use clap::clap_app;
 
 use runner::{
+    cli::validator,
     dir,
     downloads::{artifact_info, Artifact},
     exp_0sim::*,
@@ -58,13 +59,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00009 =>
         (about: "Run experiment 00009. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -73,9 +67,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +required +takes_value {is_usize}
+        (@arg VMSIZE: +required +takes_value {validator::is::<usize>}
          "The number of GBs of the VM (e.g. 500)")
-        (@arg CORES: +required +takes_value {is_usize}
+        (@arg CORES: +required +takes_value {validator::is::<usize>}
          "The number of cores of the VM")
         (@group PATTERN =>
             (@attributes +required)
@@ -88,7 +82,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg PREFAULT: -p --prefault
          "Pass this flag to prefault memory before running the main workload \
          (ignored for memcached).")
-        (@arg SIZE: -s --size +takes_value {is_usize}
+        (@arg SIZE: -s --size +takes_value {validator::is::<usize>}
          "The number of GBs of the workload (e.g. 500)")
     }
 }

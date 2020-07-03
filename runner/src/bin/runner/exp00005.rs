@@ -6,6 +6,7 @@
 use clap::clap_app;
 
 use runner::{
+    cli::validator,
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -52,13 +53,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00005 =>
         (about: "Run experiment 00005. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -67,13 +61,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg DURATION: +takes_value {is_usize} +required
+        (@arg DURATION: +takes_value {validator::is::<usize>} +required
          "The length of time to run the workload in seconds.")
         (@arg WARMUP: -w --warmup
          "Pass this flag to warmup the VM before running the main workload.")
-        (@arg VMSIZE: +takes_value {is_usize}
+        (@arg VMSIZE: +takes_value {validator::is::<usize>}
          "The number of GBs of the VM (defaults to 2048)")
-        (@arg CORES: +takes_value {is_usize} -C --cores
+        (@arg CORES: +takes_value {validator::is::<usize>} -C --cores
          "The number of cores of the VM (defaults to 1)")
     }
 }

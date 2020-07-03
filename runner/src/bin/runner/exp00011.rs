@@ -87,9 +87,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +required +takes_value {validator::usize}
+        (@arg VMSIZE: +required +takes_value {validator::is::<usize>}
          "The number of GBs of the VM (e.g. 500)")
-        (@arg CORES: +required +takes_value {validator::usize}
+        (@arg CORES: +required +takes_value {validator::is::<usize>}
          "The number of cores of the VM")
         (@group WORKLOAD =>
             (@attributes +required)

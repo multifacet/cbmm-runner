@@ -7,6 +7,7 @@
 use clap::clap_app;
 
 use runner::{
+    cli::validator,
     dir,
     exp_0sim::*,
     get_user_home_dir,
@@ -51,13 +52,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00004 =>
         (about: "Run experiment 00004. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -66,7 +60,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg SIZE: +required +takes_value {is_usize}
+        (@arg SIZE: +required +takes_value {validator::is::<usize>}
          "The number of GBs of the workload (e.g. 500)")
     }
 }

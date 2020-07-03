@@ -99,9 +99,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +required +takes_value {validator::usize}
+        (@arg VMSIZE: +required +takes_value {validator::is::<usize>}
          "The number of GBs of the VM (e.g. 500)")
-        (@arg CORES: +required +takes_value {validator::usize}
+        (@arg CORES: +required +takes_value {validator::is::<usize>}
          "The number of cores of the VM")
         (@group PATTERN =>
             (@attributes +required)
@@ -116,13 +116,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg PREFAULT: -p --prefault
          "Pass this flag to prefault memory before running the main workload \
          (ignored for memcached).")
-        (@arg SIZE: -s --size +takes_value {validator::usize}
+        (@arg SIZE: -s --size +takes_value {validator::is::<usize>}
          "The number of GBs of the workload (e.g. 500)")
         (@arg MULTICORE_OFFSETTING: --multicore_offsetting
          "(Optional) Enable multicore offsetting for greater accuracy at a performance cost")
-        (@arg DRIFT_THRESHOLD: --drift_thresh +takes_value {validator::usize} requires[MULTICORE_OFFSETTING]
+        (@arg DRIFT_THRESHOLD: --drift_thresh +takes_value
+         {validator::is::<usize>} requires[MULTICORE_OFFSETTING]
          "(Optional) Set multicore offsetting drift threshold.")
-        (@arg DELAY: --delay +takes_value {validator::usize} requires[MULTICORE_OFFSETTING]
+        (@arg DELAY: --delay +takes_value {validator::is::<usize>} requires[MULTICORE_OFFSETTING]
          "(Optional) Set multicore offsetting delay.")
         (@arg DISABLE_ZSWAP: --disable_zswap
          "(Optional; not recommended) Disable zswap, forcing the hypervisor to \

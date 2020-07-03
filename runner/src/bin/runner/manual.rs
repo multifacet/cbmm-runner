@@ -10,6 +10,7 @@ use clap::{clap_app, ArgMatches};
 use spurs::{cmd, Execute, SshShell};
 
 use runner::{
+    cli::validator,
     exp_0sim::{
         initial_reboot, set_kernel_printk_level, set_perf_scaling_gov, setup_swapping,
         start_vagrant, turn_on_ssdswap, ZeroSim, VAGRANT_CORES, VAGRANT_MEM, ZEROSIM_LAPIC_ADJUST,
@@ -20,13 +21,6 @@ use runner::{
 };
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { manual =>
         (about: "Perform some (non-strict) subset of the setup for an experiment. Requires `sudo`.")
         (@arg HOSTNAME: +required +takes_value
@@ -39,24 +33,24 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) If present, setup swapping")
         (@arg PERF: --perfgov
          "(Optional) If present, set the scaling governor to \"performance\"")
-        (@arg PRINTK: --printk +takes_value {is_usize}
+        (@arg PRINTK: --printk +takes_value {validator::is::<usize>}
          "(Optional) If present, set the printk logging level for dmesg. \
           0 = high-priority only. 7 = everything.")
         (@arg SSDSWAP: --ssdswap
          "(Optional) If present, turn on ssdswap.")
         (@arg VM: --vm
          "(Optional) Start the vagrant VM. Use other flags to set VM memory and vCPUS.")
-        (@arg VMSIZE: --vm_size +takes_value {is_usize}
+        (@arg VMSIZE: --vm_size +takes_value {validator::is::<usize>}
          "(Only valid with --vm) The number of GBs of the VM (defaults to 1024) (e.g. 500)")
-        (@arg VMCORES: --vm_cores +takes_value {is_usize}
+        (@arg VMCORES: --vm_cores +takes_value {validator::is::<usize>}
          "(Only valid with --vm) The number of cores of the VM (defaults to 1)")
         (@arg DISABLETSC: --disable_tsc
          "(Only valid with --vm) Disable TSC offsetting during boot to speed it up.")
-        (@arg ZSWAP: --zswap +takes_value {is_usize}
+        (@arg ZSWAP: --zswap +takes_value {validator::is::<usize>}
          "(Optional) Turn on zswap with the given `max_pool_percent`")
-        (@arg DRIFT_THRESHOLD: --drift_thresh +takes_value {is_usize}
+        (@arg DRIFT_THRESHOLD: --drift_thresh +takes_value {validator::is::<usize>}
          "(Optional) Set multicore offsetting drift threshold.")
-        (@arg DELAY: --delay +takes_value {is_usize}
+        (@arg DELAY: --delay +takes_value {validator::is::<usize>}
          "(Optional) Set multicore offsetting delay.")
         (@arg DISABLE_EPT: --disable_ept
          "(Optional) may need to disable Intel EPT on machines that don't have enough physical bits.")

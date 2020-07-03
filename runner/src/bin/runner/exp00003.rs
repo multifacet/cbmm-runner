@@ -13,6 +13,7 @@
 use clap::clap_app;
 
 use runner::{
+    cli::validator,
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -69,13 +70,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00003 =>
         (about: "Run experiment 00003. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -84,13 +78,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +required +takes_value {is_usize}
+        (@arg VMSIZE: +required +takes_value {validator::is::<usize>}
          "The number of GBs of the VM (e.g. 500)")
-        (@arg CORES: -C --cores +takes_value {is_usize}
+        (@arg CORES: -C --cores +takes_value {validator::is::<usize>}
          "(Optional) The number of cores of the VM (defaults to 1)")
-        (@arg SIZE: -s --size +takes_value {is_usize}
+        (@arg SIZE: -s --size +takes_value {validator::is::<usize>}
          "(Optional) The number of GBs of the workload (e.g. 500). Defaults to VMSIZE + 10")
-        (@arg CONTINUAL: --continual_compaction +takes_value {is_usize}
+        (@arg CONTINUAL: --continual_compaction +takes_value {validator::is::<usize>}
          "(Optional) Enables continual compaction via spurious failures of the given mode")
     }
 }

@@ -2,10 +2,14 @@
 
 /// Validators for different CLI options.
 pub mod validator {
-    /// Validates that the argument is of type `usize`.
-    pub fn usize(s: String) -> Result<(), String> {
+    /// Validates that the argument is of type `T` that can be parsed from a string.
+    pub fn is<T>(s: String) -> Result<(), String>
+    where
+        T: std::str::FromStr,
+        <T as std::str::FromStr>::Err: std::fmt::Debug,
+    {
         s.as_str()
-            .parse::<usize>()
+            .parse::<T>()
             .map(|_| ())
             .map_err(|e| format!("{:?}", e))
     }
@@ -157,7 +161,7 @@ pub mod damon {
                 .long("damon_sample_interval")
                 .requires("DAMON")
                 .takes_value(true)
-                .validator(super::validator::usize)
+                .validator(super::validator::is::<usize>)
                 .help("The interval with which DAMON samples access data."),
         )
         .arg(
@@ -165,7 +169,7 @@ pub mod damon {
                 .long("damon_aggr_interval")
                 .requires("DAMON")
                 .takes_value(true)
-                .validator(super::validator::usize)
+                .validator(super::validator::is::<usize>)
                 .help("The interval with which DAMON aggregates access data."),
         )
     }

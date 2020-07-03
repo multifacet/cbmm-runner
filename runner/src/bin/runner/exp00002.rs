@@ -5,6 +5,7 @@
 use clap::clap_app;
 
 use runner::{
+    cli::validator,
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -68,13 +69,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00002 =>
         (about: "Run experiment 00002. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -83,12 +77,12 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg N: +required +takes_value {is_usize}
+        (@arg N: +required +takes_value {validator::is::<usize>}
          "The number of iterations of the workload (e.g. 50000000), preferably \
           divisible by 8 for `locality_mem_access`")
-        (@arg VMSIZE: +takes_value {is_usize} -v --vm_size
+        (@arg VMSIZE: +takes_value {validator::is::<usize>} -v --vm_size
          "The number of GBs of the VM (defaults to 1024)")
-        (@arg CORES: +takes_value {is_usize} -C --cores
+        (@arg CORES: +takes_value {validator::is::<usize>} -C --cores
          "The number of cores of the VM (defaults to 1)")
         (@arg WARMUP: -w --warmup
          "Pass this flag to warmup the VM before running the main workload.")
@@ -96,7 +90,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@attributes +required)
             (@arg TIME_LOOP: -t "Run time_loop")
             (@arg LOCALITY: -l "Run locality_mem_access")
-            (@arg MTLOCALITY: -L +takes_value {is_usize}
+            (@arg MTLOCALITY: -L +takes_value {validator::is::<usize>}
              "Run multithreaded locality_mem_access with the given number of threads")
         )
     }

@@ -7,6 +7,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
+    cli::validator,
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -81,20 +82,6 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_isize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<isize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
     clap_app! { exp00008 =>
         (about: "Run experiment 00008. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
@@ -103,7 +90,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg INTERVAL: +required +takes_value {is_usize}
+        (@arg INTERVAL: +required +takes_value {validator::is::<usize>}
          "The interval at which to collect stats (seconds)")
         (@group WORKLOAD =>
             (@attributes +required)
@@ -113,11 +100,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@arg WARMUP: -w --warmup
          "Pass this flag to warmup the VM before running the main workload.")
-        (@arg VMSIZE: +takes_value {is_usize} --vm_size
+        (@arg VMSIZE: +takes_value {validator::is::<usize>} --vm_size
          "The number of GBs of the VM (defaults to 2048)")
-        (@arg CORES: +takes_value {is_usize} -C --cores
+        (@arg CORES: +takes_value {validator::is::<usize>} -C --cores
          "The number of cores of the VM (defaults to 1)")
-        (@arg FACTOR: +takes_value {is_isize} -f --factor
+        (@arg FACTOR: +takes_value {validator::is::<isize>} -f --factor
          "The reclaim order extra factor (defaults to 0). Can be positive or negative, \
          but the absolute value should be less than MAX_ORDER for the guest kernel.")
     }
