@@ -15,6 +15,7 @@ mod macros;
 pub mod output;
 
 pub mod background;
+pub mod cli;
 pub mod downloads;
 pub mod exp_0sim;
 pub mod hadoop;

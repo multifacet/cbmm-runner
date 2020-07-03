@@ -6,14 +6,14 @@
 use clap::clap_app;
 
 use runner::{
-    exp_0sim::*, get_user_home_dir, paths::*, GitRepo, KernelBaseConfigSource, KernelConfig,
-    KernelPkgType, KernelSrc, Login,
+    cli::setup_kernel, exp_0sim::*, get_user_home_dir, paths::*, KernelBaseConfigSource,
+    KernelConfig, KernelPkgType, KernelSrc, Login,
 };
 
 use spurs::{cmd, Execute};
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    clap_app! { setup00003 =>
+    let app = clap_app! { setup00003 =>
         (about: "Sets up the given _centos_ with the given kernel. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
@@ -22,57 +22,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@group GIT_REPO =>
-            (@attributes +required)
-            (@arg HTTPS: --https +takes_value
-             "The git repository to compile the kernel from as an HTTPS URL.")
-            (@arg SSH: --ssh +takes_value
-             "The git repository to compile the kernel from as an SSH address.")
-        )
-        (@arg COMMITISH: +required +takes_value
-         "The git branch/hash/tag to compile the kernel from (e.g. master or v4.10)")
-        (@arg SECRET: --secret +takes_value requires[HTTPS] requires[GIT_USERNAME]
-         "A secret token for accessing a private repository")
-        (@arg GIT_USERNAME: --username +takes_value requires[HTTPS] requires[SECRET]
-         "A username for accessing a private repository")
-        (@arg CONFIGS: ... +allow_hyphen_values {validate_config_option}
-         "Space separated list of Linux kernel configuration options, prefixed by \
-         + to enable and - to disable. For example, +CONFIG_ZSWAP or \
-         -CONFIG_PAGE_TABLE_ISOLATION")
-    }
-}
+    };
 
-fn validate_config_option(opt: String) -> Result<(), String> {
-    parse_config_option(&opt)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
+    let app = setup_kernel::add_cli_options(app);
 
-fn parse_config_option(opt: &str) -> Result<(&str, bool), failure::Error> {
-    fn check(s: &str) -> Result<&str, failure::Error> {
-        if s.is_empty() {
-            Err(failure::format_err!("Empty string is not a valid option"))
-        } else {
-            for c in s.chars() {
-                if !c.is_ascii_alphanumeric() && c != '_' {
-                    return Err(failure::format_err!("Invalid config name \"{}\"", s));
-                }
-            }
-            Ok(s)
-        }
-    }
-
-    if opt.is_empty() {
-        Err(failure::format_err!("Empty string is not a valid option"))
-    } else {
-        match &opt[0..1] {
-            "+" => Ok((check(&opt[1..])?, true)),
-            "-" => Ok((check(&opt[1..])?, false)),
-            _ => Err(failure::format_err!(
-                "Kernel config option must be prefixed with + or -"
-            )),
-        }
-    }
+    app
 }
 
 /// Turn `repo` and `branch` into something that is unlikely to cause problems if we use it in a path name.
@@ -92,32 +46,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         hostname: sub_m.value_of("HOSTNAME").unwrap(),
         host: sub_m.value_of("HOSTNAME").unwrap(),
     };
-    let secret = sub_m.value_of("SECRET");
-    let git_repo = {
-        let https = sub_m.value_of("HTTPS");
-        let ssh = sub_m.value_of("SSH");
-        let username = sub_m.value_of("GIT_USERNAME");
 
-        match (https, ssh, secret) {
-            (Some(https), None, None) => GitRepo::HttpsPublic { repo: https },
-            (Some(https), None, Some(_)) => GitRepo::HttpsPrivate {
-                repo: https,
-                username: username.unwrap(),
-            },
-            (None, Some(ssh), None) => GitRepo::Ssh { repo: ssh },
-            _ => unreachable!(),
-        }
-    }
-    .git_repo_access_url(secret);
-    let commitish = sub_m.value_of("COMMITISH").unwrap();
-    let kernel_config: Vec<_> = sub_m
-        .values_of("CONFIGS")
-        .map(|values| {
-            values
-                .map(|arg| parse_config_option(arg).unwrap())
-                .collect()
-        })
-        .unwrap_or_else(|| vec![]);
+    let (git_repo, commitish, kernel_config, _secret) = setup_kernel::parse_cli_options(sub_m);
 
     // Connect to the remote.
     let ushell = connect_and_setup_host_only(&login)?;
