@@ -1,5 +1,16 @@
 //! Some routines for adding common CLI options in a consistent, less boilerplatey way.
 
+/// Validators for different CLI options.
+pub mod validator {
+    /// Validates that the argument is of type `usize`.
+    pub fn usize(s: String) -> Result<(), String> {
+        s.as_str()
+            .parse::<usize>()
+            .map(|_| ())
+            .map_err(|e| format!("{:?}", e))
+    }
+}
+
 /// CLI options for compiling kernels.
 pub mod setup_kernel {
     use clap::{App, Arg, ArgGroup, ArgMatches};
@@ -125,5 +136,50 @@ pub mod setup_kernel {
                 )),
             }
         }
+    }
+}
+
+/// Options for running and configuring DAMON.
+pub mod damon {
+    use clap::{App, Arg, ArgMatches};
+
+    use crate::workloads::{DEFAULT_DAMON_AGGR_INTERVAL, DEFAULT_DAMON_SAMPLE_INTERVAL};
+
+    pub fn add_cli_options<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("DAMON")
+                .long("damon")
+                .conflicts_with("MEMTRACE")
+                .help("Collect DAMON page access history data"),
+        )
+        .arg(
+            Arg::with_name("DAMON_SAMPLE_INT")
+                .long("damon_sample_interval")
+                .requires("DAMON")
+                .takes_value(true)
+                .validator(super::validator::usize)
+                .help("The interval with which DAMON samples access data."),
+        )
+        .arg(
+            Arg::with_name("DAMON_AGGR_INT")
+                .long("damon_aggr_interval")
+                .requires("DAMON")
+                .takes_value(true)
+                .validator(super::validator::usize)
+                .help("The interval with which DAMON aggregates access data."),
+        )
+    }
+
+    pub fn parse_cli_options<'a>(sub_m: &'a ArgMatches<'a>) -> (bool, usize, usize) {
+        let damon = sub_m.is_present("DAMON");
+        let damon_sample_interval = sub_m
+            .value_of("DAMON_SAMPLE_INT")
+            .map(|s| s.parse().unwrap())
+            .unwrap_or(DEFAULT_DAMON_SAMPLE_INTERVAL);
+        let damon_aggr_interval = sub_m
+            .value_of("DAMON_AGGR_INT")
+            .map(|s| s.parse().unwrap())
+            .unwrap_or(DEFAULT_DAMON_AGGR_INTERVAL);
+        (damon, damon_sample_interval, damon_aggr_interval)
     }
 }

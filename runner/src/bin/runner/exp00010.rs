@@ -7,6 +7,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
+    cli::{damon, validator},
     dir,
     exp_0sim::*,
     get_cpu_freq, get_user_home_dir,
@@ -26,8 +27,6 @@ use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
 pub const PERIOD: usize = 10; // seconds
-pub const DEFAULT_DAMON_SAMPLE_INTERVAL: usize = 5 * 1000; // msecs
-pub const DEFAULT_DAMON_AGGR_INTERVAL: usize = 100 * 1000; // msecs
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -90,14 +89,7 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
-    clap_app! { exp00010 =>
+    let app = clap_app! { exp00010 =>
         (about: "Run experiment 00010. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
@@ -107,19 +99,19 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The username on the remote (e.g. markm)")
         (@subcommand time_loop =>
             (about: "Run the `time_loop` workload.")
-            (@arg N: +required +takes_value {is_usize}
+            (@arg N: +required +takes_value {validator::usize}
              "The number of iterations of the workload (e.g. 50000000), preferably \
               divisible by 8 for `locality_mem_access`")
             )
         (@subcommand locality_mem_access =>
             (about: "Run the `locality_mem_access` workload.")
-            (@arg N: +required +takes_value {is_usize}
+            (@arg N: +required +takes_value {validator::usize}
              "The number of iterations of the workload (e.g. 50000000), preferably \
               divisible by 8 for `locality_mem_access`")
         )
         (@subcommand time_mmap_touch =>
             (about: "Run the `time_mmap_touch` workload.")
-            (@arg SIZE: +required +takes_value {is_usize}
+            (@arg SIZE: +required +takes_value {validator::usize}
              "The number of GBs of the workload (e.g. 500)")
             (@group PATTERN =>
                 (@attributes +required)
@@ -129,12 +121,12 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@subcommand memcached =>
             (about: "Run the `memcached` workload.")
-            (@arg SIZE: +required +takes_value {is_usize}
+            (@arg SIZE: +required +takes_value {validator::usize}
              "The number of GBs of the workload (e.g. 500)")
         )
         (@subcommand mix =>
             (about: "Run the `mix` workload.")
-            (@arg SIZE: +required +takes_value {is_usize}
+            (@arg SIZE: +required +takes_value {validator::usize}
              "The number of GBs of the workload (e.g. 500)")
         )
         (@arg EAGER: --eager
@@ -144,13 +136,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           requires a kernel that has instrumentation.")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically.")
-        (@arg DAMON: --damon conflicts_with[MEMTRACE]
-         "Collect DAMON page access history data.")
-        (@arg DAMON_SAMPLE_INT: --damon_sample_interval requires[DAMON] +takes_value {is_usize}
-         "The interval with which DAMON samples access data.")
-        (@arg DAMON_AGGR_INT: --damon_aggr_interval requires[DAMON] +takes_value {is_usize}
-         "The interval with which DAMON aggregates access data.")
-    }
+    };
+
+    let app = damon::add_cli_options(app);
+
+    app
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -213,15 +203,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let eager = sub_m.is_present("EAGER");
     let mmstats = sub_m.is_present("MMSTATS");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
-    let damon = sub_m.is_present("DAMON");
-    let damon_sample_interval = sub_m
-        .value_of("DAMON_SAMPLE_INT")
-        .map(|s| s.parse().unwrap())
-        .unwrap_or(DEFAULT_DAMON_SAMPLE_INTERVAL);
-    let damon_aggr_interval = sub_m
-        .value_of("DAMON_AGGR_INT")
-        .map(|s| s.parse().unwrap())
-        .unwrap_or(DEFAULT_DAMON_AGGR_INTERVAL);
+    let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;

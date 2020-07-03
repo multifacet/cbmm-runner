@@ -8,6 +8,9 @@ use spurs::{cmd, Execute, SshError, SshShell, SshSpawnHandle};
 
 use super::{oomkiller_blacklist_by_name, paths::EAGER_PAGING_SCRIPT};
 
+pub const DEFAULT_DAMON_SAMPLE_INTERVAL: usize = 5 * 1000; // msecs
+pub const DEFAULT_DAMON_AGGR_INTERVAL: usize = 100 * 1000; // msecs
+
 /// Set the apriori paging process using Swapnil's program. Requires `sudo`.
 ///
 /// For example, to cause `ls` to be eagerly paged:

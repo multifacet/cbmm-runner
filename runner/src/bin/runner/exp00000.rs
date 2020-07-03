@@ -6,6 +6,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
+    cli::{damon, validator},
     dir,
     exp_0sim::*,
     get_cpu_freq,
@@ -74,6 +75,8 @@ struct Config {
     damon: bool,
     #[name(self.meminfo_periodic)]
     meminfo_periodic: bool,
+    damon_sample_interval: usize,
+    damon_aggr_interval: usize,
 
     username: String,
     host: String,
@@ -88,14 +91,7 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
-    clap_app! { exp00000 =>
+    let app = clap_app! { exp00000 =>
         (about: "Run experiment 00000. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
@@ -103,9 +99,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +required +takes_value {is_usize}
+        (@arg VMSIZE: +required +takes_value {validator::usize}
          "The number of GBs of the VM (e.g. 500)")
-        (@arg CORES: +required +takes_value {is_usize}
+        (@arg CORES: +required +takes_value {validator::usize}
          "The number of cores of the VM")
         (@group PATTERN =>
             (@attributes +required)
@@ -120,13 +116,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg PREFAULT: -p --prefault
          "Pass this flag to prefault memory before running the main workload \
          (ignored for memcached).")
-        (@arg SIZE: -s --size +takes_value {is_usize}
+        (@arg SIZE: -s --size +takes_value {validator::usize}
          "The number of GBs of the workload (e.g. 500)")
         (@arg MULTICORE_OFFSETTING: --multicore_offsetting
          "(Optional) Enable multicore offsetting for greater accuracy at a performance cost")
-        (@arg DRIFT_THRESHOLD: --drift_thresh +takes_value {is_usize} requires[MULTICORE_OFFSETTING]
+        (@arg DRIFT_THRESHOLD: --drift_thresh +takes_value {validator::usize} requires[MULTICORE_OFFSETTING]
          "(Optional) Set multicore offsetting drift threshold.")
-        (@arg DELAY: --delay +takes_value {is_usize} requires[MULTICORE_OFFSETTING]
+        (@arg DELAY: --delay +takes_value {validator::usize} requires[MULTICORE_OFFSETTING]
          "(Optional) Set multicore offsetting delay.")
         (@arg DISABLE_ZSWAP: --disable_zswap
          "(Optional; not recommended) Disable zswap, forcing the hypervisor to \
@@ -134,11 +130,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MEMTRACE: --memtrace conflicts_with[DAMON]
          "(Optional) collect a memory access trace of the workload. This could be multiple \
          gigabytes in size.")
-        (@arg DAMON: --damon conflicts_with[MEMTRACE]
-         "Collect DAMON page access history data")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically")
-    }
+    };
+
+    let app = damon::add_cli_options(app);
+
+    app
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -193,8 +191,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let multicore_offsetting = sub_m.is_present("MULTICORE_OFFSETTING");
 
     let memtrace = sub_m.is_present("MEMTRACE");
-    let damon = sub_m.is_present("DAMON");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
+    let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -226,6 +224,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         memtrace,
         damon,
         meminfo_periodic,
+        damon_sample_interval,
+        damon_aggr_interval,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -448,8 +448,8 @@ where
                             Some(Damon {
                                 output_path: &damon_output_path,
                                 damon_path: &damon_path,
-                                sample_interval: 5 * 1000,      // ms
-                                aggregate_interval: 100 * 1000, // ms
+                                sample_interval: cfg.damon_sample_interval,
+                                aggregate_interval: cfg.damon_aggr_interval,
                             })
                         } else {
                             None

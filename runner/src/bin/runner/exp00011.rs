@@ -8,6 +8,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
+    cli::{damon, validator},
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -54,6 +55,8 @@ struct Config {
     mmstats_periodic: bool,
     damon: bool,
     meminfo_periodic: bool,
+    damon_sample_interval: usize,
+    damon_aggr_interval: usize,
 
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -76,14 +79,7 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    fn is_usize(s: String) -> Result<(), String> {
-        s.as_str()
-            .parse::<usize>()
-            .map(|_| ())
-            .map_err(|e| format!("{:?}", e))
-    }
-
-    clap_app! { exp00011 =>
+    let app = clap_app! { exp00011 =>
         (about: "Run experiment 00011. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
@@ -91,9 +87,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The domain name of the remote (e.g. c240g2-031321.wisc.cloudlab.us:22)")
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
-        (@arg VMSIZE: +required +takes_value {is_usize}
+        (@arg VMSIZE: +required +takes_value {validator::usize}
          "The number of GBs of the VM (e.g. 500)")
-        (@arg CORES: +required +takes_value {is_usize}
+        (@arg CORES: +required +takes_value {validator::usize}
          "The number of cores of the VM")
         (@group WORKLOAD =>
             (@attributes +required)
@@ -125,11 +121,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect kernel memory management stats.")
         (@arg PERIODIC: --periodic requires[MMSTATS]
          "Collect kernel memory management stats periodically.")
-        (@arg DAMON: --damon conflicts_with[MEMTRACE]
-         "Collect DAMON page access history data")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically")
-    }
+    };
+
+    let app = damon::add_cli_options(app);
+
+    app
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -162,8 +160,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let memtrace = sub_m.is_present("MEMTRACE");
     let mmstats = sub_m.is_present("MMSTATS");
     let periodic = sub_m.is_present("PERIODIC");
-    let damon = sub_m.is_present("DAMON");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
+    let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -184,6 +182,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mmstats_periodic: periodic,
         damon,
         meminfo_periodic,
+        damon_sample_interval,
+        damon_aggr_interval,
 
         transparent_hugepage_enabled: "always".into(),
         transparent_hugepage_defrag: "always".into(),
@@ -373,8 +373,8 @@ where
                 Some(Damon {
                     damon_path: &damon_path,
                     output_path: &damon_output_path,
-                    sample_interval: 5 * 1000,      // ms
-                    aggregate_interval: 100 * 1000, // ms
+                    sample_interval: cfg.damon_sample_interval,
+                    aggregate_interval: cfg.damon_aggr_interval,
                 })
             } else {
                 None
