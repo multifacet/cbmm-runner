@@ -964,7 +964,7 @@ pub fn run_graph500(
 ) -> Result<(), failure::Error> {
     let damon = if let Some(damon) = damon {
         format!(
-            "sudo {}/damo record -s {} -a {} -o {} -- ",
+            "sudo {}/damo record -s {} -a {} -o {} -w -- ",
             damon.damon_path, damon.sample_interval, damon.aggregate_interval, damon.output_path,
         )
     } else {
