@@ -133,17 +133,20 @@ pub mod paths {
     /// Path to the memcached submodule.
     pub const ZEROSIM_MEMCACHED_SUBMODULE: &str = "bmks/memcached";
 
-    /// Path the to nullfs submodule
+    /// Path to the nullfs submodule
     pub const ZEROSIM_NULLFS_SUBMODULE: &str = "bmks/nullfs";
 
-    /// Path the to zlib submodule
+    /// Path to the zlib submodule
     pub const ZEROSIM_ZLIB_SUBMODULE: &str = "bmks/zlib";
 
-    /// Path the to membuffer-extract submodule
+    /// Path to the membuffer-extract submodule
     pub const ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE: &str = "bmks/membuffer-extract";
 
-    /// Path the to YCSB submodule
+    /// Path to the YCSB submodule
     pub const ZEROSIM_YCSB_SUBMODULE: &str = "bmks/YCSB";
+
+    /// Path to the graph500 submodule
+    pub const ZEROSIM_GRAPH500_SUBMODULE: &str = "bmks/graph500";
 
     /// Path to redis.conf.
     pub const REDIS_CONF: &str = "bmks/redis.conf";

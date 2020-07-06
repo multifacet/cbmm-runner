@@ -953,3 +953,31 @@ where
 
     Ok(())
 }
+
+/// Run the Graph500 workload (all three kernels), waiting to completion.
+pub fn run_graph500(
+    shell: &SshShell,
+    graph500_path: &str,
+    scale: usize,
+    output_file: &str,
+    damon: Option<Damon>,
+) -> Result<(), failure::Error> {
+    let damon = if let Some(damon) = damon {
+        format!(
+            "sudo {}/damo record -s {} -a {} -o {} -- ",
+            damon.damon_path, damon.sample_interval, damon.aggregate_interval, damon.output_path,
+        )
+    } else {
+        "".into()
+    };
+
+    shell.run(cmd!(
+        "{}{}/src/graph500_reference_bfs_sssp {} > {}",
+        damon,
+        graph500_path,
+        scale,
+        output_file
+    ))?;
+
+    Ok(())
+}

@@ -684,6 +684,7 @@ where
             ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
             ZEROSIM_ZLIB_SUBMODULE,
             ZEROSIM_YCSB_SUBMODULE,
+            ZEROSIM_GRAPH500_SUBMODULE,
         ];
 
         runner::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
@@ -934,9 +935,15 @@ where
     // Build YCSB
     ushell.run(
         cmd!(
-        "mvn -pl :memcached-binding -pl :redis-binding -pl :kyotocabinet-binding -am clean package"
-    )
+            "mvn -pl :memcached-binding -pl :redis-binding -pl \
+            :kyotocabinet-binding -am clean package"
+        )
         .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE)),
+    )?;
+
+    // Build graph500
+    ushell.run(
+        cmd!("make -j {}", ncores).cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_GRAPH500_SUBMODULE)),
     )?;
 
     Ok(())

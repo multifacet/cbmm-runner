@@ -15,7 +15,7 @@ use runner::{
     paths::*,
     time,
     workloads::{
-        run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
+        run_graph500, run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
         run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
         MemcachedWorkloadConfig, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
@@ -45,6 +45,9 @@ enum Workload {
     },
     Mix {
         size: usize,
+    },
+    Graph500 {
+        scale: usize,
     },
 }
 
@@ -129,6 +132,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
         )
+        (@subcommand graph500 =>
+            (about: "Run the graph500 workload (all kernels).")
+            (@arg SCALE: +required +takes_value {validator::is::<usize>}
+             "log(vertices) for the workload (e.g. 29). See graph500 website for more info.")
+        )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
         (@arg MMSTATS: --memstats
@@ -195,6 +203,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
             (Workload::Mix { size }, "mix", 0, size, None)
+        }
+
+        ("graph500", Some(sub_m)) => {
+            let scale = sub_m.value_of("SCALE").unwrap().parse::<usize>().unwrap();
+
+            (Workload::Graph500 { scale }, "graph500", 0, scale, None)
         }
 
         _ => unreachable!(),
@@ -495,6 +509,35 @@ where
                     size,
                     eager,
                     &mut tctx,
+                )?
+            });
+        }
+
+        Workload::Graph500 { scale } => {
+            time!(timers, "Workload", {
+                run_graph500(
+                    &ushell,
+                    &dir!(
+                        user_home.as_str(),
+                        RESEARCH_WORKSPACE_PATH,
+                        ZEROSIM_GRAPH500_SUBMODULE
+                    ),
+                    scale,
+                    &dir!(
+                        user_home.as_str(),
+                        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                        output_file
+                    ),
+                    if cfg.damon {
+                        Some(Damon {
+                            damon_path: &damon_path,
+                            output_path: &damon_output_path,
+                            sample_interval: cfg.damon_sample_interval,
+                            aggregate_interval: cfg.damon_aggr_interval,
+                        })
+                    } else {
+                        None
+                    },
                 )?
             });
         }
