@@ -942,9 +942,11 @@ where
     )?;
 
     // Build graph500
-    ushell.run(
-        cmd!("make -j {}", ncores).cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_GRAPH500_SUBMODULE)),
-    )?;
+    ushell.run(cmd!("make -j {}", ncores).cwd(dir!(
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_GRAPH500_SUBMODULE,
+        "src"
+    )))?;
 
     Ok(())
 }
