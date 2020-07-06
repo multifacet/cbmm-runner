@@ -69,6 +69,7 @@ def set_argparser(parser):
     _damon.set_attrs_argparser(parser)
     _damon.set_init_regions_argparser(parser)
     parser.add_argument('target', type=str, metavar='<target>',
+            nargs=argparse.REMAINDER,
             help='the target command or the pid to record')
     parser.add_argument('-l', '--rbuf', metavar='<len>', type=int,
             default=1024*1024, help='length of record result buffer')
@@ -118,9 +119,10 @@ def main(args=None):
     new_attrs = _damon.cmd_args_to_attrs(args)
     init_regions = _damon.cmd_args_to_init_regions(args)
     target = args.target
+    if target[0] == "--":
+        target = target[1:]
 
-    target_fields = target.split()
-    if target == 'paddr':   # physical memory address space
+    if len(target) == 1 and target[0] == 'paddr':   # physical memory address space
         if not init_regions:
             init_regions = [default_paddr_region()]
         do_record(target, False, init_regions, new_attrs, orig_attrs, args.wait)
