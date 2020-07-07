@@ -441,6 +441,7 @@ where
             "rpmdevtools",
             "python3",
             "iptables-services",
+            "openmpi-devel",
         ]),
 
         // Add user to libvirt group after installing
@@ -461,6 +462,15 @@ where
 
     if !cfg.centos7 {
         ushell.run(cmd!("sudo alternatives --set python /usr/bin/python3"))?;
+    }
+
+    // Set up openmpi
+    if cfg.centos7 {
+        with_shell! { ushell =>
+            // automatically load mpi module
+            cmd!("echo `/usr/bin/modulecmd bash load mpi` | \
+                  sudo tee /etc/profile.d/load-mpi.sh"),
+        }
     }
 
     let installed = ushell
@@ -1215,6 +1225,7 @@ where
         "fuse-devel",
         "wget",
         "python3",
+        "openmpi-devel",
     ]))?;
 
     install_rust(vrshell)?;
