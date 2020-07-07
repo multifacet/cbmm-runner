@@ -75,7 +75,7 @@ def set_argparser(parser):
             default=1024*1024, help='length of record result buffer')
     parser.add_argument('-o', '--out', metavar='<file path>', type=str,
             default='damon.data', help='output file path')
-    parser.add_argument('-w', '--wait',
+    parser.add_argument('-w', '--wait', const=True, nargs='?',
             default=False, help='wait for process termination')
 
 def default_paddr_region():
