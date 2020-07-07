@@ -126,7 +126,7 @@ def main(args=None):
         if not init_regions:
             init_regions = [default_paddr_region()]
         do_record(target, False, init_regions, new_attrs, orig_attrs, args.wait)
-    elif not subprocess.call('which %s > /dev/null' % target_fields[0],
+    elif not subprocess.call('which %s > /dev/null' % target[0],
             shell=True, executable='/bin/bash'):
         print("Assuming %s is executable" % target)
         do_record(target, True, init_regions, new_attrs, orig_attrs, args.wait)
