@@ -563,8 +563,9 @@ where
         );
     }
 
-    // Tell damon to write data, if needed.
-    if cfg.damon {
+    // Tell damon to write data, if needed. (Graph500 waits for damon to finish, so we don't need
+    // to do it again).
+    if cfg.damon && !matches!(cfg.workload, Workload::Graph500{..}) {
         time!(timers, "Waiting for DAMON to flush data buffers", {
             ushell.run(cmd!(
                 "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
