@@ -464,13 +464,11 @@ where
         ushell.run(cmd!("sudo alternatives --set python /usr/bin/python3"))?;
     }
 
-    // Set up openmpi
+    // Set up openmpi. We need to reconnect after this, which we do below.
     if cfg.centos7 {
-        with_shell! { ushell =>
-            // automatically load mpi module
-            cmd!("echo `/usr/bin/modulecmd bash load mpi` | \
-                  sudo tee /etc/profile.d/load-mpi.sh"),
-        }
+        ushell.run(cmd!(
+            "/usr/bin/modulecmd bash load mpi | sudo tee /etc/profile.d/load-mpi.sh"
+        ))?;
     }
 
     let installed = ushell
@@ -500,8 +498,8 @@ where
         }
     }
 
-    // Need a new shell so that we get the new user group
-    *ushell = SshShell::with_default_key(cfg.login.username, &cfg.login.host)?;
+    // Need a new shell so that we get the new user group + mpi loading.
+    *ushell = ushell.duplicate()?;
 
     // Build and Install QEMU 4.0.0 from source
     let qemu_info = download_and_extract(ushell, Artifact::Qemu, user_home, None)?;
