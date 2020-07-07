@@ -22,7 +22,7 @@ def do_record(target, is_target_cmd, init_regions, attrs, old_attrs, wait):
         cleanup_exit(old_attrs, -1)
     print('# damon attrs: %s %s' % (attrs.attr_str(), attrs.record_str()))
     if is_target_cmd:
-        p = subprocess.Popen(target, shell=True, executable='/bin/bash')
+        p = subprocess.Popen(target)
         target = p.pid
     if _damon.set_target(target, init_regions):
         print('target setting (%s, %s) failed' % (target, init_regions))
