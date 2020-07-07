@@ -972,7 +972,7 @@ pub fn run_graph500(
     };
 
     shell.run(cmd!(
-        "{}{}/src/graph500_reference_bfs_sssp {} > {}",
+        "{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
         damon,
         graph500_path,
         scale,
