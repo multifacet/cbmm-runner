@@ -516,7 +516,7 @@ where
         Workload::Graph500 => {
             time!(timers, "Workload", {
                 run_graph500(
-                    &ushell,
+                    &vshell,
                     &dir!(
                         "/home/vagrant",
                         RESEARCH_WORKSPACE_PATH,
