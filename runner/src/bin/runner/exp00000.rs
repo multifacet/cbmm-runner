@@ -14,9 +14,9 @@ use runner::{
     paths::{setup00000::*, *},
     time,
     workloads::{
-        run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data, run_time_mmap_touch,
-        Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, TasksetCtx,
-        TimeMmapTouchConfig, TimeMmapTouchPattern,
+        run_graph500, run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data,
+        run_time_mmap_touch, Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig,
+        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -33,6 +33,7 @@ enum Workload {
     Redis,
     MatrixMult2,
     TimeMmapTouch,
+    Graph500,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
@@ -45,6 +46,8 @@ struct Config {
 
     #[name]
     vm_size: usize,
+    #[name(self.scale.is_some())]
+    scale: Option<usize>,
     #[name(self.cores > 1)]
     cores: usize,
     pattern: Option<TimeMmapTouchPattern>,
@@ -103,6 +106,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The number of GBs of the VM (e.g. 500)")
         (@arg CORES: +required +takes_value {validator::is::<usize>}
          "The number of cores of the VM")
+        (@arg SCALE: +takes_value {validator::is::<usize>}
+         "The scale parameter of the graph500 workload")
         (@group PATTERN =>
             (@attributes +required)
             (@arg zeros: -z "Run the time_mmap_touch workload with zeros")
@@ -110,6 +115,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg memcached: -m "Run a memcached workload")
             (@arg redis: -r "Run a redis workload")
             (@arg matrixmult: -M "Run the Metis matrix_mult2 workload")
+            (@arg graph500: -g requires[SCALE] "Run the graph500 workload")
         )
         (@arg WARMUP: -w --warmup
          "Pass this flag to warmup the VM before running the main workload.")
@@ -149,12 +155,15 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let vm_size = sub_m.value_of("VMSIZE").unwrap().parse::<usize>().unwrap();
     let cores = sub_m.value_of("CORES").unwrap().parse::<usize>().unwrap();
+    let scale = sub_m.value_of("SCALE").map(|s| s.parse::<usize>().unwrap());
+
     let workload = match () {
         () if sub_m.is_present("memcached") => Workload::Memcached,
         () if sub_m.is_present("redis") => Workload::Redis,
         () if sub_m.is_present("matrixmult") => Workload::MatrixMult2,
         () if sub_m.is_present("zeros") => Workload::TimeMmapTouch,
         () if sub_m.is_present("counter") => Workload::TimeMmapTouch,
+        () if sub_m.is_present("graph500") => Workload::Graph500,
         _ => unreachable!(),
     };
 
@@ -201,6 +210,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         vm_size,
         cores,
+        scale,
         pattern,
         prefault,
 
@@ -501,6 +511,39 @@ where
                 .join()
                 .1?
             );
+        }
+
+        Workload::Graph500 => {
+            time!(timers, "Workload", {
+                run_graph500(
+                    &ushell,
+                    &dir!(
+                        "/home/vagrant",
+                        RESEARCH_WORKSPACE_PATH,
+                        ZEROSIM_GRAPH500_SUBMODULE
+                    ),
+                    cfg.scale.unwrap(),
+                    &dir!(VAGRANT_RESULTS_DIR, output_file),
+                    if cfg.damon {
+                        Some(Damon {
+                            output_path: &damon_output_path,
+                            damon_path: &damon_path,
+                            sample_interval: cfg.damon_sample_interval,
+                            aggregate_interval: cfg.damon_aggr_interval,
+                        })
+                    } else {
+                        None
+                    },
+                    if cfg.memtrace {
+                        Some(Pintool::MemTrace {
+                            output_path: &trace_path,
+                            pin_path: &pin_path,
+                        })
+                    } else {
+                        None
+                    },
+                )?
+            });
         }
     }
 

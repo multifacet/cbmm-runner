@@ -538,6 +538,7 @@ where
                     } else {
                         None
                     },
+                    /* pintool */ None,
                 )?
             });
         }

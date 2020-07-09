@@ -961,6 +961,7 @@ pub fn run_graph500(
     scale: usize,
     output_file: &str,
     damon: Option<Damon>,
+    pintool: Option<Pintool<'_>>,
 ) -> Result<(), failure::Error> {
     let damon = if let Some(damon) = damon {
         format!(
@@ -971,8 +972,21 @@ pub fn run_graph500(
         "".into()
     };
 
+    let pintool = match pintool {
+        Some(Pintool::MemTrace {
+            pin_path,
+            output_path,
+        }) => format!(
+            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit -- ",
+            pin_path, pin_path, output_path
+        ),
+
+        None => "".into(),
+    };
+
     shell.run(cmd!(
-        "{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
+        "{}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
+        pintool,
         damon,
         graph500_path,
         scale,
