@@ -91,6 +91,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg GUEST_KERNEL: --guest_kernel
          "(Optional) Build and install a guest kernel")
 
+        (@arg GUEST_DEP: --guest_dep
+         "(Optional) Install guest dependencies")
         (@arg GUEST_BMKS: --guest_bmks
          "(Optional) Build and install a guest benchmarks")
         (@arg HADOOP: --hadoop
@@ -154,6 +156,8 @@ where
     /// Compile and install a recent Linux on the guest.
     guest_kernel: bool,
 
+    /// Install guest dependencies.
+    guest_dep: bool,
     /// Compile and install guest bmks.
     guest_bmks: bool,
     /// Set up the Hadoop on the guest.
@@ -201,6 +205,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let setup_hadoop = sub_m.is_present("HADOOP");
 
     let guest_bmks = sub_m.is_present("GUEST_BMKS");
+    let guest_dep = guest_bmks || sub_m.is_present("GUEST_DEP");
 
     let centos7 = sub_m.is_present("CENTOS7");
 
@@ -223,6 +228,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         destroy_existing_vm,
         create_vm,
         guest_kernel,
+        guest_dep,
         guest_bmks,
         setup_hadoop,
         centos7,
@@ -285,7 +291,7 @@ where
     let (vrshell, vushell) = if cfg.create_vm {
         // Create the VM and install dependencies for the benchmarks/simulator.
         init_vm(&mut ushell, &cfg)?
-    } else if cfg.guest_kernel || cfg.setup_hadoop || cfg.guest_bmks {
+    } else if cfg.guest_kernel || cfg.setup_hadoop || cfg.guest_bmks || cfg.guest_dep {
         // Start vagrant (that already exists)
         let vrshell = start_vagrant(
             &ushell,
