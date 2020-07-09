@@ -149,19 +149,13 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let vm_size = sub_m.value_of("VMSIZE").unwrap().parse::<usize>().unwrap();
     let cores = sub_m.value_of("CORES").unwrap().parse::<usize>().unwrap();
-
-    let workload = if sub_m.is_present("memcached") {
-        Workload::Memcached
-    } else if sub_m.is_present("redis") {
-        Workload::Redis
-    } else if sub_m.is_present("matrixmult") {
-        Workload::MatrixMult2
-    } else if sub_m.is_present("zeros") {
-        Workload::TimeMmapTouch
-    } else if sub_m.is_present("counter") {
-        Workload::TimeMmapTouch
-    } else {
-        unreachable!();
+    let workload = match () {
+        () if sub_m.is_present("memcached") => Workload::Memcached,
+        () if sub_m.is_present("redis") => Workload::Redis,
+        () if sub_m.is_present("matrixmult") => Workload::MatrixMult2,
+        () if sub_m.is_present("zeros") => Workload::TimeMmapTouch,
+        () if sub_m.is_present("counter") => Workload::TimeMmapTouch,
+        _ => unreachable!(),
     };
 
     let pattern = if sub_m.is_present("zeros") || sub_m.is_present("counter") {
