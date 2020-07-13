@@ -17,7 +17,7 @@ use runner::{
     workloads::{
         run_graph500, run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
         run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
-        MemcachedWorkloadConfig, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        MemcachedWorkloadConfig, Pintool, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -78,6 +78,7 @@ struct Config {
     damon: bool,
     damon_sample_interval: usize,
     damon_aggr_interval: usize,
+    memtrace: bool,
 
     username: String,
     host: String,
@@ -245,6 +246,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         damon,
         damon_sample_interval,
         damon_aggr_interval,
+        memtrace,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -305,6 +307,17 @@ where
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_BENCHMARKS_DIR,
         DAMON_PATH
+    );
+    let pin_path = dir!(
+        user_home,
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
+        "pin"
+    );
+    let trace_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("trace")
     );
 
     let params = serde_json::to_string(&cfg)?;
@@ -478,7 +491,14 @@ where
                         eager,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
-                        pintool: None,
+                        pintool: if cfg.memtrace {
+                            Some(Pintool::MemTrace {
+                                pin_path: &pin_path,
+                                output_path: &trace_file,
+                            })
+                        } else {
+                            None
+                        },
                         damon: if cfg.damon {
                             Some(Damon {
                                 damon_path: &damon_path,
@@ -538,7 +558,14 @@ where
                     } else {
                         None
                     },
-                    /* pintool */ None,
+                    if cfg.memtrace {
+                        Some(Pintool::MemTrace {
+                            pin_path: &pin_path,
+                            output_path: &trace_file,
+                        })
+                    } else {
+                        None
+                    },
                 )?
             });
         }
