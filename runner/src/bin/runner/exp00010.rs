@@ -146,7 +146,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically.")
         (@arg DISABLE_THP: --disable_thp
-         "Disable THP.")
+         "Disable THP (huge pages can still be used via madvise).")
     };
 
     let app = damon::add_cli_options(app);
@@ -229,7 +229,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_defrag,
         transparent_hugepage_khugepaged_defrag,
     ) = if sub_m.is_present("DISABLE_THP") {
-        ("never".into(), "never".into(), 0)
+        ("madvise".into(), "madvise".into(), 0)
     } else {
         ("always".into(), "always".into(), 1)
     };
