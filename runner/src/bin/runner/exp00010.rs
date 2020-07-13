@@ -145,6 +145,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           requires a kernel that has instrumentation.")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically.")
+        (@arg DISABLE_THP: --disable_thp
+         "Disable THP.")
     };
 
     let app = damon::add_cli_options(app);
@@ -222,6 +224,16 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
     let memtrace = memtrace::parse_cli_options(sub_m);
 
+    let (
+        transparent_hugepage_enabled,
+        transparent_hugepage_defrag,
+        transparent_hugepage_khugepaged_defrag,
+    ) = if sub_m.is_present("DISABLE_THP") {
+        ("never".into(), "never".into(), 0)
+    } else {
+        ("always".into(), "always".into(), 1)
+    };
+
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
     let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
@@ -237,9 +249,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         pattern,
         eager,
 
-        transparent_hugepage_enabled: "always".into(),
-        transparent_hugepage_defrag: "always".into(),
-        transparent_hugepage_khugepaged_defrag: 1,
+        transparent_hugepage_enabled,
+        transparent_hugepage_defrag,
+        transparent_hugepage_khugepaged_defrag,
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
 
