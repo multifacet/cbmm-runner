@@ -281,6 +281,9 @@ where
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
+    // Turn of ASLR
+    runner::disable_aslr(&ushell)?;
+
     // Turn on compaction and force it too happen
     runner::turn_on_thp(
         &ushell,
