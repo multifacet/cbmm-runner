@@ -6,7 +6,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
-    cli::{damon, validator},
+    cli::{damon, memtrace, validator},
     dir,
     exp_0sim::*,
     get_cpu_freq,
@@ -134,14 +134,12 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg DISABLE_ZSWAP: --disable_zswap
          "(Optional; not recommended) Disable zswap, forcing the hypervisor to \
          actually swap to disk")
-        (@arg MEMTRACE: --memtrace conflicts_with[DAMON]
-         "(Optional) collect a memory access trace of the workload. This could be multiple \
-         gigabytes in size.")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically")
     };
 
     let app = damon::add_cli_options(app);
+    let app = memtrace::add_cli_options(app);
 
     app
 }
@@ -194,7 +192,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let multicore_offsetting = sub_m.is_present("MULTICORE_OFFSETTING");
 
-    let memtrace = sub_m.is_present("MEMTRACE");
+    let memtrace = memtrace::parse_cli_options(sub_m);
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
     let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
 

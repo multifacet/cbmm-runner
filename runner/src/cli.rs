@@ -187,3 +187,24 @@ pub mod damon {
         (damon, damon_sample_interval, damon_aggr_interval)
     }
 }
+
+/// Options for memory access tracing with PIN.
+pub mod memtrace {
+    use clap::{App, Arg, ArgMatches};
+
+    pub fn add_cli_options<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("MEMTRACE")
+                .long("memtrace")
+                .conflicts_with("DAMON")
+                .help(
+                    "Collect a memory trace of the given system. \
+                    The trace could be multiple gigabytes in size.",
+                ),
+        )
+    }
+
+    pub fn parse_cli_options<'a>(sub_m: &'a ArgMatches<'a>) -> bool {
+        sub_m.is_present("MEMTRACE")
+    }
+}

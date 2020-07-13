@@ -8,7 +8,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
-    cli::{damon, validator},
+    cli::{damon, memtrace, validator},
     dir,
     exp_0sim::*,
     output::{Parametrize, Timestamp},
@@ -115,8 +115,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg KC: --kyotocabinet
              "Use kyotocabinet as the YCSB backend.")
         )
-        (@arg MEMTRACE: --memtrace conflicts_with[DAMON]
-         "Collect a memory trace of the given system.")
         (@arg MMSTATS: --mmstats
          "Collect kernel memory management stats.")
         (@arg PERIODIC: --periodic requires[MMSTATS]
@@ -126,6 +124,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
     };
 
     let app = damon::add_cli_options(app);
+    let app = memtrace::add_cli_options(app);
 
     app
 }
@@ -157,7 +156,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         _ => unreachable!(),
     };
 
-    let memtrace = sub_m.is_present("MEMTRACE");
+    let memtrace = memtrace::parse_cli_options(sub_m);
     let mmstats = sub_m.is_present("MMSTATS");
     let periodic = sub_m.is_present("PERIODIC");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");

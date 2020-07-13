@@ -7,7 +7,7 @@ use clap::clap_app;
 
 use runner::{
     background::{BackgroundContext, BackgroundTask},
-    cli::{damon, validator},
+    cli::{damon, memtrace, validator},
     dir,
     exp_0sim::*,
     get_cpu_freq, get_user_home_dir,
@@ -148,6 +148,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
     };
 
     let app = damon::add_cli_options(app);
+    let app = memtrace::add_cli_options(app);
 
     app
 }
@@ -219,6 +220,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mmstats = sub_m.is_present("MMSTATS");
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
     let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
+    let memtrace = memtrace::parse_cli_options(sub_m);
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
