@@ -760,6 +760,7 @@ where
             },
             Some(&runner::gen_local_version(commitish, &git_hash)),
             KernelPkgType::Rpm,
+            /* cpupower */ true,
         )?;
 
         // Get name of RPM by looking for most recent file.
@@ -1295,6 +1296,7 @@ fn install_guest_kernel(
         },
         None,
         KernelPkgType::Rpm,
+        /* cpupower */ false,
     )?;
 
     // Get name of RPM by looking for most recent file.

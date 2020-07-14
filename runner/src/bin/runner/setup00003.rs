@@ -87,6 +87,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         },
         Some(&runner::gen_local_version(commitish, git_hash)),
         KernelPkgType::Rpm,
+        /* cpupower */ true,
     )?;
 
     // Install on the guest. To do this, we need the guest to be up and connected to NFS, so we can

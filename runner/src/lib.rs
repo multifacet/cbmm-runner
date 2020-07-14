@@ -532,12 +532,15 @@ pub fn get_absolute_path(shell: &SshShell, path: &str) -> Result<String, failure
 ///
 /// `kernel_local_version` is the kernel `LOCALVERSION` string to pass to `make` for the RPM, if
 /// any.
+///
+/// `cpupower` indicates whether to build and install `cpupower` (true) or not (false).
 pub fn build_kernel(
     ushell: &SshShell,
     source: KernelSrc,
     config: KernelConfig<'_>,
     kernel_local_version: Option<&str>,
     pkg_type: KernelPkgType,
+    cpupower: bool,
 ) -> Result<(), failure::Error> {
     // Check out or unpack the source code, returning its absolute path.
     let source_path = match source {
@@ -669,6 +672,14 @@ pub fn build_kernel(
                 }
             )
             .cwd(kbuild_path),
+        )?;
+    }
+
+    // Build and install `cpupower` and `libcpupower`, if needed.
+    if cpupower {
+        ushell.run(
+            cmd!("make -j {} && sudo make install", nprocess)
+                .cwd(&dir!(source_path, "tools/power/cpupower/")),
         )?;
     }
 
