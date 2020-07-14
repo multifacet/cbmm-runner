@@ -386,6 +386,7 @@ where
             output_file: None,
             eager: None,
             client_pin_core: 0,
+            mmu_perf: None,
         }),
 
         YcsbBackend::Redis => YcsbSystem::Redis(RedisWorkloadConfig {

@@ -252,6 +252,7 @@ where
                 pf_time: None,
                 pintool: None,
                 damon: None,
+                mmu_perf: None,
             },
             INTERVAL,
             cfg.continual_compaction,

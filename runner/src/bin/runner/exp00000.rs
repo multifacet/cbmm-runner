@@ -456,7 +456,8 @@ where
                             })
                         } else {
                             None
-                        }
+                        },
+                        mmu_perf: None,
                     }
                 )?
             );

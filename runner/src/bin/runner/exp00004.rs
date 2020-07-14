@@ -172,6 +172,7 @@ where
                 pf_time: None,
                 pintool: None,
                 damon: None,
+                mmu_perf: None,
             },
             INTERVAL,
             /* continual_compaction */ None,

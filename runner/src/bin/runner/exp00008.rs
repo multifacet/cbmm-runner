@@ -377,6 +377,7 @@ where
                         server_pin_core: None,
                         pintool: None,
                         damon: None,
+                        mmu_perf: None,
                     }
                 )?
             );
