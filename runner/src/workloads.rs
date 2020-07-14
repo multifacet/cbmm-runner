@@ -256,7 +256,7 @@ pub fn start_memcached(
 
     // Start `perf` if needed.
     Ok(if let Some(output_path) = &cfg.mmu_perf {
-        Some(shell.spawn(cmd!(
+        let handle = shell.spawn(cmd!(
             "perf stat record -o {} \
             -e dtlb_load_misses.walk_active \
             -e dtlb_store_misses.walk_active \
@@ -265,7 +265,12 @@ pub fn start_memcached(
             -e cpu_clk_unhalted.thread_any \
             -p `pgrep memcached`",
             output_path
-        ))?)
+        ))?;
+
+        // Wait for perf to start collection.
+        shell.run(cmd!("while [ ! -e {} ] ; do sleep 1 ; done", output_path).use_bash())?;
+
+        Some(handle)
     } else {
         None
     })
@@ -310,6 +315,11 @@ pub fn run_memcached_gen_data(
     shell.run(cmd!("memcached-tool localhost:11211"))?;
     shell.run(cmd!("memcached-tool localhost:11211 stats"))?;
     shell.run(cmd!("pkill memcached"))?;
+
+    // Make sure perf is done.
+    shell.run(cmd!(
+        "while [[ $(pgrep perf) ]] ; do sleep 1 ; done ; echo done"
+    ))?;
 
     Ok(())
 }
