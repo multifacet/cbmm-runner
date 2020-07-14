@@ -168,9 +168,12 @@ pub fn cli_options() -> clap::App<'static, 'static> {
 /// Check that the given string is a 2M-aligned address in hex with or without leading 0x.
 fn is_huge_page_addr_hex(s: String) -> Result<(), String> {
     let without_prefix = s.trim_start_matches("0x");
-    u64::from_str_radix(without_prefix, 16)
-        .map(|_| ())
-        .map_err(|err| format!("{}", err))
+    let val = u64::from_str_radix(without_prefix, 16).map_err(|err| format!("{}", err))?;
+    if val % (2 << 20) == 0 {
+        Ok(())
+    } else {
+        Err("Huge page address is not 2MB-aligned.".into())
+    }
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
