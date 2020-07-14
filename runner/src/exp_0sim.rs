@@ -198,18 +198,7 @@ pub fn setup_swapping(shell: &SshShell) -> Result<(), failure::Error> {
 
 /// Set the scaling governor to "performance".
 pub fn set_perf_scaling_gov(shell: &SshShell) -> Result<(), failure::Error> {
-    let user_home = crate::get_user_home_dir(shell)?;
-
-    let kernel_path = format!(
-        "{}/{}/{}",
-        user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_KERNEL_SUBMODULE
-    );
-
-    shell.run(cmd!(
-        "sudo {}/tools/power/cpupower/cpupower frequency-set -g performance",
-        kernel_path
-    ))?;
-
+    shell.run(cmd!("sudo cpupower frequency-set -g performance",))?;
     Ok(())
 }
 
