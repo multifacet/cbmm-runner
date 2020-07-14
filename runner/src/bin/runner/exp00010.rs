@@ -74,7 +74,7 @@ struct Config {
     transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
     #[name(self.transparent_hugepage_huge_addr.is_some())]
-    transparent_hugepage_huge_addr: Option<usize>,
+    transparent_hugepage_huge_addr: Option<u64>,
 
     mmstats: bool,
     meminfo_periodic: bool,
@@ -258,8 +258,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         ("always".into(), "always".into(), 1)
     };
 
-    let transparent_hugepage_huge_addr =
-        sub_m.value_of("THP_HUGE_ADDR").map(|s| s.parse().unwrap());
+    let transparent_hugepage_huge_addr = sub_m
+        .value_of("THP_HUGE_ADDR")
+        .map(|s| u64::from_str_radix(s, 16).unwrap());
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
