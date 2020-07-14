@@ -646,7 +646,7 @@ pub fn build_kernel(
     // Sometimes there is an error the first time. If so, retrying usually works.
     let res = ushell.run(
         cmd!(
-            "yes '' | make -j {} {} {}",
+            "yes '' | make -j {} CC=/usr/bin/gcc {} {}",
             nprocess,
             make_target,
             if let Some(kernel_local_version) = kernel_local_version {
@@ -661,7 +661,7 @@ pub fn build_kernel(
     if let Err(..) = res {
         ushell.run(
             cmd!(
-                "make -j {} {} {}",
+                "make -j {}  CC=/usr/bin/gcc {} {}",
                 nprocess,
                 make_target,
                 if let Some(kernel_local_version) = kernel_local_version {
