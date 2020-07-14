@@ -154,7 +154,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@group THP_SETTINGS =>
             (@arg DISABLE_THP: --disable_thp
              "Disable THP completely.")
-            (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {validator::is::<usize>}
+            (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {is_huge_page_addr_hex}
              "Set the THP huge_addr setting to the given value and otherwise disable THP.")
         )
     };
@@ -163,6 +163,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
     let app = memtrace::add_cli_options(app);
 
     app
+}
+
+/// Check that the given string is a 2M-aligned address in hex with or without leading 0x.
+fn is_huge_page_addr_hex(s: String) -> Result<(), String> {
+    let without_prefix = s.trim_start_matches("0x");
+    u64::from_str_radix(without_prefix, 16)
+        .map(|_| ())
+        .map_err(|err| format!("{}", err))
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
