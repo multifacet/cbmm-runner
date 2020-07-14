@@ -2,6 +2,7 @@
 //!
 //! Requires `setup00000` with the appropriate kernel. If mmstats is passed, an instrumented kernel
 //! needs to be installed. If `--damon` is used, then `setup00002` with the DAMON kernel is needed.
+//! If `--thp_huge_addr` is used, then `setup00002` with an instrumented kernel is needed.
 
 use clap::clap_app;
 
@@ -72,6 +73,8 @@ struct Config {
     transparent_hugepage_khugepaged_defrag: usize,
     transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+    #[name(self.transparent_hugepage_huge_addr.is_some())]
+    transparent_hugepage_huge_addr: Option<usize>,
 
     mmstats: bool,
     meminfo_periodic: bool,
@@ -79,6 +82,7 @@ struct Config {
     damon_sample_interval: usize,
     damon_aggr_interval: usize,
     memtrace: bool,
+    mmu_overhead: bool,
 
     username: String,
     host: String,
@@ -145,8 +149,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           requires a kernel that has instrumentation.")
         (@arg MEMINFO_PERIODIC: --meminfo_periodic
          "Collect /proc/meminfo data periodically.")
-        (@arg DISABLE_THP: --disable_thp
-         "Disable THP (huge pages can still be used via madvise).")
+        (@arg MMU_OVERHEAD: --mmu_overhead
+         "Collect MMU overhead stats via perf counters.")
+        (@group THP_SETTINGS =>
+            (@arg DISABLE_THP: --disable_thp
+             "Disable THP completely.")
+            (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {validator::is::<usize>}
+             "Set the THP huge_addr setting to the given value and otherwise disable THP.")
+        )
     };
 
     let app = damon::add_cli_options(app);
@@ -223,16 +233,22 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let meminfo_periodic = sub_m.is_present("MEMINFO_PERIODIC");
     let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
     let memtrace = memtrace::parse_cli_options(sub_m);
+    let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
 
     let (
         transparent_hugepage_enabled,
         transparent_hugepage_defrag,
         transparent_hugepage_khugepaged_defrag,
     ) = if sub_m.is_present("DISABLE_THP") {
+        ("never".into(), "never".into(), 0)
+    } else if sub_m.is_present("THP_HUGE_ADDR") {
         ("madvise".into(), "madvise".into(), 0)
     } else {
         ("always".into(), "always".into(), 1)
     };
+
+    let transparent_hugepage_huge_addr =
+        sub_m.value_of("THP_HUGE_ADDR").map(|s| s.parse().unwrap());
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -254,6 +270,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_khugepaged_defrag,
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
+        transparent_hugepage_huge_addr,
 
         mmstats,
         meminfo_periodic,
@@ -261,6 +278,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         damon_sample_interval,
         damon_aggr_interval,
         memtrace,
+        mmu_overhead,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -296,6 +314,9 @@ where
     // Turn of ASLR
     runner::disable_aslr(&ushell)?;
 
+    // Allow `perf` as any user
+    runner::perf_for_all(&ushell)?;
+
     // Turn on compaction and force it too happen
     runner::turn_on_thp(
         &ushell,
@@ -318,7 +339,6 @@ where
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         damon_output_path
     );
-
     let damon_path = dir!(
         user_home,
         RESEARCH_WORKSPACE_PATH,
@@ -335,6 +355,11 @@ where
         user_home,
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("trace")
+    );
+    let mmu_overhead_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("mmu")
     );
 
     let params = serde_json::to_string(&cfg)?;
@@ -523,6 +548,11 @@ where
                                 sample_interval: cfg.damon_sample_interval,
                                 aggregate_interval: cfg.damon_aggr_interval,
                             })
+                        } else {
+                            None
+                        },
+                        mmu_perf: if cfg.mmu_overhead {
+                            Some(mmu_overhead_file)
                         } else {
                             None
                         },

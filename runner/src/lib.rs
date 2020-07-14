@@ -425,6 +425,14 @@ pub fn disable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
     Ok(())
 }
 
+/// Allow any user to run `perf`.
+pub fn perf_for_all(shell: &SshShell) -> Result<(), failure::Error> {
+    shell.run(cmd!(
+        "echo -1 | sudo tee /proc/sys/kernel/perf_event_paranoid"
+    ))?;
+    Ok(())
+}
+
 /// Turn on THP on the remote using the given settings. Requires `sudo`.
 pub fn turn_on_thp(
     shell: &SshShell,

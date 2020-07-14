@@ -181,6 +181,10 @@ pub struct MemcachedWorkloadConfig<'s> {
 
     /// Indicates that we should run the workload under DAMON.
     pub damon: Option<Damon<'s>>,
+
+    /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
+    /// The string is the path to the output.
+    pub mmu_perf: Option<String>,
 }
 
 /// Start a `memcached` server in daemon mode as the given user with the given amount of memory.
@@ -196,7 +200,7 @@ pub struct MemcachedWorkloadConfig<'s> {
 pub fn start_memcached(
     shell: &SshShell,
     cfg: &MemcachedWorkloadConfig<'_>,
-) -> Result<(), failure::Error> {
+) -> Result<Option<spurs::SshSpawnHandle>, failure::Error> {
     if let Some(swapnil_path) = cfg.eager {
         setup_apriori_paging_process(shell, swapnil_path, "memcached")?;
     }
@@ -250,7 +254,21 @@ pub fn start_memcached(
         ))?;
     }
 
-    Ok(())
+    // Start `perf` if needed.
+    Ok(if let Some(output_path) = &cfg.mmu_perf {
+        Some(shell.spawn(cmd!(
+            "perf stat record -o {} \
+            -e dtlb_load_misses.walk_active \
+            -e dtlb_store_misses.walk_active \
+            -e dtlb_load_misses.miss_causes_a_walk \
+            -e dtlb_store_misses.miss_causes_a_walk \
+            -e cpu_clk_unhalted.thread_any \
+            -p `pgrep memcached`",
+            output_path
+        ))?)
+    } else {
+        None
+    })
 }
 
 /// Run the `memcached_gen_data` workload.
@@ -259,7 +277,7 @@ pub fn run_memcached_gen_data(
     cfg: &MemcachedWorkloadConfig<'_>,
 ) -> Result<(), failure::Error> {
     // Start server
-    start_memcached(&shell, cfg)?;
+    let _handles = start_memcached(&shell, cfg)?;
 
     // Run workload
     let cmd = cmd!(
@@ -288,7 +306,7 @@ pub fn run_memcached_gen_data(
 
     shell.run(cmd)?;
 
-    // Make sure memcached dies.
+    // Make sure memcached dies (this is needed for tools to stop recording and output data).
     shell.run(cmd!("memcached-tool localhost:11211"))?;
     shell.run(cmd!("memcached-tool localhost:11211 stats"))?;
     shell.run(cmd!("pkill memcached"))?;
