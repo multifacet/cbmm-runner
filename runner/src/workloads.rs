@@ -257,13 +257,14 @@ pub fn start_memcached(
     // Start `perf` if needed.
     Ok(if let Some(output_path) = &cfg.mmu_perf {
         let handle = shell.spawn(cmd!(
-            "perf stat record -o {} \
+            "perf stat \
             -e dtlb_load_misses.walk_active \
             -e dtlb_store_misses.walk_active \
             -e dtlb_load_misses.miss_causes_a_walk \
             -e dtlb_store_misses.miss_causes_a_walk \
             -e cpu_clk_unhalted.thread_any \
-            -p `pgrep memcached`",
+            -p `pgrep memcached` 2>&1 | \
+            tee {}",
             output_path
         ))?;
 
