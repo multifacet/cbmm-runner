@@ -146,7 +146,10 @@ pub fn run_time_mmap_touch(
 
 /// The configuration of a memcached workload.
 #[derive(Debug)]
-pub struct MemcachedWorkloadConfig<'s> {
+pub struct MemcachedWorkloadConfig<'s, F>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
     /// The path of the `0sim-experiments` submodule on the remote.
     pub exp_dir: &'s str,
     /// The directory in which the memcached binary is contained.
@@ -185,6 +188,9 @@ pub struct MemcachedWorkloadConfig<'s> {
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
     pub mmu_perf: Option<String>,
+
+    /// A callback executed after the memcached server starts but before the workload starts.
+    pub server_start_cb: F,
 }
 
 /// Start a `memcached` server in daemon mode as the given user with the given amount of memory.
@@ -197,10 +203,13 @@ pub struct MemcachedWorkloadConfig<'s> {
 ///
 /// `eager` indicates whether the workload should be run with eager paging (only in VM); if so, the
 /// path to Swapnil's scripts must be passed.
-pub fn start_memcached(
+pub fn start_memcached<F>(
     shell: &SshShell,
-    cfg: &MemcachedWorkloadConfig<'_>,
-) -> Result<Option<spurs::SshSpawnHandle>, failure::Error> {
+    cfg: &MemcachedWorkloadConfig<'_, F>,
+) -> Result<Option<spurs::SshSpawnHandle>, failure::Error>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
     if let Some(swapnil_path) = cfg.eager {
         setup_apriori_paging_process(shell, swapnil_path, "memcached")?;
     }
@@ -243,6 +252,9 @@ pub fn start_memcached(
     // Don't let memcached get OOM killed.
     oomkiller_blacklist_by_name(shell, "memcached")?;
 
+    // Run the callback.
+    (cfg.server_start_cb)(shell)?;
+
     // Start DAMON if needed.
     if let Some(damon) = &cfg.damon {
         shell.run(cmd!(
@@ -278,10 +290,13 @@ pub fn start_memcached(
 }
 
 /// Run the `memcached_gen_data` workload.
-pub fn run_memcached_gen_data(
+pub fn run_memcached_gen_data<F>(
     shell: &SshShell,
-    cfg: &MemcachedWorkloadConfig<'_>,
-) -> Result<(), failure::Error> {
+    cfg: &MemcachedWorkloadConfig<'_, F>,
+) -> Result<(), failure::Error>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
     // Start server
     let _handles = start_memcached(&shell, cfg)?;
 
@@ -331,13 +346,16 @@ pub fn run_memcached_gen_data(
 /// - `continual_compaction` specifies whether spurious failures are employed and what type.
 /// - `output_file` is the file to which the workload will write its output; note that,
 ///   `cfg.output_file` is the file to which memcached request latency are written.
-pub fn run_memcached_and_capture_thp(
+pub fn run_memcached_and_capture_thp<F>(
     shell: &SshShell,
-    cfg: &MemcachedWorkloadConfig<'_>,
+    cfg: &MemcachedWorkloadConfig<'_, F>,
     interval: usize,
     continual_compaction: Option<usize>,
     output_file: &str,
-) -> Result<(), failure::Error> {
+) -> Result<(), failure::Error>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
     // Start server
     start_memcached(&shell, cfg)?;
 
@@ -864,17 +882,21 @@ pub enum YcsbWorkload {
 
 /// Which backend to use for YCSB.
 #[derive(Debug)]
-pub enum YcsbSystem<'s> {
-    Memcached(MemcachedWorkloadConfig<'s>),
+pub enum YcsbSystem<'s, F>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
+    Memcached(MemcachedWorkloadConfig<'s, F>),
     Redis(RedisWorkloadConfig<'s>),
     KyotoCabinet,
 }
 
 /// Every setting of a YCSB workload.
-pub struct YcsbConfig<'s, E, F>
+pub struct YcsbConfig<'s, E, F, F2>
 where
     E: std::error::Error + Sync + Send + 'static,
     F: Fn() -> Result<(), E>,
+    F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
     pub workload: YcsbWorkload,
 
@@ -886,7 +908,7 @@ where
     /// - output_file
     /// - freq
     /// - pf_time
-    pub system: YcsbSystem<'s>,
+    pub system: YcsbSystem<'s, F2>,
 
     /// The path of the YCSB directory.
     pub ycsb_path: &'s str,
@@ -896,13 +918,14 @@ where
 }
 
 /// Run a YCSB workload, waiting to completion.
-pub fn run_ycsb_workload<E, F>(
+pub fn run_ycsb_workload<E, F, F2>(
     shell: &SshShell,
-    cfg: YcsbConfig<E, F>,
+    cfg: YcsbConfig<E, F, F2>,
 ) -> Result<(), failure::Error>
 where
     E: std::error::Error + Sync + Send + 'static,
     F: Fn() -> Result<(), E>,
+    F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
     let workload_file = match cfg.workload {
         YcsbWorkload::A => "workloads/workloada",

@@ -378,6 +378,7 @@ where
             } else {
                 None
             },
+            server_start_cb: |_| Ok(()),
 
             // Ignored:
             wk_size_gb: 0,
@@ -440,7 +441,7 @@ where
     time!(
         timers,
         "Workload",
-        run_ycsb_workload::<spurs::SshError, _>(
+        run_ycsb_workload::<spurs::SshError, _, _>(
             &vshell,
             YcsbConfig {
                 workload: cfg.workload,

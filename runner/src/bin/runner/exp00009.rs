@@ -335,6 +335,7 @@ where
                     pintool: None,
                     damon: None,
                     mmu_perf: None,
+                    server_start_cb: |_| Ok(()),
                 }
             )?
         );

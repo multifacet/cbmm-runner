@@ -458,6 +458,7 @@ where
                             None
                         },
                         mmu_perf: None,
+                        server_start_cb: |_| Ok(()),
                     }
                 )?
             );

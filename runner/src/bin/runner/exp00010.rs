@@ -329,7 +329,7 @@ where
     // Allow `perf` as any user
     runner::perf_for_all(&ushell)?;
 
-    // Turn on compaction and force it too happen
+    // Turn on/off compaction and force it too happen
     runner::turn_on_thp(
         &ushell,
         &cfg.transparent_hugepage_enabled,
@@ -567,6 +567,14 @@ where
                             Some(mmu_overhead_file)
                         } else {
                             None
+                        },
+                        server_start_cb: |shell| {
+                            // Set `huge_addr` if needed.
+                            if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
+                                shell.run(cmd!("echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr", huge_addr))?;
+                                shell.run(cmd!("echo `pgrep memcached` | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_pid"))?;
+                            }
+                            Ok(())
                         },
                     }
                 )?
