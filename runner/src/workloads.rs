@@ -1056,7 +1056,8 @@ pub fn run_graph500(
     // Generate the graph. Unfortunately, there is no way to only do this. You have to run the
     // whole workload, so to make it a bit faster, we also set `SKIP_BFS=1`.
     shell.run(cmd!(
-        "TMPFILE={} SKIP_BFS=1 {}/src/graph500_reference_bfs_sssp {}",
+        "TMPFILE={}/{} SKIP_BFS=1 {}/src/graph500_reference_bfs_sssp {}",
+        TMPFS_NAME,
         TMPFS_FILENAME,
         graph500_path,
         scale
@@ -1064,7 +1065,8 @@ pub fn run_graph500(
 
     // Run the benchmark, reusing the generated graph.
     shell.run(cmd!(
-        "TMPFILE={} REUSEFILE=1 {}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
+        "TMPFILE={}/{} REUSEFILE=1 {}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
+        TMPFS_NAME,
         TMPFS_FILENAME,
         pintool,
         damon,
