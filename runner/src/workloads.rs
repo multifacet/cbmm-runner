@@ -1057,7 +1057,7 @@ pub fn run_graph500(
     // Generate the graph. Unfortunately, there is no way to only do this. You have to run the
     // whole workload.
     shell.run(cmd!(
-        "TMPFILE={}/{} {}/src/graph500_reference_bfs_sssp {}",
+        "TMPFILE={}/{} REUSEFILE=1 {}/src/graph500_reference_bfs_sssp {}",
         TMPFS_NAME,
         TMPFS_FILENAME,
         graph500_path,
