@@ -1008,7 +1008,7 @@ where
     Ok(())
 }
 
-/// Run the Graph500 workload (all three kernels), waiting to completion.
+/// Run the Graph500 workload (BFS and SSSP), waiting to completion.
 pub fn run_graph500(
     shell: &SshShell,
     graph500_path: &str,
@@ -1038,8 +1038,33 @@ pub fn run_graph500(
         None => "".into(),
     };
 
+    // We need to generate the graph before the actual benchmark. This takes a long time and is not
+    // part of the benchmark. It takes WAAAAAY longer with instrumentation. So we will first
+    // generate the graph to a tmpfs file without instrumentation. Then, we will run the benchmark
+    // from the generated graph with instrumentation.
+
+    // Mount a tmpfs to keep the graph in memory and avoid disk.
+    const TMPFS_NAME: &str = "/tmp/ram/";
+    const TMPFS_FILENAME: &str = "graph500.graph";
+
+    shell.run(cmd!("sudo mkdir -p {}", TMPFS_NAME))?;
     shell.run(cmd!(
-        "{}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
+        "sudo mount -t tmpfs -o size=100G tmpfs {}",
+        TMPFS_NAME
+    ))?;
+
+    // Generate the graph. Unfortunately, there is no way to only do this. You have to run the
+    // whole workload, so to make it a bit faster, we also set `SKIP_BFS=1`.
+    shell.run(cmd!(
+        "TMPFILE={} SKIP_BFS=1 ./src/graph500_reference_bfs_sssp {}",
+        TMPFS_FILENAME,
+        scale
+    ))?;
+
+    // Run the benchmark, reusing the generated graph.
+    shell.run(cmd!(
+        "TMPFILE={} REUSEFILE=1 {}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
+        TMPFS_FILENAME,
         pintool,
         damon,
         graph500_path,
