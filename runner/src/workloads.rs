@@ -1048,10 +1048,7 @@ pub fn run_graph500(
     const TMPFS_FILENAME: &str = "graph500.graph";
 
     shell.run(cmd!("sudo mkdir -p {}", TMPFS_NAME))?;
-    shell.run(cmd!(
-        "sudo mount -t tmpfs -o size=100G tmpfs {}",
-        TMPFS_NAME
-    ))?;
+    shell.run(cmd!("sudo mount -t tmpfs tmpfs {}", TMPFS_NAME))?;
     shell.run(cmd!("rm -f {}/*", TMPFS_NAME))?;
 
     // Generate the graph. Unfortunately, there is no way to only do this. You have to run the
