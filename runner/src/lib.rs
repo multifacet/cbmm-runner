@@ -831,3 +831,46 @@ pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), failure::Error> {
     shell.run(cmd!("echo 0 | sudo tee /proc/sys/kernel/watchdog").allow_error())?;
     Ok(())
 }
+
+/// Gathers some common stats for any experiment. This is intended to be called after the
+/// simulation.
+///
+/// `out_file` should be just the file name, not the directory path. This function will cause the
+/// output to be in the standard locations.
+///
+/// Requires `sudo`.
+pub fn gen_standard_host_output(
+    out_file: &str,
+    shell: &SshShell,
+) -> Result<(), failure::Error> {
+    let out_file = dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, out_file);
+
+    // Host config
+    shell.run(cmd!("echo -e 'Host Config\n=====' > {}", out_file))?;
+    shell.run(cmd!("cat /proc/cpuinfo >> {}", out_file))?;
+    shell.run(cmd!("lsblk >> {}", out_file))?;
+
+    // Memory usage, compressibility
+    shell.run(cmd!(
+        "echo -e '\nSimulation Stats (Host)\n=====' >> {}",
+        out_file
+    ))?;
+    shell.run(cmd!("cat /proc/meminfo >> {}", out_file))?;
+    shell.run(cmd!(
+        "sudo bash -c 'tail /sys/kernel/debug/zswap/*' >> {}",
+        out_file
+    ))?;
+    shell.run(cmd!(
+        "(tail /proc/zerosim_guest_offset; echo) >> {}",
+        out_file
+    ))?;
+
+    // Kernel log
+    shell.run(cmd!("echo -e '\ndmesg (Host)\n=====' >> {}", out_file))?;
+    shell.run(cmd!("dmesg >> {}", out_file))?;
+
+    // Sync
+    shell.run(cmd!("sync"))?;
+
+    Ok(())
+}

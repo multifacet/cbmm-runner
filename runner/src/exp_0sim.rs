@@ -776,47 +776,15 @@ pub fn gen_standard_sim_output(
     ushell: &SshShell,
     vshell: &SshShell,
 ) -> Result<(), failure::Error> {
-    // Get paths for the guest and host.
-    let host_sim_file = dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, sim_file);
     let guest_sim_file = dir!(setup00000::VAGRANT_RESULTS_DIR, sim_file);
 
-    // We first gather a bunch of stats. Then, we generate a report into the given file.
+    crate::gen_standard_host_output(sim_file, ushell)?;
 
-    // Host config
-    ushell.run(cmd!("echo -e 'Host Config\n=====' > {}", host_sim_file))?;
-    ushell.run(cmd!("cat /proc/cpuinfo >> {}", host_sim_file))?;
-    ushell.run(cmd!("lsblk >> {}", host_sim_file))?;
-
-    // Memory usage, compressibility
-    ushell.run(cmd!(
-        "echo -e '\nSimulation Stats (Host)\n=====' >> {}",
-        host_sim_file
-    ))?;
-    ushell.run(cmd!("cat /proc/meminfo >> {}", host_sim_file))?;
-    ushell.run(cmd!(
-        "sudo bash -c 'tail /sys/kernel/debug/zswap/*' >> {}",
-        host_sim_file
-    ))?;
-    ushell.run(cmd!(
-        "(tail /proc/zerosim_guest_offset; echo) >> {}",
-        host_sim_file
-    ))?;
-
-    ushell.run(cmd!("sync"))?;
     vshell.run(cmd!(
         "echo -e '\nSimulation Stats (Guest)\n=====' >> {}",
         guest_sim_file
     ))?;
     vshell.run(cmd!("cat /proc/meminfo >> {}", guest_sim_file))?;
-
-    vshell.run(cmd!("sync"))?;
-    ushell.run(cmd!("sync"))?;
-
-    ushell.run(cmd!("echo -e '\ndmesg (Host)\n=====' >> {}", host_sim_file))?;
-    ushell.run(cmd!("dmesg >> {}", host_sim_file))?;
-
-    vshell.run(cmd!("sync"))?;
-    ushell.run(cmd!("sync"))?;
 
     vshell.run(cmd!(
         "echo -e '\ndmesg (Guest)\n=====' >> {}",
@@ -825,7 +793,6 @@ pub fn gen_standard_sim_output(
     vshell.run(cmd!("dmesg >> {}", guest_sim_file))?;
 
     vshell.run(cmd!("sync"))?;
-    ushell.run(cmd!("sync"))?;
 
     Ok(())
 }

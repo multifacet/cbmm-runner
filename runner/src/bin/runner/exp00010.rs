@@ -342,7 +342,7 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
-    let (output_file, params_file, time_file, _sim_file) = cfg.gen_standard_names();
+    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
     let mmstats_file = cfg.gen_file_name("mmstats");
     let meminfo_file = cfg.gen_file_name("meminfo");
     let damon_output_path = cfg.gen_file_name("damon");
@@ -681,6 +681,8 @@ where
             time_file
         )
     ))?;
+
+    runner::gen_standard_host_output(&sim_file, &ushell)?;
 
     let glob = cfg.gen_file_name("*");
     println!(
