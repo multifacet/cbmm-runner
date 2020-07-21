@@ -1031,47 +1031,47 @@ pub fn run_graph500(
             pin_path,
             output_path,
         }) => format!(
-            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit -- ",
+            "{}/pin -t {}/source/tools/MemTrace/obj-intel64/membuffer.so -o {} -emit -ff -- ",
             pin_path, pin_path, output_path
         ),
 
         None => "".into(),
     };
 
-    // We need to generate the graph before the actual benchmark. This takes a long time and is not
-    // part of the benchmark. It takes WAAAAAY longer with instrumentation. So we will first
-    // generate the graph to a tmpfs file without instrumentation. Then, we will run the benchmark
-    // from the generated graph with instrumentation.
+    // Graph500 consists of 3 phases. The first phase generates the graph. It is not considered
+    // part of the benchmark, but it takes a looong time. For memory tracing, we want to fast
+    // forward past this part so as not to waste time and bloat the trace. To do this, the -ff flag
+    // for the tracing PIN tool waits for `/tmp/pin-memtrace-go` to be created. Additionally, my
+    // hacked-up version of graph500 will first create `/tmp/graph500-ready` then wait for
+    // `/tmp/insinstrumentation-ready` ready to be created before proceeding.
 
-    // Mount a tmpfs to keep the graph in memory and avoid disk.
-    const TMPFS_NAME: &str = "/tmp/ram/";
-    const TMPFS_FILENAME: &str = "graph500.graph";
+    // Delete if they happen to already be there.
+    shell.run(cmd!("rm -f /tmp/instrumentation-ready /tmp/graph500-ready /tmp/pin-memtrace-go"))?;
 
-    shell.run(cmd!("sudo mkdir -p {}", TMPFS_NAME))?;
-    shell.run(cmd!("sudo mount -t tmpfs tmpfs {}", TMPFS_NAME))?;
-    shell.run(cmd!("rm -f {}/*", TMPFS_NAME))?;
+    // DAMON doesn't need to wait. Just let it go.
+    if !damon.is_empty() {
+        shell.run(cmd!("touch /tmp/instrumentation-ready"))?;
+    }
 
-    // Generate the graph. Unfortunately, there is no way to only do this. You have to run the
-    // whole workload.
-    shell.run(cmd!(
-        "TMPFILE={}/{} REUSEFILE=1 {}/src/graph500_reference_bfs_sssp {}",
-        TMPFS_NAME,
-        TMPFS_FILENAME,
+    // Run the workload, possibly under instrumentation, but don't block.
+    let handle = shell.spawn(cmd!(
+        "{}{}{}/src/graph500_reference_bfs_sssp {}",
+        damon, pintool,
         graph500_path,
         scale
     ))?;
 
-    // Run the benchmark, reusing the generated graph.
+    // Wait for the graph generation phase to complete. Then, inform any tooling and let the
+    // benchmark continue.
     shell.run(cmd!(
-        "TMPFILE={}/{} REUSEFILE=1 {}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
-        TMPFS_NAME,
-        TMPFS_FILENAME,
-        pintool,
-        damon,
-        graph500_path,
-        scale,
-        output_file
+        "while [ ! -e /tmp/graph500-ready ] ; do sleep 1 ; done ; \
+        touch /tmp/pin-memtrace-go ; \
+        sleep 1 ; \
+        touch /tmp/instrumentation-ready"
     ))?;
+
+    // Wait for the workload to finish.
+    let _out = handle.join();
 
     Ok(())
 }
