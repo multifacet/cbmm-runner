@@ -33,4 +33,4 @@
 	url = https://github.com/multifacet/YCSB
 [submodule "bmks/graph500"]
 	path = bmks/graph500
-	url = https://github.com/graph500/graph500.git
+	url = https://github.com/mark-i-m/graph500.git
