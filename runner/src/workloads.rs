@@ -1055,10 +1055,10 @@ pub fn run_graph500(
 
     // Run the workload, possibly under instrumentation, but don't block.
     let handle = shell.spawn(cmd!(
-        "{}{}{}/src/graph500_reference_bfs_sssp {}",
+        "{}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
         damon, pintool,
         graph500_path,
-        scale
+        scale, output_file
     ))?;
 
     // Wait for the graph generation phase to complete. Then, inform any tooling and let the
