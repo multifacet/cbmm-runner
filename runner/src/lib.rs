@@ -792,6 +792,99 @@ pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, failure
     }
 }
 
+/// Resize the root partition and file system to take up the whole remainder of the drive,
+/// destroying an partitions that come after it.
+pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
+    // Find the root partition and device name.
+    let output = shell
+        .run(cmd!(
+            r#"eval `lsblk -P -o NAME,PKNAME,MOUNTPOINT |\
+              grep 'MOUNTPOINT="/"'` ; echo $NAME ; echo $PKNAME"#
+        ))?
+        .stdout;
+    let mut output = output.split_whitespace();
+    let root_part = output.next().unwrap().trim().to_owned();
+    let root_device = output.next().unwrap().trim().to_owned();
+
+    // Dump the original partition table.
+    shell.run(cmd!(
+        "sudo sfdisk -d /dev/{} | tee /tmp/sfdisk.old",
+        root_device
+    ))?;
+    shell.run(cmd!("cp /tmp/sfdisk.old /tmp/sfdisk.new"))?;
+
+    // Disable swap partitions.
+    shell.run(cmd!(
+        "for part in `lsblk -l | grep 'SWAP' | \
+         grep {} | awk '{{print $1}}'` ; do \
+         sudo swapoff /dev/$part ; done",
+        root_device
+    ))?;
+
+    // Compute a new partition table. We want to canabalize all partitions after the root
+    // partition.
+    let table_raw = shell
+        .run(cmd!(
+            r#"cat /tmp/sfdisk.new |\
+           sed 's|/dev/\([a-z0-9]*\).*start= *\([0-9]*\).*size= *\([0-9]*\).*|\1 \2 \3|g'"#
+        ))?
+        .stdout;
+    let mut old_partitions = std::collections::HashMap::new();
+    for line in table_raw.lines() {
+        let mut parts = line.split_whitespace();
+        let name = parts.next().unwrap().trim();
+        let start = parts.next().unwrap().trim().parse::<usize>().unwrap();
+        let size = parts.next().unwrap().trim().parse::<usize>().unwrap();
+
+        old_partitions.insert(name, (start, size));
+    }
+
+    // Compute the list of partitions to delete and the new size of the root partition.
+    let root_start = old_partitions.get(root_part.as_str()).unwrap().0;
+    let to_delete: Vec<_> = old_partitions
+        .iter()
+        .filter_map(|(name, (start, _))| {
+            if *start > root_start {
+                Some(name)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let root_new_size: usize = to_delete
+        .iter()
+        .map(|part| old_partitions.get(*part).unwrap().1)
+        .sum();
+
+    // Delete the partitions we want to get rid of (but not actually yet).
+    for part in to_delete.into_iter() {
+        shell.run(cmd!(r#"sed -i "/{}/d" /tmp/sfdisk.new`"#, part))?;
+    }
+
+    // Update the root partition size (but not actually yet).
+    shell.run(cmd!(
+        r#"sed "s|\(.*{}.*size= *\)[0-9]*\(.*\)|\1{}\2|" /tmp/sfdisk.new"#,
+        root_part,
+        root_new_size
+    ))?;
+
+    // Print old and new partition tables.
+    shell.run(cmd!("cat /tmp/sfdisk.old /tmp/sfdisk.new"))?;
+
+    // Actually change disk layout now.
+    shell.run(cmd!(
+        "sudo sfdisk --force /dev/{} < /tmp/sfdisk.new",
+        root_device
+    ))?;
+    shell.run(cmd!("sudo partprobe /dev/{}", root_device))?;
+    shell.run(cmd!("sudo resize2fs /dev/{}", root_part))?;
+
+    // Finally print results.
+    shell.run(cmd!("lsblk ; df -h"))?;
+
+    Ok(())
+}
+
 /// Dump a bunch of kernel info for debugging.
 pub fn dump_sys_info(shell: &SshShell) -> Result<(), failure::Error> {
     with_shell! { shell =>
@@ -839,10 +932,7 @@ pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), failure::Error> {
 /// output to be in the standard locations.
 ///
 /// Requires `sudo`.
-pub fn gen_standard_host_output(
-    out_file: &str,
-    shell: &SshShell,
-) -> Result<(), failure::Error> {
+pub fn gen_standard_host_output(out_file: &str, shell: &SshShell) -> Result<(), failure::Error> {
     let out_file = dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, out_file);
 
     // Host config
