@@ -41,6 +41,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg HOST_DEP: --host_dep
          "(Optional) If passed, install host dependencies")
 
+        (@arg RESIZE_ROOT: --resize_root
+         "(Optional) resize the root partition to take up the whole device, \
+          destroying any other partions on the device. This is useful on cloudlab, \
+          where the root partition is 16GB by default.")
+
         (@arg HOME_DEVICE: +takes_value --home_device
          "(Optional) the device to format and use as a home directory \
          (e.g. --home_device /dev/sda). The device should _not_ already be mounted.")
@@ -56,8 +61,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg UNSTABLE_DEVICE_NAMES: --unstable_device_names
          "(Optional) specifies that device names may change across a reboot \
           (e.g. /dev/sda might be /dev/sdb after a reboot). In this case, the device \
-          names used in other arguments will be converted to stable names based on device ids."
-        )
+          names used in other arguments will be converted to stable names based on device ids.")
 
         (@arg CLONE_WKSPC: --clone_wkspc
          "(Optional) If passed, clone the workspace on the remote (or update if already cloned \
@@ -119,6 +123,8 @@ where
     /// Install host dependencies, rename poweorff.
     host_dep: bool,
 
+    /// Resize the root partition to take up the whole device.
+    resize_root: bool,
     /// Set the device to be used as the home device.
     home_device: Option<&'a str>,
     /// Set the device to be used with device mapper.
@@ -180,6 +186,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let host_dep = sub_m.is_present("HOST_DEP");
 
+    let resize_root = sub_m.is_present("RESIZE_ROOT");
     let home_device = sub_m.value_of("HOME_DEVICE");
     let mapper_device = sub_m.value_of("MAPPER_DEVICE");
     let swap_devices = sub_m.values_of("SWAP_DEVS").map(|i| i.collect());
@@ -214,6 +221,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         aws,
         setup_proxy,
         host_dep,
+        resize_root,
         home_device,
         mapper_device,
         swap_devices,
@@ -544,6 +552,10 @@ where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
     use runner::get_device_id;
+
+    if cfg.resize_root {
+        runner::resize_root_partition(ushell)?;
+    }
 
     let user_home = &get_user_home_dir(&ushell)?;
 
