@@ -826,7 +826,8 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
     let table_raw = shell
         .run(cmd!(
             r#"cat /tmp/sfdisk.new |\
-           sed 's|/dev/\([a-z0-9]*\).*start= *\([0-9]*\).*size= *\([0-9]*\).*|\1 \2 \3|g'"#
+               grep '^/dev' |\
+               sed 's|/dev/\([a-z0-9]*\).*start= *\([0-9]*\).*size= *\([0-9]*\).*|\1 \2 \3|g'"#,
         ))?
         .stdout;
     let mut old_partitions = std::collections::HashMap::new();
