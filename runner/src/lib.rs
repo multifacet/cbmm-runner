@@ -859,7 +859,7 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
 
     // Delete the partitions we want to get rid of (but not actually yet).
     for part in to_delete.into_iter() {
-        shell.run(cmd!(r#"sed -i "/{}/d" /tmp/sfdisk.new`"#, part))?;
+        shell.run(cmd!(r#"sed -i "/{}/d" /tmp/sfdisk.new"#, part))?;
     }
 
     // Update the root partition size (but not actually yet).
