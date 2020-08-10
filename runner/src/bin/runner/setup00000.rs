@@ -456,6 +456,7 @@ where
             "python3",
             "iptables-services",
             "openmpi-devel",
+            "libgomp",
         ]),
 
         // Add user to libvirt group after installing
@@ -1243,6 +1244,7 @@ where
         "wget",
         "python3",
         "openmpi-devel",
+        "libgomp",
     ]))?;
 
     install_rust(vrshell)?;
