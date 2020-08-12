@@ -1046,7 +1046,9 @@ pub fn run_graph500(
     // `/tmp/insinstrumentation-ready` ready to be created before proceeding.
 
     // Delete if they happen to already be there.
-    shell.run(cmd!("rm -f /tmp/instrumentation-ready /tmp/graph500-ready /tmp/pin-memtrace-go"))?;
+    shell.run(cmd!(
+        "rm -f /tmp/instrumentation-ready /tmp/graph500-ready /tmp/pin-memtrace-go"
+    ))?;
 
     // DAMON doesn't need to wait. Just let it go.
     if !damon.is_empty() {
@@ -1055,20 +1057,22 @@ pub fn run_graph500(
 
     // Run the workload, possibly under instrumentation, but don't block.
     let handle = shell.spawn(cmd!(
-        "{}{}{}/src/graph500_reference_bfs_sssp {} | tee {}",
-        damon, pintool,
+        "{}{}{}/omp-csr/omp-csr -s {} | tee {}",
+        damon,
+        pintool,
         graph500_path,
-        scale, output_file
+        scale,
+        output_file
     ))?;
 
     // Wait for the graph generation phase to complete. Then, inform any tooling and let the
     // benchmark continue.
-    shell.run(cmd!(
-        "while [ ! -e /tmp/graph500-ready ] ; do sleep 1 ; done ; \
-        touch /tmp/pin-memtrace-go ; \
-        sleep 1 ; \
-        touch /tmp/instrumentation-ready"
-    ))?;
+    //shell.run(cmd!(
+    //    "while [ ! -e /tmp/graph500-ready ] ; do sleep 1 ; done ; \
+    //    touch /tmp/pin-memtrace-go ; \
+    //    sleep 1 ; \
+    //    touch /tmp/instrumentation-ready"
+    //))?;
 
     // Wait for the workload to finish.
     let _out = handle.join();
