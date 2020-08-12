@@ -873,10 +873,7 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
     shell.run(cmd!("cat /tmp/sfdisk.old /tmp/sfdisk.new"))?;
 
     // Actually change disk layout now.
-    shell.run(cmd!(
-        "sudo sfdisk --force /dev/{} < /tmp/sfdisk.new",
-        root_device
-    ))?;
+    shell.run(cmd!("sudo sfdisk --force /dev/{} < /tmp/sfdisk.new", root_device).allow_error())?;
     shell.run(cmd!("sudo partprobe /dev/{}", root_device))?;
     shell.run(cmd!("sudo resize2fs /dev/{}", root_part))?;
 
