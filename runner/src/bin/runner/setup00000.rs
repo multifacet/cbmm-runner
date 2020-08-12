@@ -970,9 +970,12 @@ where
     )?;
 
     // Build graph500
-    ushell.run(
-        cmd!("make -j {}", ncores).cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_GRAPH500_SUBMODULE)),
-    )?;
+    with_shell! { ushell in dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_GRAPH500_SUBMODULE) =>
+        cmd!("cp make-incs/make.inc-gcc make.inc"),
+        cmd!("sed -i '0,/CFLAGS/{{/CFLAGS/d }} ;' make.inc"),
+        cmd!(r#"sed -i 's/#CFLAGS\(.*\)/CFLAGS\1/' make.inc"#),
+        cmd!("make -j {}", ncores),
+    }
 
     Ok(())
 }
