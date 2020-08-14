@@ -253,7 +253,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     ) = if sub_m.is_present("DISABLE_THP") {
         ("never".into(), "never".into(), 0)
     } else if sub_m.is_present("THP_HUGE_ADDR") {
-        ("madvise".into(), "madvise".into(), 0)
+        ("never".into(), "never".into(), 0)
     } else {
         ("always".into(), "always".into(), 1)
     };
