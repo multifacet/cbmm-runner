@@ -1079,3 +1079,26 @@ pub fn run_graph500(
 
     Ok(())
 }
+
+pub fn run_thp_ubmk(
+    shell: &SshShell,
+    size: usize,
+    bmk_dir: &str,
+    mmu_overhead_file: Option<&str>,
+) -> Result<(), failure::Error> {
+    if let Some(mmu_overhead_file) = mmu_overhead_file {
+        shell.run(cmd!(
+            "perf stat \
+            -e dtlb_load_misses.walk_active \
+            -e dtlb_store_misses.walk_active \
+            -e dtlb_load_misses.miss_causes_a_walk \
+            -e dtlb_store_misses.miss_causes_a_walk \
+            -e cpu_clk_unhalted.thread_any \
+            -- ./ubmk {} 2>&1 | \
+            tee {}",
+            size,
+            mmu_overhead_file
+        ))?;
+    } else {
+        shell.run(cmd!("./ubmk {}", size).cwd(bmk_dir))?;
+    }

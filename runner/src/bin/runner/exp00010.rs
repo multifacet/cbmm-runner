@@ -16,8 +16,8 @@ use runner::{
     paths::*,
     time,
     workloads::{
-        run_graph500, run_locality_mem_access, run_memcached_gen_data, run_mix, run_time_loop,
-        run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
+        run_graph500, run_locality_mem_access, run_memcached_gen_data, run_mix, run_thp_ubmk,
+        run_time_loop, run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
         MemcachedWorkloadConfig, Pintool, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
@@ -40,6 +40,9 @@ enum Workload {
     TimeMmapTouch {
         size: usize,
         pattern: TimeMmapTouchPattern,
+    },
+    ThpUbmk {
+        size: usize,
     },
     Memcached {
         size: usize,
@@ -126,6 +129,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
                 (@arg zeros: -z "Fill pages with zeros")
                 (@arg counter: -c "Fill pages with counter values")
             )
+        )
+        (@subcommand thp_ubmk =>
+            (about: "Run a ubmk that benefits greatly from THP")
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
+             "The number of GBs of the workload (e.g. 100)")
         )
         (@subcommand memcached =>
             (about: "Run the `memcached` workload.")
@@ -216,6 +224,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 size,
                 Some(pattern),
             )
+        }
+
+        ("thp_ubmk", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+
+            (Workload::ThpUbmk { size }, "thp_ubmk", 0, size, None)
         }
 
         ("memcached", Some(sub_m)) => {
@@ -512,6 +526,23 @@ where
                         eager,
                         pin_core: tctx.next(),
                     }
+                )?
+            );
+        }
+
+        Workload::ThpUbmk { size } => {
+            time!(
+                timers,
+                "Workload",
+                run_thp_ubmk(
+                    &ushell,
+                    size,
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
+                    if cfg.mmu_overhead {
+                        Some(&mmu_overhead_file)
+                    } else {
+                        None
+                    },
                 )?
             );
         }
