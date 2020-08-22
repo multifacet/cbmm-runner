@@ -55,6 +55,13 @@ enum Workload {
     },
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+enum ThpHugeAddrMode {
+    Equal,
+    Greater,
+    Less,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
@@ -78,6 +85,8 @@ struct Config {
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
     #[name(self.transparent_hugepage_huge_addr.is_some())]
     transparent_hugepage_huge_addr: Option<u64>,
+    #[name(self.transparent_hugepage_huge_addr.is_some())]
+    transparent_hugepage_huge_addr_mode: ThpHugeAddrMode,
 
     mmstats: bool,
     meminfo_periodic: bool,
@@ -165,6 +174,12 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {is_huge_page_addr_hex}
              "Set the THP huge_addr setting to the given value and otherwise disable THP.")
         )
+        (@arg THP_HUGE_ADDR_LE: --thp_huge_addr_le
+            requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_GE]
+            "Make all pages <=THP_HUGE_ADDR huge.")
+        (@arg THP_HUGE_ADDR_GE: --thp_huge_addr_ge
+            requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_GE]
+            "Make all pages >=THP_HUGE_ADDR huge.")
     };
 
     let app = damon::add_cli_options(app);
@@ -275,6 +290,13 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let transparent_hugepage_huge_addr = sub_m
         .value_of("THP_HUGE_ADDR")
         .map(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap());
+    let transparent_hugepage_huge_addr_mode = if sub_m.is_present("THP_HUGE_ADDR_LE") {
+        ThpHugeAddrMode::Less
+    } else if sub_m.is_present("THP_HUGE_ADDR_GE") {
+        ThpHugeAddrMode::Greater
+    } else {
+        ThpHugeAddrMode::Equal
+    };
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
     let local_git_hash = runner::local_research_workspace_git_hash()?;
@@ -297,6 +319,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
         transparent_hugepage_huge_addr,
+        transparent_hugepage_huge_addr_mode,
 
         mmstats,
         meminfo_periodic,
@@ -602,6 +625,12 @@ where
                         server_start_cb: |shell| {
                             // Set `huge_addr` if needed.
                             if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
+                                let mode = match cfg.transparent_hugepage_huge_addr_mode {
+                                    ThpHugeAddrMode::Equal => 0,
+                                    ThpHugeAddrMode::Less => 1,
+                                    ThpHugeAddrMode::Greater => 2,
+                                };
+                                shell.run(cmd!("echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode", mode))?;
                                 shell.run(cmd!("echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr", huge_addr))?;
                                 shell.run(cmd!("echo `pgrep memcached` | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_pid"))?;
                             }

@@ -1102,3 +1102,6 @@ pub fn run_thp_ubmk(
     } else {
         shell.run(cmd!("./ubmk {}", size).cwd(bmk_dir))?;
     }
+
+    Ok(())
+}
