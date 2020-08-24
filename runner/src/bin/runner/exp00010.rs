@@ -554,6 +554,26 @@ where
         }
 
         Workload::ThpUbmk { size } => {
+            // Set `huge_addr` if needed.
+            if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
+                let mode = match cfg.transparent_hugepage_huge_addr_mode {
+                    ThpHugeAddrMode::Equal => 0,
+                    ThpHugeAddrMode::Less => 1,
+                    ThpHugeAddrMode::Greater => 2,
+                };
+                ushell.run(cmd!(
+                    "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
+                    mode
+                ))?;
+                ushell.run(cmd!(
+                    "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+                    huge_addr
+                ))?;
+                ushell.run(cmd!(
+                    "echo ubmk | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm"
+                ))?;
+            }
+
             time!(
                 timers,
                 "Workload",
