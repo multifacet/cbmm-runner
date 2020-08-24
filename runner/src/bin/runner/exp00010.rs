@@ -570,7 +570,7 @@ where
                     huge_addr
                 ))?;
                 ushell.run(cmd!(
-                    "echo ubmk | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm"
+                    "echo -n ubmk | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm"
                 ))?;
             }
 
