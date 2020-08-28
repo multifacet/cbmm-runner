@@ -280,6 +280,10 @@ where
             -e dtlb_load_misses.miss_causes_a_walk \
             -e dtlb_store_misses.miss_causes_a_walk \
             -e cpu_clk_unhalted.thread_any \
+            -e inst_retired.any \
+            -e faults \
+            -e migrations \
+            -e cs \
             -p `pgrep memcached` 2>&1 | \
             tee {}",
             output_path
@@ -1102,6 +1106,10 @@ pub fn run_thp_ubmk(
                 -e dtlb_load_misses.miss_causes_a_walk \
                 -e dtlb_store_misses.miss_causes_a_walk \
                 -e cpu_clk_unhalted.thread_any \
+                -e inst_retired.any \
+                -e faults \
+                -e migrations \
+                -e cs \
                 -- ./ubmk {} 2>&1 | \
                 tee {}",
                 pin_core,
