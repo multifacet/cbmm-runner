@@ -586,6 +586,7 @@ where
                     } else {
                         None
                     },
+                    tctx.next(),
                 )?
             );
         }
@@ -617,8 +618,11 @@ where
                             output_file
                         )),
                         eager,
-                        client_pin_core: tctx.next(),
-                        server_pin_core: None,
+                        server_pin_core: Some(tctx.next()),
+                        client_pin_core: {
+                            tctx.skip();
+                            tctx.next()
+                        },
                         pintool: if cfg.memtrace {
                             Some(Pintool::MemTrace {
                                 pin_path: &pin_path,

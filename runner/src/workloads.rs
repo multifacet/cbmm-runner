@@ -44,6 +44,11 @@ impl TasksetCtx {
         TasksetCtx { ncores, next: 0 }
     }
 
+    /// Skip one CPU. This is useful to avoid hyperthreading effects.
+    pub fn skip(&mut self) {
+        self.next += 1;
+    }
+
     /// Get the next core (wrapping around to 0 if all cores have been assigned).
     pub fn next(&mut self) -> usize {
         let c = self.next % self.ncores;
@@ -1085,11 +1090,13 @@ pub fn run_thp_ubmk(
     size: usize,
     bmk_dir: &str,
     mmu_overhead_file: Option<&str>,
+    pin_core: usize,
 ) -> Result<(), failure::Error> {
     if let Some(mmu_overhead_file) = mmu_overhead_file {
         shell.run(
             cmd!(
-                "perf stat \
+                "sudo taskset -c {} \
+                perf stat \
                 -e dtlb_load_misses.walk_active \
                 -e dtlb_store_misses.walk_active \
                 -e dtlb_load_misses.miss_causes_a_walk \
@@ -1097,13 +1104,14 @@ pub fn run_thp_ubmk(
                 -e cpu_clk_unhalted.thread_any \
                 -- ./ubmk {} 2>&1 | \
                 tee {}",
+                pin_core,
                 size,
                 mmu_overhead_file
             )
             .cwd(bmk_dir),
         )?;
     } else {
-        shell.run(cmd!("./ubmk {}", size).cwd(bmk_dir))?;
+        shell.run(cmd!("sudo taskset -c {} ./ubmk {}", pin_core, size).cwd(bmk_dir))?;
     }
 
     Ok(())
