@@ -18,7 +18,7 @@ static inline unsigned big_rand() {
 }
 
 static inline void write_hpage(struct hpage *hpage) {
-	for (int i = 0; i < 1<<21; ++i) {
+	for (int i = 0; i < 1<<21; i+=1<<12) {
 		hpage->buf[i] = 0xff;
 	}
 }
