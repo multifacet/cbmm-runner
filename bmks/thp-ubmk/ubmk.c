@@ -3,8 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <time.h>
 
 #define ADDRESS ((void*)0x7f5707200000ul)
+
+#define WAIT_TIME 60
 
 struct hpage {
 	char buf[1 << 21];
@@ -29,6 +32,7 @@ int main(int argc, const char *argv[]) {
 		return -1;
 	}
 
+	clock_t start = clock();
 	unsigned long size = strtoul(argv[1], NULL, 10);
 
 	if (size == 0) {
@@ -62,7 +66,22 @@ int main(int argc, const char *argv[]) {
 	// Number of huge pages.
 	const unsigned long n = size << 9;
 
-	printf("Touching %lu huge pages.\n", n);
+	// Print status update and sleep before touching pages.
+	clock_t elapsed = clock() - start;
+	unsigned long elapsed_secs = elapsed / CLOCKS_PER_SEC;
+	printf("Created a region %lu GB (%lu huge pages) in %lu seconds\n",
+			size, n, elapsed_secs);
+
+	if (elapsed_secs >= WAIT_TIME) {
+		printf("Didn't wait long enough!\n");
+		exit(-1);
+	}
+
+	int ret = sleep(WAIT_TIME - elapsed_secs);
+	if (ret != 0) {
+		printf("Didn't wait long enough! Sleep interrupted.\n");
+		exit(-1);
+	}
 
 	for (unsigned long i = 0; i < n; ++i) {
 		write_hpage(&mem[big_rand() % n]);
