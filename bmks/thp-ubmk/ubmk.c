@@ -7,7 +7,7 @@
 
 #define ADDRESS ((void*)0x7f5707200000ul)
 
-#define WAIT_TIME 60
+#define WAIT_TIME 65
 
 struct hpage {
 	char buf[1 << 21];
