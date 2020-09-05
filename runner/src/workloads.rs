@@ -1110,6 +1110,7 @@ pub fn run_thp_ubmk(
                 -e faults \
                 -e migrations \
                 -e cs \
+                -D 65000 \
                 -- ./ubmk {} 2>&1 | \
                 tee {}",
                 pin_core,
