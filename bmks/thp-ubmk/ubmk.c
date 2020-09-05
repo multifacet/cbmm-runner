@@ -69,8 +69,9 @@ int main(int argc, const char *argv[]) {
 	// Print status update and sleep before touching pages.
 	clock_t elapsed = clock() - start;
 	unsigned long elapsed_secs = elapsed / CLOCKS_PER_SEC;
-	printf("Created a region %lu GB (%lu huge pages) in %lu seconds\n",
-			size, n, elapsed_secs);
+	printf("Created a region %lu GB (%lu huge pages) in %lu seconds. "
+		"Waiting %lus.\n",
+		size, n, elapsed_secs, WAIT_TIME - elapsed_secs);
 
 	if (elapsed_secs >= WAIT_TIME) {
 		printf("Didn't wait long enough!\n");
