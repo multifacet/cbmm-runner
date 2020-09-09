@@ -478,6 +478,15 @@ pub fn turn_on_thp(
     Ok(())
 }
 
+pub fn set_auto_numa(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
+    shell.run(cmd!(
+        "echo {} | sudo tee /proc/sys/kernel/numa_balancing",
+        if on { 1 } else { 0 }
+    ))?;
+
+    Ok(())
+}
+
 /// What type of package to produce from the kernel build?
 pub enum KernelPkgType {
     /// `bindeb-pkg`
