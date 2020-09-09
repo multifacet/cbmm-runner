@@ -6,6 +6,7 @@
 #include <time.h>
 
 #define ADDRESS ((void*)0x7f5707200000ul)
+#define REPS 50
 
 #define WAIT_TIME 65
 
@@ -84,7 +85,7 @@ int main(int argc, const char *argv[]) {
 		exit(-1);
 	}
 
-	for (unsigned long i = 0; i < n; ++i) {
+	for (unsigned long i = 0; i < (n * REPS); ++i) {
 		write_hpage(&mem[big_rand() % n]);
 
 		if (i % 1000 == 0) {
