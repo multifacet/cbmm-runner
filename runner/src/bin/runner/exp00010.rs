@@ -376,6 +376,9 @@ where
         cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
     )?;
 
+    // Turn of NUMA balancing
+    runner::set_auto_numa(&ushell, false /* off */)?;
+
     // Collect timers on VM
     let mut timers = vec![];
 
