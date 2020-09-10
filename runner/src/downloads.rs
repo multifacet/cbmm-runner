@@ -86,11 +86,25 @@ pub fn download(
 ) -> Result<Download<'static>, failure::Error> {
     let info = artifact_info(artifact);
 
+    // Some websites reject non-browsers, so pretend to be Google Chrome.
+    const USER_AGENT: &str = r#"--user-agent="Mozilla/5.0 (Windows NT 10.0; WOW64) \
+                                AppleWebKit/537.36 (KHTML, like Gecko) \
+                                Chrome/51.0.2704.103 Safari/537.36""#;
+
     // Check if the file exists and then maybe download.
     if let Some(name) = name {
-        shell.run(cmd!("[ -e {} ] || wget -O {} {}", name, name, info.url).cwd(to))?;
+        shell.run(
+            cmd!(
+                "[ -e {} ] || wget {} -O {} {}",
+                name,
+                USER_AGENT,
+                name,
+                info.url
+            )
+            .cwd(to),
+        )?;
     } else {
-        shell.run(cmd!("[ -e {} ] || wget {}", info.name, info.url).cwd(to))?;
+        shell.run(cmd!("[ -e {} ] || wget {} {}", info.name, USER_AGENT, info.url).cwd(to))?;
     }
 
     Ok(info)
