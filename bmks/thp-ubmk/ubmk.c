@@ -17,7 +17,7 @@ struct hpage {
 static inline unsigned big_rand() {
 	// `rand` is only guaranteed to return 15 bits of randomness, but we
 	// need 18. This gives us 30.
-	unsigned long r = (rand() << 15) | (rand() & 0x7f);
+	unsigned long r = (rand() << 15) | (rand() & 0x7fff);
 	return r;
 }
 
