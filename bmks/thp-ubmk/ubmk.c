@@ -14,6 +14,13 @@ struct hpage {
 	char buf[1 << 21];
 };
 
+static __inline__ unsigned long long rdtsc(void)
+{
+	unsigned hi, lo;
+	__asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+	return ((unsigned long long)lo) | (((unsigned long long)hi) << 32);
+}
+
 static inline unsigned big_rand() {
 	// `rand` is only guaranteed to return 15 bits of randomness, but we
 	// need 18. This gives us 30.
@@ -85,6 +92,8 @@ int main(int argc, const char *argv[]) {
 		exit(-1);
 	}
 
+	unsigned long long start_bmk = rdtsc();
+
 	for (unsigned long i = 0; i < (n * REPS); ++i) {
 		write_hpage(&mem[big_rand() % n]);
 
@@ -92,4 +101,8 @@ int main(int argc, const char *argv[]) {
 			printf("%lu\n", i);
 		}
 	}
+
+	unsigned long long elapsed_bmk = rdtsc() - start_bmk;
+
+	printf("Done in %llu cycles.\n", elapsed_bmk);
 }
