@@ -54,6 +54,23 @@ int main(int argc, const char *argv[]) {
 		}
 	}
 
+	long reps = REPS;
+
+	if (argc == 3) {
+		reps = strtol(argv[2], NULL, 10);
+
+		if (reps == 0) {
+			if (errno == EINVAL) {
+				printf("Conversion error occurred: %d\n", errno);
+				return -1;
+			}
+			if (errno == ERANGE) {
+				printf("The value provided was out of range\n");
+				return -1;
+			}
+		}
+	}
+
 	printf("Creating a region %lu GB\n", size);
 	
 	struct hpage *mem = mmap(ADDRESS, size << 30, PROT_WRITE | PROT_READ,
@@ -94,7 +111,7 @@ int main(int argc, const char *argv[]) {
 
 	unsigned long long start_bmk = rdtsc();
 
-	for (unsigned long i = 0; i < (n * REPS); ++i) {
+	for (unsigned long i = 0; i < (n * reps); ++i) {
 		write_hpage(&mem[big_rand() % n]);
 
 		if (i % n == 0) {
