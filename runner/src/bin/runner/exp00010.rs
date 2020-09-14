@@ -95,6 +95,7 @@ struct Config {
     damon_aggr_interval: usize,
     memtrace: bool,
     mmu_overhead: bool,
+    perf_record: bool,
 
     username: String,
     host: String,
@@ -180,6 +181,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg THP_HUGE_ADDR_GE: --thp_huge_addr_ge
             requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_GE]
             "Make all pages >=THP_HUGE_ADDR huge.")
+        (@arg PERF_RECORD: --perf_record
+         "Measure the workload using perf record.")
     };
 
     let app = damon::add_cli_options(app);
@@ -274,6 +277,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let (damon, damon_sample_interval, damon_aggr_interval) = damon::parse_cli_options(sub_m);
     let memtrace = memtrace::parse_cli_options(sub_m);
     let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
+    let perf_record = sub_m.is_present("PERF_RECORD");
 
     let (
         transparent_hugepage_enabled,
@@ -328,6 +332,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         damon_aggr_interval,
         memtrace,
         mmu_overhead,
+        perf_record,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -586,6 +591,11 @@ where
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
                     if cfg.mmu_overhead {
                         Some(&mmu_overhead_file)
+                    } else {
+                        None
+                    },
+                    if cfg.perf_record {
+                        Some(&trace_file)
                     } else {
                         None
                     },

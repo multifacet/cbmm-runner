@@ -1094,6 +1094,7 @@ pub fn run_thp_ubmk(
     size: usize,
     bmk_dir: &str,
     mmu_overhead_file: Option<&str>,
+    perf_file: Option<&str>,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
     if let Some(mmu_overhead_file) = mmu_overhead_file {
@@ -1118,6 +1119,21 @@ pub fn run_thp_ubmk(
                 mmu_overhead_file
             )
             .cwd(bmk_dir),
+        )?;
+    } else if let Some(perf_file) = perf_file {
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} \
+                perf record -a -C {} -D 65000 -o {} \
+                -- ./ubmk {}; \
+                sudo chmod 666 {}",
+                pin_core,
+                pin_core,
+                perf_file,
+                size,
+                perf_file,
+            )
+            .cwd(bmk_dir)
         )?;
     } else {
         shell.run(cmd!("sudo taskset -c {} ./ubmk {}", pin_core, size).cwd(bmk_dir))?;
