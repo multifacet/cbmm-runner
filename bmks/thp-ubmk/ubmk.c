@@ -97,7 +97,7 @@ int main(int argc, const char *argv[]) {
 	for (unsigned long i = 0; i < (n * REPS); ++i) {
 		write_hpage(&mem[big_rand() % n]);
 
-		if (i % 1000 == 0) {
+		if (i % n == 0) {
 			printf("%lu\n", i);
 		}
 	}
