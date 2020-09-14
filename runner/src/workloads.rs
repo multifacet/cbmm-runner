@@ -1123,17 +1123,18 @@ pub fn run_thp_ubmk(
     } else if let Some(perf_file) = perf_file {
         shell.run(
             cmd!(
-                "sudo taskset -c {} \
-                perf record -a -C {} -D 65000 -o {} \
-                -- ./ubmk {}; \
-                sudo chmod 666 {}",
+                "(sudo taskset -c {} ./ubmk {} 10000 &) && \
+                 perf record -a -C {} -g -F 99 -D 65000 -o {} sleep 180 && \
+                 pkill ubmk && \
+                 sudo chmod 666 {} &&\
+                 echo DONE",
                 pin_core,
+                size,
                 pin_core,
                 perf_file,
-                size,
                 perf_file,
             )
-            .cwd(bmk_dir)
+            .cwd(bmk_dir),
         )?;
     } else {
         shell.run(cmd!("sudo taskset -c {} ./ubmk {}", pin_core, size).cwd(bmk_dir))?;
