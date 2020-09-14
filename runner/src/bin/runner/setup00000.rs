@@ -978,7 +978,10 @@ where
     }
 
     // Build THP ubmk
-    ushell.run(cmd!("gcc -o ubmk ubmk.c").cwd(dir!(RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR)))?;
+    ushell.run(
+        cmd!("gcc -g -Wall -Werror -o ubmk ubmk.c")
+            .cwd(dir!(RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR)),
+    )?;
 
     Ok(())
 }
