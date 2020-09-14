@@ -1124,9 +1124,9 @@ pub fn run_thp_ubmk(
         shell.run(
             cmd!(
                 "(sudo taskset -c {} ./ubmk {} 10000 &) && \
-                 perf record -a -C {} -g -F 99 -D 65000 -o {} sleep 180 && \
-                 pkill ubmk && \
-                 sudo chmod 666 {} &&\
+                 sudo perf record -a -C {} -g -F 99 -D 65000 -o {} sleep 180 && \
+                 sudo pkill ubmk && \
+                 sudo chmod 666 {} && \
                  echo DONE",
                 pin_core,
                 size,
