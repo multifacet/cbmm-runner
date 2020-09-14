@@ -69,6 +69,8 @@ int main(int argc, const char *argv[]) {
 				return -1;
 			}
 		}
+
+        printf("Using %ld reps.\n", reps);
 	}
 
 	printf("Creating a region %lu GB\n", size);
@@ -114,7 +116,7 @@ int main(int argc, const char *argv[]) {
 	for (unsigned long i = 0; i < (n * reps); ++i) {
 		write_hpage(&mem[big_rand() % n]);
 
-		if (i % n == 0) {
+		if (i % (2 * n) == 0) {
 			printf("%lu\n", i);
 		}
 	}
