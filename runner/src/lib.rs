@@ -876,7 +876,8 @@ pub fn resize_root_partition(shell: &SshShell) -> Result<(), failure::Error> {
 
     // Update the root partition size (but not actually yet).
     shell.run(cmd!(
-        r#"sed "s|\(.*{}.*size= *\)[0-9]*\(.*\)|\1{}\2|" /tmp/sfdisk.new"#,
+        r#"sed "s|\(.*{}.*size= *\)[0-9]*\(.*\)|\1{}\2|" /tmp/sfdisk.new > /tmp/sfdisk.new1 \
+        && mv /tmp/sfdisk.new1 /tmp/sfdisk.new"#,
         root_part,
         root_new_size
     ))?;
