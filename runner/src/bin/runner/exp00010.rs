@@ -96,6 +96,7 @@ struct Config {
     memtrace: bool,
     mmu_overhead: bool,
     perf_record: bool,
+    perf_counters: Vec<String>,
 
     username: String,
     host: String,
@@ -183,6 +184,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             "Make all pages >=THP_HUGE_ADDR huge.")
         (@arg PERF_RECORD: --perf_record
          "Measure the workload using perf record.")
+        (@arg PERF_COUNTER: --perf_counter +takes_value ... number_of_values(1)
+         "Collect the given counters instead of the default ones.")
     };
 
     let app = damon::add_cli_options(app);
@@ -278,6 +281,22 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let memtrace = memtrace::parse_cli_options(sub_m);
     let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
     let perf_record = sub_m.is_present("PERF_RECORD");
+    let perf_counters: Vec<String> = sub_m.values_of("PERF_COUNTER").map_or_else(
+        || {
+            vec![
+                "dtlb_load_misses.walk_active".into(),
+                "dtlb_store_misses.walk_active".into(),
+                "dtlb_load_misses.miss_causes_a_walk".into(),
+                "dtlb_store_misses.miss_causes_a_walk".into(),
+                "cpu_clk_unhalted.thread_any".into(),
+                "inst_retired.any".into(),
+                "faults".into(),
+                "migrations".into(),
+                "cs".into(),
+            ]
+        },
+        |counters| counters.map(Into::into).collect(),
+    );
 
     let (
         transparent_hugepage_enabled,
@@ -333,6 +352,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         memtrace,
         mmu_overhead,
         perf_record,
+        perf_counters,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -590,7 +610,7 @@ where
                     size,
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
                     if cfg.mmu_overhead {
-                        Some(&mmu_overhead_file)
+                        Some((&mmu_overhead_file, &cfg.perf_counters))
                     } else {
                         None
                     },

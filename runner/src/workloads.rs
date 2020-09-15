@@ -1093,28 +1093,24 @@ pub fn run_thp_ubmk(
     shell: &SshShell,
     size: usize,
     bmk_dir: &str,
-    mmu_overhead_file: Option<&str>,
+    // The output file as well as a list of perf counters to record. Most processors can only
+    // support 4-5 hardware counters, but you can do more software counters. To see the type of a
+    // counter, use `perf list`.
+    mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
-    if let Some(mmu_overhead_file) = mmu_overhead_file {
+    if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
                 "sudo taskset -c {} \
                 perf stat \
-                -e dtlb_load_misses.walk_active \
-                -e dtlb_store_misses.walk_active \
-                -e dtlb_load_misses.miss_causes_a_walk \
-                -e dtlb_store_misses.miss_causes_a_walk \
-                -e cpu_clk_unhalted.thread_any \
-                -e inst_retired.any \
-                -e faults \
-                -e migrations \
-                -e cs \
+                -e {} \
                 -D 65000 \
                 -- ./ubmk {} 2>&1 | \
                 tee {}",
                 pin_core,
+                counters.join(" -e "),
                 size,
                 mmu_overhead_file
             )
