@@ -28,10 +28,78 @@ static inline unsigned big_rand() {
 	return r;
 }
 
+static inline void read_hpage(struct hpage *hpage) {
+	// Normal loads
+	unsigned long long addr = (unsigned long long)hpage->buf;
+	unsigned long long end = addr + (1<<21);
+
+	__asm__ __volatile__ (
+		"read_loop%=:"
+		"mov (%%rbx), %%rax;"
+		"add $4096, %%rbx;"
+		"cmp %%rbx, %%rcx;"
+		"jne read_loop%=;"
+		: // no outputs
+		: "b"(addr), "c"(end)
+		: "memory", "%rax", "cc"
+	);
+}
+
 static inline void write_hpage(struct hpage *hpage) {
-	for (int i = 0; i < 1<<21; i+=1<<12) {
-		hpage->buf[i] = 0xff;
-	}
+	// Naive C implementation
+	//for (int i = 0; i < 1<<21; i+=1<<12) {
+	//	hpage->buf[i] = 0xff;
+	//}
+
+	// Normal stores
+	unsigned long long addr = (unsigned long long)hpage->buf;
+	unsigned long long end = addr + (1<<21);
+
+	__asm__ __volatile__ (
+		"movq $0xff, %%rax;"
+		"write_loop%=:"
+		"mov %%rax, (%%rbx);"
+		"add $4096, %%rbx;"
+		"cmp %%rbx, %%rcx;"
+		"jne write_loop%=;"
+		: // no outputs
+		: "b"(addr), "c"(end)
+		: "memory", "%rax", "cc"
+	);
+
+	// 50% loads-stores
+	//unsigned long long addr = (unsigned long long)hpage->buf;
+	//unsigned long long end = addr + (1<<21);
+	//
+	//__asm__ __volatile__ (
+	//	"movq $0xff, %%rax;"
+	//	"loop:"
+	//	"mov %%rax, (%%rbx);" // store
+	//	"add $4096, %%rbx;"
+	//	"mov (%%rbx), %%rdx;" // load
+	//	"add $4096, %%rbx;"
+	//	"cmp %%rbx, %%rcx;"
+	//	"jne loop;"
+	//	: // no outputs
+	//	: "b"(addr), "c"(end)
+	//	: "memory", "%rax", "%rdx", "cc"
+	//);
+
+	// Non-temporal stores
+	//unsigned long long addr = (unsigned long long)hpage->buf;
+	//unsigned long long end = addr + (1<<21);
+	//
+	//__asm__ __volatile__ (
+	//	"movq $0xff, %%rax;"
+	//	"loop:"
+	//	"movnti %%rax, (%%rbx);"
+	//	"add $4096, %%rbx;"
+	//	"cmp %%rbx, %%rcx;"
+	//	"jne loop;"
+	//	: // no outputs
+	//	: "b"(addr), "c"(end)
+	//	: "memory", "%rax", "cc"
+	//);
 }
 
 int main(int argc, const char *argv[]) {
@@ -74,7 +142,7 @@ int main(int argc, const char *argv[]) {
 	}
 
 	printf("Creating a region %lu GB\n", size);
-	
+
 	struct hpage *mem = mmap(ADDRESS, size << 30, PROT_WRITE | PROT_READ,
 			MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
 
@@ -83,15 +151,19 @@ int main(int argc, const char *argv[]) {
 		return -1;
 	}
 
+	// Number of huge pages.
+	const unsigned long n = size << 9;
+
+	//for (unsigned long i = 0; i < n; ++i) {
+	//	write_hpage(&mem[i]);
+	//}
+
 	// Seed prng for reproducibility. We are picking huge pages at random.
 	// A huge page is 1<<21 bytes, and we are choosing from a region of
 	// `size<<30`, so we want `9 + log(size)` bits of randomness. If we
 	// assume that size can be up to terabytes, then we need ~20 or so bits
 	// of entropy. `big_rand` returns 30 bits, so that should be enough.
 	srand(0);
-
-	// Number of huge pages.
-	const unsigned long n = size << 9;
 
 	// Print status update and sleep before touching pages.
 	clock_t elapsed = clock() - start;
