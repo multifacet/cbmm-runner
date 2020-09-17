@@ -1092,6 +1092,7 @@ pub fn run_graph500(
 pub fn run_thp_ubmk(
     shell: &SshShell,
     size: usize,
+    reps: usize,
     bmk_dir: &str,
     // The output file as well as a list of perf counters to record. Most processors can only
     // support 4-5 hardware counters, but you can do more software counters. To see the type of a
@@ -1100,6 +1101,13 @@ pub fn run_thp_ubmk(
     perf_file: Option<&str>,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
+    // If reps is 0, omit the parameter
+    let reps_str = if reps == 0 {
+        "".to_string()
+    } else {
+        reps.to_string()
+    };
+
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
@@ -1107,11 +1115,12 @@ pub fn run_thp_ubmk(
                 perf stat \
                 -e {} \
                 -D 65000 \
-                -- ./ubmk {} 2>&1 | \
+                -- ./ubmk {} {} 2>&1 | \
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
                 size,
+                reps_str,
                 mmu_overhead_file
             )
             .cwd(bmk_dir),
@@ -1132,7 +1141,7 @@ pub fn run_thp_ubmk(
             .cwd(bmk_dir),
         )?;
     } else {
-        shell.run(cmd!("sudo taskset -c {} ./ubmk {}", pin_core, size).cwd(bmk_dir))?;
+        shell.run(cmd!("sudo taskset -c {} ./ubmk {} {}", pin_core, size, reps_str).cwd(bmk_dir))?;
     }
 
     Ok(())

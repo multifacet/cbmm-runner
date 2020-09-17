@@ -43,6 +43,7 @@ enum Workload {
     },
     ThpUbmk {
         size: usize,
+        reps: usize,
     },
     Memcached {
         size: usize,
@@ -145,6 +146,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run a ubmk that benefits greatly from THP")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 100)")
+            (@arg REPS: +takes_value {validator::is::<usize>}
+             "The number of reps the workload should run (e.g. 50)")
         )
         (@subcommand memcached =>
             (about: "Run the `memcached` workload.")
@@ -249,8 +252,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         ("thp_ubmk", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let reps = sub_m.value_of("REPS").unwrap_or("0").parse::<usize>().unwrap();
 
-            (Workload::ThpUbmk { size }, "thp_ubmk", 0, size, None)
+            (Workload::ThpUbmk { size, reps }, "thp_ubmk", reps, size, None)
         }
 
         ("memcached", Some(sub_m)) => {
@@ -581,7 +585,7 @@ where
             );
         }
 
-        Workload::ThpUbmk { size } => {
+        Workload::ThpUbmk { size, reps } => {
             // Set `huge_addr` if needed.
             if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
                 let mode = match cfg.transparent_hugepage_huge_addr_mode {
@@ -608,6 +612,7 @@ where
                 run_thp_ubmk(
                     &ushell,
                     size,
+                    reps,
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
                     if cfg.mmu_overhead {
                         Some((&mmu_overhead_file, &cfg.perf_counters))
