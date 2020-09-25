@@ -351,7 +351,7 @@ where
 
     runner::exp_0sim::gen_standard_sim_output(&sim_file, &ushell, &vshell)?;
 
-    let glob = cfg.gen_file_name("*");
+    let glob = cfg.gen_file_name("");
     println!("RESULTS: {}", dir!(HOSTNAME_SHARED_RESULTS_DIR, glob));
 
     Ok(())

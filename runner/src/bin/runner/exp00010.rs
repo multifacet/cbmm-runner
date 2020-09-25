@@ -806,7 +806,7 @@ where
 
     runner::gen_standard_host_output(&sim_file, &ushell)?;
 
-    let glob = cfg.gen_file_name("*");
+    let glob = cfg.gen_file_name("");
     println!(
         "RESULTS: {}",
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)

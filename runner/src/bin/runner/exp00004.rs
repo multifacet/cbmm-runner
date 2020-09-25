@@ -191,7 +191,7 @@ where
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, time_file)
     ))?;
 
-    let glob = cfg.gen_file_name("*");
+    let glob = cfg.gen_file_name("");
     println!(
         "RESULTS: {}",
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)
