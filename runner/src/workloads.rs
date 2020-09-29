@@ -1141,7 +1141,8 @@ pub fn run_thp_ubmk(
             .cwd(bmk_dir),
         )?;
     } else {
-        shell.run(cmd!("sudo taskset -c {} ./ubmk {} {}", pin_core, size, reps_str).cwd(bmk_dir))?;
+        shell
+            .run(cmd!("sudo taskset -c {} ./ubmk {} {}", pin_core, size, reps_str).cwd(bmk_dir))?;
     }
 
     Ok(())

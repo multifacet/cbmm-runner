@@ -252,9 +252,19 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         ("thp_ubmk", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
-            let reps = sub_m.value_of("REPS").unwrap_or("0").parse::<usize>().unwrap();
+            let reps = sub_m
+                .value_of("REPS")
+                .unwrap_or("0")
+                .parse::<usize>()
+                .unwrap();
 
-            (Workload::ThpUbmk { size, reps }, "thp_ubmk", reps, size, None)
+            (
+                Workload::ThpUbmk { size, reps },
+                "thp_ubmk",
+                reps,
+                size,
+                None,
+            )
         }
 
         ("memcached", Some(sub_m)) => {
