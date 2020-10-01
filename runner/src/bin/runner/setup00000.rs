@@ -982,6 +982,10 @@ where
         cmd!("gcc -g -Wall -Werror -O3 -o ubmk ubmk.c")
             .cwd(dir!(RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR)),
     )?;
+    ushell.run(
+        cmd!("gcc -g -Wall -Werror -O3 -o ubmk-shm ubmk-shm.c -lrt")
+            .cwd(dir!(RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR)),
+    )?;
 
     Ok(())
 }
