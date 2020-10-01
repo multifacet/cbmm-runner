@@ -1176,7 +1176,7 @@ pub fn run_thp_ubmk_shm(
                 "sudo taskset -c {} \
                 perf stat \
                 -e {} \
-                -D 65000 \
+                -D 5000 \
                 -- ./ubmk-shm {} {} {} 2>&1 | \
                 tee {}",
                 pin_core,
@@ -1192,7 +1192,7 @@ pub fn run_thp_ubmk_shm(
         shell.run(
             cmd!(
                 "(sudo taskset -c {} ./ubmk-shm {} {} 10000 &) && \
-                 sudo perf record -a -C {} -g -F 99 -D 65000 sleep 180 && \
+                 sudo perf record -a -C {} -g -F 99 -D 5000 sleep 180 && \
                  sudo pkill ubmk-shm && \
                  sudo perf report --stdio > {} && \
                  echo DONE",
