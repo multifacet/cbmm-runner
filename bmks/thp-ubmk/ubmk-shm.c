@@ -98,16 +98,33 @@ int main(int argc, const char *argv[]) {
 	const unsigned long n = size << 9;
 
 	// shm fd
-	int fd = open("/mnt/huge/foo", O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
-	if (fd == -1) {
-		perror("unable to open");
-		exit(-1);
+	int fd;
+
+	if (use_hugepages) {
+		fd = open("/mnt/huge/foo", O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
+		if (fd == -1) {
+			perror("unable to open");
+			exit(-1);
+		}
+	} else {
+		fd = shm_open("foo", O_CREAT | O_RDWR | O_TRUNC, S_IRUSR | S_IWUSR);
+		if (fd == -1) {
+			perror("unable to open");
+			exit(-1);
+		}
+
+		// Need to ftruncate to 2MB so that there is something to mmap.
+		int ret = ftruncate(fd, 1<<21);
+		if (ret == -1) {
+			perror("unable to ftruncate");
+			exit(-1);
+		}
 	}
 
 	// mmap with huge
-	const int mmap_flags = MAP_SHARED | MAP_POPULATE | MAP_FIXED | 
+	const int mmap_flags = MAP_SHARED | MAP_POPULATE | MAP_FIXED |
 		(use_hugepages ? MAP_HUGETLB : 0);
-	
+
 	struct hpage *mem = mmap(ADDRESS, 1ul<<21, PROT_READ | PROT_WRITE, mmap_flags, fd, 0);
 	if (mem == MAP_FAILED) {
 		perror("unable to mmap");
