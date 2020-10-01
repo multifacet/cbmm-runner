@@ -1147,3 +1147,75 @@ pub fn run_thp_ubmk(
 
     Ok(())
 }
+
+pub fn run_thp_ubmk_shm(
+    shell: &SshShell,
+    size: usize,
+    reps: usize,
+    use_huge_pages: bool,
+    bmk_dir: &str,
+    // The output file as well as a list of perf counters to record. Most processors can only
+    // support 4-5 hardware counters, but you can do more software counters. To see the type of a
+    // counter, use `perf list`.
+    mmu_overhead: Option<(&str, &[String])>,
+    perf_file: Option<&str>,
+    pin_core: usize,
+) -> Result<(), failure::Error> {
+    // If reps is 0, omit the parameter
+    let reps_str = if reps == 0 {
+        "".to_string()
+    } else {
+        reps.to_string()
+    };
+
+    let use_huge_pages = if use_huge_pages { 1 } else { 0 };
+
+    if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} \
+                perf stat \
+                -e {} \
+                -D 65000 \
+                -- ./ubmk-shm {} {} {} 2>&1 | \
+                tee {}",
+                pin_core,
+                counters.join(" -e "),
+                use_huge_pages,
+                size,
+                reps_str,
+                mmu_overhead_file
+            )
+            .cwd(bmk_dir),
+        )?;
+    } else if let Some(perf_file) = perf_file {
+        shell.run(
+            cmd!(
+                "(sudo taskset -c {} ./ubmk-shm {} {} 10000 &) && \
+                 sudo perf record -a -C {} -g -F 99 -D 65000 sleep 180 && \
+                 sudo pkill ubmk-shm && \
+                 sudo perf report --stdio > {} && \
+                 echo DONE",
+                pin_core,
+                use_huge_pages,
+                size,
+                pin_core,
+                perf_file,
+            )
+            .cwd(bmk_dir),
+        )?;
+    } else {
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} ./ubmk-shm {} {} {}",
+                pin_core,
+                use_huge_pages,
+                size,
+                reps_str
+            )
+            .cwd(bmk_dir),
+        )?;
+    }
+
+    Ok(())
+}

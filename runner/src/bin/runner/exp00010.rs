@@ -17,8 +17,9 @@ use runner::{
     time,
     workloads::{
         run_graph500, run_locality_mem_access, run_memcached_gen_data, run_mix, run_thp_ubmk,
-        run_time_loop, run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
-        MemcachedWorkloadConfig, Pintool, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, Damon, LocalityMemAccessConfig,
+        LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool, TasksetCtx, TimeMmapTouchConfig,
+        TimeMmapTouchPattern,
     },
 };
 
@@ -42,6 +43,10 @@ enum Workload {
         pattern: TimeMmapTouchPattern,
     },
     ThpUbmk {
+        size: usize,
+        reps: usize,
+    },
+    ThpUbmkShm {
         size: usize,
         reps: usize,
     },
@@ -144,6 +149,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@subcommand thp_ubmk =>
             (about: "Run a ubmk that benefits greatly from THP")
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
+             "The number of GBs of the workload (e.g. 100)")
+            (@arg REPS: +takes_value {validator::is::<usize>}
+             "The number of reps the workload should run (e.g. 50)")
+        )
+        (@subcommand thp_ubmk_shm =>
+            (about: "Run a ubmk that benefits greatly from THP but uses \
+                     shared memory to avoid store buffer bottlenecks.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 100)")
             (@arg REPS: +takes_value {validator::is::<usize>}
@@ -267,6 +280,23 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             )
         }
 
+        ("thp_ubmk_shm", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let reps = sub_m
+                .value_of("REPS")
+                .unwrap_or("0")
+                .parse::<usize>()
+                .unwrap();
+
+            (
+                Workload::ThpUbmkShm { size, reps },
+                "thp_ubmk_shm",
+                reps,
+                size,
+                None,
+            )
+        }
+
         ("memcached", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
@@ -311,6 +341,16 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         },
         |counters| counters.map(Into::into).collect(),
     );
+
+    // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
+    // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
+    // an argument for which pages to use huge pages, and it would map those backed by the
+    // hugetlbfs. The remaining pages would be backed by normal shm.
+    if let Workload::ThpUbmkShm { .. } = workload {
+        if sub_m.is_present("THP_UBMK_DIR") {
+            unimplemented!("thp_huge_addr isn't supported by thp_ubmk_shm yet.");
+        }
+    }
 
     let (
         transparent_hugepage_enabled,
@@ -405,15 +445,33 @@ where
     // Allow `perf` as any user
     runner::perf_for_all(&ushell)?;
 
-    // Turn on/off compaction and force it too happen
-    runner::turn_on_thp(
-        &ushell,
-        &cfg.transparent_hugepage_enabled,
-        &cfg.transparent_hugepage_defrag,
-        cfg.transparent_hugepage_khugepaged_defrag,
-        cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
-        cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
-    )?;
+    // Turn on/off compaction and force it to happen if needed
+    if matches!(cfg.workload, Workload::ThpUbmkShm {..}) {
+        runner::turn_on_thp(
+            &ushell,
+            /* enabled */ "never",
+            /* defrag */ "never",
+            cfg.transparent_hugepage_khugepaged_defrag,
+            cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+            cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+        )?;
+
+        // Reserve a huge page and use it for a hugetlbfs.
+        ushell.run(cmd!("sudo sysctl vm.nr_hugepages=4"))?;
+        ushell.run(cmd!("sudo mkdir -p /mnt/huge"))?;
+        ushell.run(cmd!(
+            "sudo mount -t hugetlbfs -o uid=`id -u`,gid=`id -g`,pagesize=2M,size=8M none /mnt/huge"
+        ))?;
+    } else {
+        runner::turn_on_thp(
+            &ushell,
+            &cfg.transparent_hugepage_enabled,
+            &cfg.transparent_hugepage_defrag,
+            cfg.transparent_hugepage_khugepaged_defrag,
+            cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+            cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+        )?;
+    }
 
     // Turn of NUMA balancing
     runner::set_auto_numa(&ushell, false /* off */)?;
@@ -623,6 +681,31 @@ where
                     &ushell,
                     size,
                     reps,
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
+                    if cfg.mmu_overhead {
+                        Some((&mmu_overhead_file, &cfg.perf_counters))
+                    } else {
+                        None
+                    },
+                    if cfg.perf_record {
+                        Some(&trace_file)
+                    } else {
+                        None
+                    },
+                    tctx.next(),
+                )?
+            );
+        }
+
+        Workload::ThpUbmkShm { size, reps } => {
+            time!(
+                timers,
+                "Workload",
+                run_thp_ubmk_shm(
+                    &ushell,
+                    size,
+                    reps,
+                    cfg.transparent_hugepage_enabled == "always",
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
                     if cfg.mmu_overhead {
                         Some((&mmu_overhead_file, &cfg.perf_counters))
