@@ -59,6 +59,9 @@ enum Workload {
     Graph500 {
         scale: usize,
     },
+    Spec2017Mcf,
+    Spec2017Xalancbmk,
+    Spec2017Xz,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -176,6 +179,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run the graph500 workload (all kernels).")
             (@arg SCALE: +required +takes_value {validator::is::<usize>}
              "log(vertices) for the workload (e.g. 29). See graph500 website for more info.")
+        )
+        (@subcommand hacky_spec17 =>
+            (about: "A quick and dirty hack to run a spec workload on cloudlab")
+            (@arg WHICH: +required
+             "Which spec workload to run.")
         )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
@@ -313,6 +321,17 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             let scale = sub_m.value_of("SCALE").unwrap().parse::<usize>().unwrap();
 
             (Workload::Graph500 { scale }, "graph500", 0, scale, None)
+        }
+
+        ("hacky_spec17", Some(sub_m)) => {
+            let wk = match sub_m.value_of("WHICH").unwrap() {
+                "mcf" => Workload::Spec2017Mcf,
+                "xalancbmk" => Workload::Spec2017Xalancbmk,
+                "xz" => Workload::Spec2017Xz,
+                _ => panic!("Unknown spec workload"),
+            };
+
+            (wk, "hacky_spec17", 0, 0, None)
         }
 
         _ => unreachable!(),
@@ -850,6 +869,35 @@ where
                     },
                 )?
             });
+        }
+
+        Workload::Spec2017Mcf => {
+            const MCF_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
+                                    CPU/605.mcf_s/run/run_base_refspeed_markm-thp-m64.0000";
+            ushell.run(cmd!("./mcf_s_base.markm-thp-m64 inp.in").cwd(MCF_PATH))?;
+        }
+
+        Workload::Spec2017Xz => {
+            const XZ_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
+                                   CPU/657.xz_s/run/run_base_refspeed_markm-thp-m64.0000";
+            ushell.run(
+                cmd!(
+                    "./xz_s_base.markm-thp-m64 cpu2006docs.tar.xz 6643 \
+                             055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c\
+                             774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa\
+                             5ad2c04fbc447549c2810fae 1036078272 1111795472 4"
+                )
+                .cwd(XZ_PATH),
+            )?;
+        }
+
+        Workload::Spec2017Xalancbmk => {
+            const XALANCBMK_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
+                                          CPU/623.xalancbmk_s/run/\
+                                          run_base_refspeed_markm-thp-m64.0000";
+            ushell.run(
+                cmd!("./xalancbmk_s_base.markm-thp-m64 -v t5.xml xalanc.xsl").cwd(XALANCBMK_PATH),
+            )?;
         }
     }
 
