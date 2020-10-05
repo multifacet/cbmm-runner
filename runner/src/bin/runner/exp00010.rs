@@ -106,6 +106,7 @@ struct Config {
     mmu_overhead: bool,
     perf_record: bool,
     perf_counters: Vec<String>,
+    smaps_periodic: bool,
 
     username: String,
     host: String,
@@ -210,6 +211,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Measure the workload using perf record.")
         (@arg PERF_COUNTER: --perf_counter +takes_value ... number_of_values(1)
          "Collect the given counters instead of the default ones.")
+        (@arg SMAPS_PERIODIC: --smaps_periodic
+         "Collect /proc/[PID]/smaps data periodically for the main workload process.")
     };
 
     let app = damon::add_cli_options(app);
@@ -360,6 +363,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         },
         |counters| counters.map(Into::into).collect(),
     );
+    let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -426,6 +430,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mmu_overhead,
         perf_record,
         perf_counters,
+        smaps_periodic,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -501,6 +506,7 @@ where
     let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
     let mmstats_file = cfg.gen_file_name("mmstats");
     let meminfo_file = cfg.gen_file_name("meminfo");
+    let smaps_file = cfg.gen_file_name("smaps");
     let damon_output_path = cfg.gen_file_name("damon");
     let damon_output_path = dir!(
         user_home,
@@ -585,6 +591,41 @@ where
                 user_home,
                 setup00000::HOSTNAME_SHARED_RESULTS_DIR,
                 &meminfo_file
+            ),
+        })?;
+    }
+
+    if cfg.smaps_periodic {
+        let proc_name = match cfg.workload {
+            Workload::TimeLoop { .. } => "time_loop",
+            Workload::LocalityMemAccess { .. } => "locality_mem_access",
+            Workload::TimeMmapTouch { .. } => "time_mmap_touch",
+            Workload::Mix { .. } => unimplemented!(),
+            Workload::ThpUbmk { .. } => "ubmk",
+            Workload::ThpUbmkShm { .. } => "ubmk-shm",
+            Workload::Memcached { .. } => "memcached",
+            Workload::Graph500 { .. } => "graph500",
+            Workload::Spec2017Xz { .. } => "xz_s",
+            Workload::Spec2017Mcf { .. } => "mcf_s",
+            Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
+        };
+
+        bgctx.spawn(BackgroundTask {
+            name: "smaps",
+            period: PERIOD,
+            cmd: format!(
+                "((cat /proc/`pgrep {}`/smaps | sort -n | head -n1) || echo none) | tee -a {}",
+                proc_name,
+                dir!(
+                    user_home,
+                    setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                    &smaps_file
+                ),
+            ),
+            ensure_started: dir!(
+                user_home,
+                setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                &smaps_file
             ),
         })?;
     }
@@ -913,7 +954,7 @@ where
         ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
     }
 
-    if cfg.meminfo_periodic {
+    if cfg.meminfo_periodic || cfg.smaps_periodic {
         time!(
             timers,
             "Waiting for data collectioned threads to halt",
