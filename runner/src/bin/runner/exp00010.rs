@@ -16,10 +16,10 @@ use runner::{
     paths::*,
     time,
     workloads::{
-        run_graph500, run_hacky_mcf, run_locality_mem_access, run_memcached_gen_data, run_mix,
+        run_graph500, run_hacky_spec17, run_locality_mem_access, run_memcached_gen_data, run_mix,
         run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, Damon,
         LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool,
-        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -912,9 +912,17 @@ where
             });
         }
 
-        Workload::Spec2017Mcf => {
-            run_hacky_mcf(
+        w @ Workload::Spec2017Mcf | w @ Workload::Spec2017Xz | w @ Workload::Spec2017Xalancbmk => {
+            let wkload = match w {
+                Workload::Spec2017Mcf => Spec2017Workload::Mcf,
+                Workload::Spec2017Xz => Spec2017Workload::Xz,
+                Workload::Spec2017Xalancbmk => Spec2017Workload::Xalancbmk,
+                _ => unreachable!(),
+            };
+
+            run_hacky_spec17(
                 &ushell,
+                wkload,
                 if cfg.mmu_overhead {
                     Some((&mmu_overhead_file, &cfg.perf_counters))
                 } else {
@@ -926,29 +934,6 @@ where
                     None
                 },
                 [tctx.next(), tctx.next(), tctx.next(), tctx.next()],
-            )?;
-        }
-
-        Workload::Spec2017Xz => {
-            const XZ_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
-                                   CPU/657.xz_s/run/run_base_refspeed_markm-thp-m64.0000";
-            ushell.run(
-                cmd!(
-                    "./xz_s_base.markm-thp-m64 cpu2006docs.tar.xz 6643 \
-                             055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c\
-                             774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa\
-                             5ad2c04fbc447549c2810fae 1036078272 1111795472 4"
-                )
-                .cwd(XZ_PATH),
-            )?;
-        }
-
-        Workload::Spec2017Xalancbmk => {
-            const XALANCBMK_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
-                                          CPU/623.xalancbmk_s/run/\
-                                          run_base_refspeed_markm-thp-m64.0000";
-            ushell.run(
-                cmd!("./xalancbmk_s_base.markm-thp-m64 -v t5.xml xalanc.xsl").cwd(XALANCBMK_PATH),
             )?;
         }
     }
