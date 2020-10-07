@@ -16,10 +16,10 @@ use runner::{
     paths::*,
     time,
     workloads::{
-        run_graph500, run_locality_mem_access, run_memcached_gen_data, run_mix, run_thp_ubmk,
-        run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, Damon, LocalityMemAccessConfig,
-        LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool, TasksetCtx, TimeMmapTouchConfig,
-        TimeMmapTouchPattern,
+        run_graph500, run_hacky_mcf, run_locality_mem_access, run_memcached_gen_data, run_mix,
+        run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, Damon,
+        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool,
+        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -913,9 +913,20 @@ where
         }
 
         Workload::Spec2017Mcf => {
-            const MCF_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
-                                    CPU/605.mcf_s/run/run_base_refspeed_markm-thp-m64.0000";
-            ushell.run(cmd!("./mcf_s_base.markm-thp-m64 inp.in").cwd(MCF_PATH))?;
+            run_hacky_mcf(
+                &ushell,
+                if cfg.mmu_overhead {
+                    Some((&mmu_overhead_file, &cfg.perf_counters))
+                } else {
+                    None
+                },
+                if cfg.perf_record {
+                    Some(&trace_file)
+                } else {
+                    None
+                },
+                [tctx.next(), tctx.next(), tctx.next(), tctx.next()],
+            )?;
         }
 
         Workload::Spec2017Xz => {

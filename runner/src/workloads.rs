@@ -1219,3 +1219,59 @@ pub fn run_thp_ubmk_shm(
 
     Ok(())
 }
+
+pub fn run_hacky_mcf(
+    shell: &SshShell,
+    mmu_overhead: Option<(&str, &[String])>,
+    perf_file: Option<&str>,
+    // The spec workloads default to 4 threads, so we require 4 cores.
+    pin_cores: [usize; 4],
+) -> Result<(), failure::Error> {
+    const MCF_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
+                            CPU/605.mcf_s/run/run_base_refspeed_markm-thp-m64.0000";
+
+    let pin_cores = pin_cores
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+
+    if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} \
+                perf stat \
+                -e {} \
+                -- ./mcf_s_base.markm-thp-m64 inp.in 2>&1 | \
+                tee {}",
+                pin_cores,
+                counters.join(" -e "),
+                mmu_overhead_file
+            )
+            .cwd(MCF_PATH),
+        )?;
+    } else if let Some(perf_file) = perf_file {
+        // TODO: not tested, should this be done sort of like thp_ubmk above?
+        shell.run(
+            cmd!(
+                "sudo perf record -a -C {} -g -F 99 \
+                 taskset -c {} ./mcf_s_base.markm-thp-m64 inp.in && \
+                 sudo perf report --stdio > {}",
+                pin_cores,
+                pin_cores,
+                perf_file,
+            )
+            .cwd(MCF_PATH),
+        )?;
+    } else {
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} ./mcf_s_base.markm-thp-m64 inp.in",
+                pin_cores,
+            )
+            .cwd(MCF_PATH),
+        )?;
+    }
+
+    Ok(())
+}
