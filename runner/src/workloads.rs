@@ -1306,7 +1306,6 @@ pub fn run_canneal(
     shell: &SshShell,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
-    // The spec workloads default to 4 threads, so we require 4 cores.
     pin_core: usize,
 ) -> Result<(), failure::Error> {
     const CANNEAL_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/";
