@@ -987,6 +987,24 @@ where
             .cwd(dir!(RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR)),
     )?;
 
+    prepare_canneal(ushell)?;
+
+    Ok(())
+}
+
+/// Download PARSEC and build the canneal benchmark
+fn prepare_canneal(ushell: &SshShell) -> Result<(), failure::Error> {
+    const PARSEC_URL: &str = "http://parsec.cs.princeton.edu/download/3.0/";
+    const PARSEC_TAR: &str = "parsec-3.0.tar.gz";
+    const PARSEC_BIN_DIR: &str = "parsec-3.0/bin/";
+
+    //Download PARSEC
+    ushell.run(cmd!("wget {}{}", PARSEC_URL, PARSEC_TAR))?;
+    ushell.run(cmd!("tar -xvf {}", PARSEC_TAR))?;
+
+    //Build canneal
+    ushell.run(cmd!("./parsecmgmt -a build -p canneal").cwd(PARSEC_BIN_DIR))?;
+
     Ok(())
 }
 

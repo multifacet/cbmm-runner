@@ -1301,3 +1301,54 @@ pub fn run_hacky_spec17(
 
     Ok(())
 }
+
+pub fn run_canneal(
+    shell: &SshShell,
+    mmu_overhead: Option<(&str, &[String])>,
+    perf_file: Option<&str>,
+    // The spec workloads default to 4 threads, so we require 4 cores.
+    pin_core: usize,
+) -> Result<(), failure::Error> {
+    const CANNEAL_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/";
+    const CANNEAL_CMD: &str = "./canneal 1 15000 2000 2500000.nets 6000";
+    const NET_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inputs/";
+    const NET_NAME: &str = "input_native.tar";
+
+    // Extract the input file
+    shell.run(cmd!("tar -xvf {}", NET_NAME).cwd(NET_PATH))?;
+    shell.run(cmd!("mv {}/*.nets {}", NET_PATH, CANNEAL_PATH))?;
+
+    if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} \
+                perf stat \
+                -e {} \
+                -- {} 2>&1 | \
+                tee {}",
+                pin_core,
+                counters.join(" -e "),
+                CANNEAL_CMD,
+                mmu_overhead_file
+            )
+            .cwd(CANNEAL_PATH),
+        )?;
+    } else if let Some(perf_file) = perf_file {
+        shell.run(
+            cmd!(
+                "sudo perf record -a -C {} -g -F 99 \
+                taskset -c {} {} && \
+                sudo perf report --stdio > {}",
+                pin_core,
+                pin_core,
+                CANNEAL_CMD,
+                perf_file,
+            )
+            .cwd(CANNEAL_PATH),
+        )?;
+    } else {
+        shell.run(cmd!("sudo taskset -c {} {}", pin_core, CANNEAL_CMD).cwd(CANNEAL_PATH))?;
+    }
+
+    Ok(())
+}

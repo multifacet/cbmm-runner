@@ -16,10 +16,11 @@ use runner::{
     paths::*,
     time,
     workloads::{
-        run_graph500, run_hacky_spec17, run_locality_mem_access, run_memcached_gen_data, run_mix,
-        run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, Damon,
-        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool,
-        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
+        run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop,
+        run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
+        MemcachedWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx, TimeMmapTouchConfig,
+        TimeMmapTouchPattern,
     },
 };
 
@@ -62,6 +63,7 @@ enum Workload {
     Spec2017Mcf,
     Spec2017Xalancbmk,
     Spec2017Xz,
+    Canneal,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -185,6 +187,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "A quick and dirty hack to run a spec workload on cloudlab")
             (@arg WHICH: +required
              "Which spec workload to run.")
+        )
+        (@subcommand canneal =>
+            (about: "Run the canneal workload.")
         )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
@@ -335,6 +340,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             };
 
             (wk, "hacky_spec17", 0, 0, None)
+        }
+
+        ("canneal", Some(_)) => {
+            (Workload::Canneal, "canneal", 0, 0, None)
         }
 
         _ => unreachable!(),
@@ -608,6 +617,7 @@ where
             Workload::Spec2017Xz { .. } => "xz_s",
             Workload::Spec2017Mcf { .. } => "mcf_s",
             Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
+            Workload::Canneal { .. } => "canneal",
         };
 
         bgctx.spawn(BackgroundTask {
@@ -934,6 +944,23 @@ where
                     None
                 },
                 [tctx.next(), tctx.next(), tctx.next(), tctx.next()],
+            )?;
+        }
+
+        Workload::Canneal => {
+            run_canneal(
+                &ushell,
+                if cfg.mmu_overhead {
+                    Some((&mmu_overhead_file, &cfg.perf_counters))
+                } else {
+                    None
+                },
+                if cfg.perf_record {
+                    Some(&trace_file)
+                } else {
+                    None
+                },
+                tctx.next(),
             )?;
         }
     }
