@@ -19,6 +19,8 @@ pub enum Artifact {
     KyotoCabinetJava,
     /// The linux kernel.
     Linux,
+    /// PARSEC benchmark suit
+    Parsec,
 }
 
 /// Represents a possible artifact that can be downloaded.
@@ -71,6 +73,11 @@ pub fn artifact_info(artifact: Artifact) -> Download<'static> {
             url: "https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.5.tar.xz",
             name: "linux-5.5.tar.xz",
             version: "5.5",
+        },
+        Parsec => Download {
+            url: "https://parsec.cs.princeton.edu/download/3.0/parsec-3.0.tar.gz",
+            name: "parsec-3.0.tar.gz",
+            version: "3.0",
         },
     }
 }
