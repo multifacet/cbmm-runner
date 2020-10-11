@@ -624,7 +624,7 @@ where
             name: "smaps",
             period: PERIOD,
             cmd: format!(
-                "((cat /proc/`pgrep {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
+                "((sudo cat /proc/`pgrep {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
                 proc_name,
                 dir!(
                     user_home,
