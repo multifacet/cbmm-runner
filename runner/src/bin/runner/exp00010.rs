@@ -604,22 +604,22 @@ where
         })?;
     }
 
-    if cfg.smaps_periodic {
-        let proc_name = match cfg.workload {
-            Workload::TimeLoop { .. } => "time_loop",
-            Workload::LocalityMemAccess { .. } => "locality_mem_access",
-            Workload::TimeMmapTouch { .. } => "time_mmap_touch",
-            Workload::Mix { .. } => unimplemented!(),
-            Workload::ThpUbmk { .. } => "ubmk",
-            Workload::ThpUbmkShm { .. } => "ubmk-shm",
-            Workload::Memcached { .. } => "memcached",
-            Workload::Graph500 { .. } => "graph500",
-            Workload::Spec2017Xz { .. } => "xz_s",
-            Workload::Spec2017Mcf { .. } => "mcf_s",
-            Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
-            Workload::Canneal { .. } => "canneal",
-        };
+    let proc_name = match cfg.workload {
+        Workload::TimeLoop { .. } => "time_loop",
+        Workload::LocalityMemAccess { .. } => "locality_mem_access",
+        Workload::TimeMmapTouch { .. } => "time_mmap_touch",
+        Workload::Mix { .. } => unimplemented!(),
+        Workload::ThpUbmk { .. } => "ubmk",
+        Workload::ThpUbmkShm { .. } => "ubmk-shm",
+        Workload::Memcached { .. } => "memcached",
+        Workload::Graph500 { .. } => "graph500",
+        Workload::Spec2017Xz { .. } => "xz_s",
+        Workload::Spec2017Mcf { .. } => "mcf_s",
+        Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
+        Workload::Canneal { .. } => "canneal",
+    };
 
+    if cfg.smaps_periodic {
         bgctx.spawn(BackgroundTask {
             name: "smaps",
             period: PERIOD,
@@ -638,6 +638,27 @@ where
                 &smaps_file
             ),
         })?;
+    }
+
+    // Set `huge_addr` if needed.
+    if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
+        let mode = match cfg.transparent_hugepage_huge_addr_mode {
+            ThpHugeAddrMode::Equal => 0,
+            ThpHugeAddrMode::Less => 1,
+            ThpHugeAddrMode::Greater => 2,
+        };
+        ushell.run(cmd!(
+            "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
+            mode
+        ))?;
+        ushell.run(cmd!(
+            "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+            huge_addr
+        ))?;
+        ushell.run(cmd!(
+            "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
+            proc_name
+        ))?;
     }
 
     // Run the workload.
@@ -724,26 +745,6 @@ where
         }
 
         Workload::ThpUbmk { size, reps } => {
-            // Set `huge_addr` if needed.
-            if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
-                let mode = match cfg.transparent_hugepage_huge_addr_mode {
-                    ThpHugeAddrMode::Equal => 0,
-                    ThpHugeAddrMode::Less => 1,
-                    ThpHugeAddrMode::Greater => 2,
-                };
-                ushell.run(cmd!(
-                    "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
-                    mode
-                ))?;
-                ushell.run(cmd!(
-                    "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
-                    huge_addr
-                ))?;
-                ushell.run(cmd!(
-                    "echo -n ubmk | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm"
-                ))?;
-            }
-
             time!(
                 timers,
                 "Workload",
