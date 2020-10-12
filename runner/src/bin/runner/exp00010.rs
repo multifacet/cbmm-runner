@@ -653,9 +653,12 @@ where
             "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
             huge_addr
         ))?;
+
+        // We need to truncate the name to 15 characters because Linux will truncate current->comm
+        // to 15 characters. In order for them to match we truncate it here...
         ushell.run(cmd!(
             "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
-            proc_name
+            &proc_name[..15]
         ))?;
     }
 
