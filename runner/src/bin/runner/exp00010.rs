@@ -342,9 +342,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             (wk, "hacky_spec17", 0, 0, None)
         }
 
-        ("canneal", Some(_)) => {
-            (Workload::Canneal, "canneal", 0, 0, None)
-        }
+        ("canneal", Some(_)) => (Workload::Canneal, "canneal", 0, 0, None),
 
         _ => unreachable!(),
     };
@@ -613,9 +611,9 @@ where
         Workload::ThpUbmkShm { .. } => "ubmk-shm",
         Workload::Memcached { .. } => "memcached",
         Workload::Graph500 { .. } => "graph500",
-        Workload::Spec2017Xz { .. } => "xz_s",
-        Workload::Spec2017Mcf { .. } => "mcf_s",
-        Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
+        Workload::Spec2017Xz { .. } => "xz_s_base.markm-thp-m64",
+        Workload::Spec2017Mcf { .. } => "mcf_s_base.markm-thp-m64",
+        Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s_base.markm-thp-m64",
         Workload::Canneal { .. } => "canneal",
     };
 
