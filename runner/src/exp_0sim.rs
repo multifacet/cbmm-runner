@@ -32,20 +32,36 @@ pub const ZEROSIM_LAPIC_ADJUST: bool = true;
 pub struct ZeroSim;
 
 impl ZeroSim {
+    /// Checks if 0sim is even installed.
+    pub fn is_installed(shell: &SshShell) -> Result<bool, failure::Error> {
+        Ok(shell
+            .run(cmd!("sudo ls /proc/zerosim_drift_threshold"))
+            .is_ok())
+    }
+
     /// Set the drift threshold.
     pub fn threshold(shell: &SshShell, d: usize) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(cmd!("echo {} | sudo tee /proc/zerosim_drift_threshold", d))?;
         Ok(())
     }
 
     /// Set the multicore offsetting delay.
     pub fn delay(shell: &SshShell, delay: usize) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(cmd!("echo {} | sudo tee /proc/zerosim_delay", delay))?;
         Ok(())
     }
 
     /// Enable or disable multicore offsetting.
     pub fn multicore_offsetting(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(cmd!(
             "echo {} | sudo tee /proc/zerosim_multicore_sync",
             if on { "1" } else { "0" }
@@ -55,6 +71,9 @@ impl ZeroSim {
 
     /// Enable or disable skip_halt (you probably want it off).
     pub fn skip_halt(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(cmd!(
             "echo {} | sudo tee /proc/zerosim_skip_halt",
             if on { "3" } else { "0" }
@@ -64,6 +83,9 @@ impl ZeroSim {
 
     /// Enable or disable LAPIC adjustment (you probably want it on).
     pub fn lapic_adjust(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(cmd!(
             "echo {} | sudo tee /proc/zerosim_lapic_adjust",
             if on { 1 } else { 0 }
@@ -74,6 +96,9 @@ impl ZeroSim {
     /// Turn on or off 0sim TSC offsetting. Turning it off makes things run much faster, but gives up
     /// accuracy. If you are doing some sort of setup routine, it is worth it to turn off.
     pub fn tsc_offsetting(shell: &SshShell, enabled: bool) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(
             cmd!(
                 "echo {} | sudo tee /sys/module/kvm_intel/parameters/enable_tsc_offsetting",
@@ -86,6 +111,9 @@ impl ZeroSim {
 
     /// Trigger a guest TSC synchronization.
     pub fn sync_guest_tsc(shell: &SshShell) -> Result<(), failure::Error> {
+        if !Self::is_installed(shell)? {
+            return Ok(());
+        }
         shell.run(cmd!("echo 1 | sudo tee /proc/zerosim_sync_guest_tsc").use_bash())?;
         Ok(())
     }
@@ -119,7 +147,10 @@ impl ZeroSim {
         crate::service(shell, "ksm", ServiceAction::Disable)?;
         crate::service(shell, "ksmtuned", ServiceAction::Disable)?;
 
-        shell.run(cmd!("echo ztier | sudo tee /sys/module/zswap/parameters/zpool").use_bash())?;
+        if Self::is_installed(shell)? {
+            shell
+                .run(cmd!("echo ztier | sudo tee /sys/module/zswap/parameters/zpool").use_bash())?;
+        }
         shell.run(cmd!("echo y | sudo tee /sys/module/zswap/parameters/enabled").use_bash())?;
         shell.run(cmd!("sudo tail /sys/module/zswap/parameters/*").use_bash())?;
 
