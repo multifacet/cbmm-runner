@@ -656,9 +656,14 @@ where
 
         // We need to truncate the name to 15 characters because Linux will truncate current->comm
         // to 15 characters. In order for them to match we truncate it here...
+        let proc_name_trunc = if proc_name.len() > 15 {
+            &proc_name[..15]
+        } else {
+            &proc_name
+        };
         ushell.run(cmd!(
             "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
-            &proc_name[..15]
+            proc_name_trunc
         ))?;
     }
 
