@@ -66,11 +66,31 @@ enum Workload {
     Canneal,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 enum ThpHugeAddrMode {
-    Equal,
-    Greater,
-    Less,
+    Equal {
+        addr: u64,
+    },
+    Greater {
+        addr: u64,
+    },
+    Less {
+        addr: u64,
+    },
+
+    /// A list of ranges as tuples: (start, end), where start is inclusive and end is exclusive.
+    Ranges {
+        ranges: Vec<(u64, u64)>,
+    },
+}
+
+#[derive(Clone, Debug)]
+enum ThpHugeAddrProcess {
+    /// Use for processes that have already started.
+    Pid(usize),
+
+    /// Use for processes that have not started yet.
+    Command(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
@@ -95,9 +115,7 @@ struct Config {
     transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
     #[name(self.transparent_hugepage_huge_addr.is_some())]
-    transparent_hugepage_huge_addr: Option<u64>,
-    #[name(self.transparent_hugepage_huge_addr.is_some())]
-    transparent_hugepage_huge_addr_mode: ThpHugeAddrMode,
+    transparent_hugepage_huge_addr: Option<ThpHugeAddrMode>,
 
     mmstats: bool,
     meminfo_periodic: bool,
@@ -205,12 +223,16 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              "Disable THP completely.")
             (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {is_huge_page_addr_hex}
              "Set the THP huge_addr setting to the given value and otherwise disable THP.")
+            (@arg THP_HUGE_ADDR_RANGES: --thp_huge_addr_ranges {is_huge_page_addr_hex} ...
+             "Make all pages in the given range(s) huge. Pass values as space-separated integers \
+              in hex a decimal: START END START END ..., where START is inclusive, and END is \
+              exclusive.")
         )
         (@arg THP_HUGE_ADDR_LE: --thp_huge_addr_le
             requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_GE]
             "Make all pages <=THP_HUGE_ADDR huge.")
         (@arg THP_HUGE_ADDR_GE: --thp_huge_addr_ge
-            requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_GE]
+            requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_LE]
             "Make all pages >=THP_HUGE_ADDR huge.")
         (@arg PERF_RECORD: --perf_record
          "Measure the workload using perf record.")
@@ -397,12 +419,42 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let transparent_hugepage_huge_addr = sub_m
         .value_of("THP_HUGE_ADDR")
         .map(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap());
-    let transparent_hugepage_huge_addr_mode = if sub_m.is_present("THP_HUGE_ADDR_LE") {
-        ThpHugeAddrMode::Less
+    let transparent_hugepage_huge_addr = if sub_m.is_present("THP_HUGE_ADDR_LE") {
+        Some(ThpHugeAddrMode::Less {
+            addr: transparent_hugepage_huge_addr.unwrap(),
+        })
     } else if sub_m.is_present("THP_HUGE_ADDR_GE") {
-        ThpHugeAddrMode::Greater
+        Some(ThpHugeAddrMode::Greater {
+            addr: transparent_hugepage_huge_addr.unwrap(),
+        })
+    } else if let Some(ranges) = sub_m.values_of("THP_HUGE_ADDR_RANGES") {
+        let ranges = ranges.collect::<Vec<_>>();
+
+        // Do some sanity checking.
+        if ranges.len() % 2 != 0 {
+            panic!("Odd number of end points for THP_HUGE_ADDR_RANGES. Missing an endpoint.");
+        }
+
+        let ranges = ranges
+            .chunks_exact(2)
+            .map(|c| {
+                let mut c = c
+                    .into_iter()
+                    .map(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap());
+                let first = c.next().unwrap();
+                let second = c.next().unwrap();
+                assert!(first < second, "Range {} {} is backwards.", first, second);
+                (first, second)
+            })
+            .collect();
+
+        Some(ThpHugeAddrMode::Ranges { ranges })
+    } else if sub_m.is_present("THP_HUGE_ADDR") {
+        Some(ThpHugeAddrMode::Equal {
+            addr: transparent_hugepage_huge_addr.unwrap(),
+        })
     } else {
-        ThpHugeAddrMode::Equal
+        None
     };
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
@@ -426,7 +478,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
         transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
         transparent_hugepage_huge_addr,
-        transparent_hugepage_huge_addr_mode,
 
         mmstats,
         meminfo_periodic,
@@ -639,21 +690,7 @@ where
     }
 
     // Set `huge_addr` if needed.
-    if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
-        let mode = match cfg.transparent_hugepage_huge_addr_mode {
-            ThpHugeAddrMode::Equal => 0,
-            ThpHugeAddrMode::Less => 1,
-            ThpHugeAddrMode::Greater => 2,
-        };
-        ushell.run(cmd!(
-            "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
-            mode
-        ))?;
-        ushell.run(cmd!(
-            "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
-            huge_addr
-        ))?;
-
+    if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
         // We need to truncate the name to 15 characters because Linux will truncate current->comm
         // to 15 characters. In order for them to match we truncate it here...
         let proc_name_trunc = if proc_name.len() > 15 {
@@ -661,10 +698,11 @@ where
         } else {
             &proc_name
         };
-        ushell.run(cmd!(
-            "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
-            proc_name_trunc
-        ))?;
+        turn_on_huge_addr(
+            &ushell,
+            huge_addr.clone(),
+            ThpHugeAddrProcess::Command(proc_name_trunc.into()),
+        )?;
     }
 
     // Run the workload.
@@ -856,15 +894,17 @@ where
                         },
                         server_start_cb: |shell| {
                             // Set `huge_addr` if needed.
-                            if let Some(huge_addr) = cfg.transparent_hugepage_huge_addr {
-                                let mode = match cfg.transparent_hugepage_huge_addr_mode {
-                                    ThpHugeAddrMode::Equal => 0,
-                                    ThpHugeAddrMode::Less => 1,
-                                    ThpHugeAddrMode::Greater => 2,
-                                };
-                                shell.run(cmd!("echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode", mode))?;
-                                shell.run(cmd!("echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr", huge_addr))?;
-                                shell.run(cmd!("echo `pgrep memcached` | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_pid"))?;
+                            if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
+                                let memcached_pid = shell
+                                    .run(cmd!("pgrep memcached"))?
+                                    .stdout
+                                    .as_str()
+                                    .parse::<usize>()?;
+                                turn_on_huge_addr(
+                                    shell,
+                                    huge_addr.clone(),
+                                    ThpHugeAddrProcess::Pid(memcached_pid),
+                                )?;
                             }
                             Ok(())
                         },
@@ -1023,6 +1063,65 @@ where
         "RESULTS: {}",
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)
     );
+
+    Ok(())
+}
+
+fn turn_on_huge_addr(
+    shell: &SshShell,
+    huge_addr: ThpHugeAddrMode,
+    process: ThpHugeAddrProcess,
+) -> Result<(), failure::Error> {
+    let mode = match huge_addr {
+        ThpHugeAddrMode::Equal { .. } => 0,
+        ThpHugeAddrMode::Less { .. } => 1,
+        ThpHugeAddrMode::Greater { .. } => 2,
+        ThpHugeAddrMode::Ranges { .. } => 3,
+    };
+
+    shell.run(cmd!(
+        "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
+        mode
+    ))?;
+
+    match huge_addr {
+        ThpHugeAddrMode::Equal { addr }
+        | ThpHugeAddrMode::Less { addr }
+        | ThpHugeAddrMode::Greater { addr } => {
+            shell.run(cmd!(
+                "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+                addr
+            ))?;
+        }
+        ThpHugeAddrMode::Ranges { ranges } => {
+            let addrs = ranges
+                .into_iter()
+                .map(|(start, end)| format!("{} {}", start, end))
+                .collect::<Vec<_>>()
+                .join(";");
+            shell.run(cmd!(
+                "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+                addrs
+            ))?;
+        }
+    }
+
+    match process {
+        ThpHugeAddrProcess::Pid(pid) => {
+            shell.run(cmd!(
+                "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_pid",
+                pid
+            ))?;
+        }
+        ThpHugeAddrProcess::Command(name) => {
+            shell.run(cmd!(
+                "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
+                name
+            ))?;
+        }
+    }
+
+    // TODO
 
     Ok(())
 }
