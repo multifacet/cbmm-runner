@@ -223,7 +223,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              "Disable THP completely.")
             (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {is_huge_page_addr_hex}
              "Set the THP huge_addr setting to the given value and otherwise disable THP.")
-            (@arg THP_HUGE_ADDR_RANGES: --thp_huge_addr_ranges {is_huge_page_addr_hex} ...
+            (@arg THP_HUGE_ADDR_RANGES: --thp_huge_addr_ranges
+             {is_huge_page_addr_hex} +takes_value ...
              "Make all pages in the given range(s) huge. Pass values as space-separated integers \
               in hex a decimal: START END START END ..., where START is inclusive, and END is \
               exclusive.")
