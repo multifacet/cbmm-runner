@@ -108,13 +108,17 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
         /// should ensure that the setting is registered.
         fn append_setting(string: &mut String, setting: &str, val: &str) {
             // sanitize
-            let val = val.trim();
-            let val = val.replace(" ", "_");
-            let val = val.replace("\"", "_");
-            let val = val.replace("\'", "_");
-            let val = val.replace(",", "_");
-            let val = val.replace("[", "_");
-            let val = val.replace("]", "_");
+            let val = val
+                .trim()
+                .replace(" ", "_")
+                .replace("\"", "_")
+                .replace("\'", "_")
+                .replace(",", "_")
+                .replace("[", "_")
+                .replace("]", "_")
+                .replace("}", "_")
+                .replace("{", "_")
+                .replace(":", "_");
 
             string.push_str(setting);
             string.push_str(&val);
