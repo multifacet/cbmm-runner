@@ -3,6 +3,7 @@
 //! as the home directory of the given user. It also allows choosing the git branch to compile the
 //! kernel from.
 
+use std::path::PathBuf;
 use std::process::Command;
 
 use clap::clap_app;
@@ -15,8 +16,8 @@ use runner::{
     exp_0sim::*,
     get_user_home_dir,
     paths::{setup00000::*, *},
-    with_shell, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login,
-    ServiceAction,
+    rsync_to_remote, with_shell, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
+    Login, ServiceAction,
 };
 
 use spurs::{cmd, Execute, SshShell};
@@ -81,6 +82,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
 
         (@arg HOST_BMKS: --host_bmks
          "(Optional) If passed, build host benchmarks. This also makes them available to the guest.")
+        (@arg SPEC_2017: --spec_2017 +takes_value
+         "(Optional) If passed, setup and build SPEC 2017 on the remote machine (on the host only). \
+          Because SPEC 2017 is not free, you need to pass runner a path to the SPEC 2017 ISO on the \
+          driver machine. The ISO will be copied to the remote machine, mounted, and installed there.")
 
         (@arg HOST_PREP: --prepare_host
          "(Optional) Prepare the host for initializing the VM.")
@@ -148,6 +153,8 @@ where
 
     /// Should we build host benchmarks?
     host_bmks: bool,
+    /// Should we install SPEC 2017? If so, what is the ISO path?
+    spec_2017: Option<&'a str>,
 
     /// Should we prepare the host for initing the VM? This needs to be done only once?
     host_prep: bool,
@@ -200,6 +207,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let commitish = sub_m.value_of("HOST_KERNEL");
 
     let host_bmks = sub_m.is_present("HOST_BMKS");
+    let spec_2017 = sub_m.value_of("SPEC_2017");
 
     let host_prep = sub_m.is_present("HOST_PREP");
 
@@ -231,6 +239,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         clone_wkspc,
         secret,
         host_bmks,
+        spec_2017,
         host_prep,
         disable_ept,
         destroy_existing_vm,
@@ -273,6 +282,9 @@ where
     }
     if cfg.host_bmks {
         build_host_benchmarks(&ushell, &cfg)?;
+    }
+    if let Some(iso_path) = cfg.spec_2017 {
+        install_spec_2017(&ushell, &cfg, iso_path)?;
     }
 
     // Prepare to install VM
@@ -827,8 +839,8 @@ fn install_rust(shell: &SshShell) -> Result<(), failure::Error> {
     Ok(())
 }
 
-/// Build benchmarks on the host. This requires rust to be installed. Building the on the host also
-/// makes them available to the guest, since they share the directory.
+/// Build benchmarks on the host. This requires rust to be installed. Building them on the host
+/// also makes them available to the guest, since they share the directory.
 fn build_host_benchmarks<A>(
     ushell: &SshShell,
     _cfg: &SetupConfig<'_, A>,
@@ -981,6 +993,48 @@ where
     ushell.run(cmd!("./parsecmgmt -a build -p canneal").cwd("parsec-3.0/bin/"))?;
 
     Ok(())
+}
+
+/// Install SPEC 2017 on the remote host machine. The installed benchmarks are not available to
+/// the guest.
+///
+/// Because SPEC is not free and requires a license, we can't just download it from the internet
+/// somewhere. Instead, the user must provide us with a copy to install by pointing us to an ISO
+/// on the driver machine somewhere.
+fn install_spec_2017<A>(
+    ushell: &SshShell,
+    cfg: &SetupConfig<'_, A>,
+    iso_path: &str,
+) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+{
+    let iso_fname = PathBuf::from(iso_path);
+    let iso_fname = if let Some(iso_fname) = iso_fname.file_name().and_then(|f| f.to_str()) {
+        iso_fname
+    } else {
+        failure::bail!("SPEC ISO is not a file name: {}", iso_path);
+    };
+
+    // Copy the ISO to the remote machine.
+    let user_home = &get_user_home_dir(&ushell)?;
+    rsync_to_remote(&cfg.login, iso_path, user_home)?;
+
+    // Mount the ISO and execute the install script.
+    const TMP_ISO_MOUNT: &str = "/tmp/spec_mnt";
+    ushell.run(cmd!("sudo umount {}", TMP_ISO_MOUNT).allow_error())?;
+    ushell.run(cmd!("mkdir -p {}", TMP_ISO_MOUNT))?;
+    ushell.run(cmd!(
+        "sudo mount -o loop {}/{} {}",
+        user_home,
+        iso_fname,
+        TMP_ISO_MOUNT
+    ))?;
+
+    // TODO: Execute the installation script.
+
+    // TODO: Copy the SPEC config to the installation and build the benchmarks.
+    todo!()
 }
 
 /// Prepare the host to install the VM. This involves rebooting the machine.

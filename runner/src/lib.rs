@@ -21,6 +21,9 @@ pub mod exp_0sim;
 pub mod hadoop;
 pub mod workloads;
 
+use std::path::Path;
+use std::process::{Command, Stdio};
+
 use failure::ResultExt;
 
 use serde::{Deserialize, Serialize};
@@ -208,6 +211,41 @@ pub fn timings_str(timings: &[(&str, std::time::Duration)]) -> String {
         s.push_str(&format!("{}: {:?}\n", label, d));
     }
     s
+}
+
+/// Copy the given directory or files from this machine to the given remote at the given location.
+/// This uses rsync via SSH to copy with compression, which often leads to significant speedups.
+/// However, it will fail if the remote is not in known_hosts.
+pub fn rsync_to_remote<A, P>(login: &Login<A>, from: P, to: P) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+    P: AsRef<Path>,
+{
+    println!(
+        "Using rsync to copy files. If this fails, make sure your host is in \
+         known_hosts and retry."
+    );
+
+    let status = Command::new("rsync")
+        .arg("-vvzP")
+        .args(&["-e", "ssh -o StrictHostKeyChecking=yes"])
+        .arg(to.as_ref().as_os_str())
+        .arg(&format!(
+            "{}@{}:{}",
+            login.username,
+            login.host.to_string(),
+            from.as_ref().display()
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .status()?;
+
+    // If failure, exit with an Err(..).
+    if !status.success() {
+        failure::bail!("rsync failed. Exit code: {:?}", status.code());
+    }
+
+    Ok(())
 }
 
 /// Clone the 0sim-workspace and checkout the given submodules.
