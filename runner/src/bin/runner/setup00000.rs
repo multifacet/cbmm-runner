@@ -242,19 +242,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         centos7,
     };
 
-    validate_options(&cfg)?;
-
     run_inner(cfg)
-}
-
-/// Check that the set of flags passed satisfies dependencies and is non-contradictory.
-fn validate_options<A>(cfg: &SetupConfig<'_, A>) -> Result<(), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    assert!(cfg.mapper_device.is_none() || cfg.swap_devices.is_none());
-
-    Ok(())
 }
 
 /// Drives the actual setup, calling the other routines in this file.
