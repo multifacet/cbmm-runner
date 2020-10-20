@@ -22,7 +22,7 @@ pub mod hadoop;
 pub mod workloads;
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use failure::ResultExt;
 
@@ -232,19 +232,20 @@ where
          known_hosts and retry."
     );
 
-    let status = Command::new("rsync")
-        .arg("-vvzP")
+    let mut cmd = Command::new("rsync");
+    cmd.arg("-vvzP")
         .args(&["-e", "ssh -o StrictHostKeyChecking=yes"])
-        .arg(to.as_ref().as_os_str())
+        .arg(from.as_ref().as_os_str())
         .arg(&format!(
             "{}@{}:{}",
             login.username,
-            login.host.to_string(),
-            from.as_ref().display()
-        ))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .status()?;
+            login.host.to_socket_addrs()?.next().unwrap().ip(),
+            to.as_ref().display()
+        ));
+
+    println!("{:?}", cmd);
+
+    let status = cmd.status()?;
 
     // If failure, exit with an Err(..).
     if !status.success() {
