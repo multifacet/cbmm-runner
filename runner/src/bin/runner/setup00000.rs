@@ -1031,10 +1031,53 @@ where
         TMP_ISO_MOUNT
     ))?;
 
-    // TODO: Execute the installation script.
+    // Execute the installation script.
+    let spec_dir = dir!(user_home, RESEARCH_WORKSPACE_PATH, SPEC_2017_DIR);
+    ushell.run(cmd!("./install.sh -f -d {}", spec_dir).cwd(TMP_ISO_MOUNT))?;
 
-    // TODO: Copy the SPEC config to the installation and build the benchmarks.
-    todo!()
+    // Copy the SPEC config to the installation and build the benchmarks.
+    //
+    // NOTE: this only installs SPEC INT SPEED 2017.
+    ushell.run(cmd!("cp {} config/", SPEC_2017_CONF).cwd(&spec_dir))?;
+    ushell.run(
+        cmd!(
+            "source shrc && runcpu --config={} --fake intspeed",
+            SPEC_2017_CONF
+        )
+        .cwd(&spec_dir),
+    )?;
+    ushell.run(
+        cmd!(
+            "source shrc && runcpu --config={} --action=build intspeed",
+            SPEC_2017_CONF
+        )
+        .cwd(&spec_dir),
+    )?;
+
+    const SPEC_WORKLOADS: &[&str] = &[
+        "perlbench_s",
+        "gcc_s",
+        "xalancbmk_s",
+        "x264_s",
+        "deepsjeng_s",
+        "leela_s",
+        "exchange2_s",
+        "xz_s",
+        "specrand_is",
+    ];
+
+    for bmk in SPEC_WORKLOADS.iter() {
+        ushell.run(
+            cmd!(
+                "cp benchspec/CPU/*{bmk}/build/build_base_markm-thp-m64.0000/{bmk} \
+                benchspec/CPU/*{bmk}/run/run_base_refspeed_markm-thp-m64.0000/",
+                bmk = bmk,
+            )
+            .cwd(&spec_dir),
+        )?;
+    }
+
+    Ok(())
 }
 
 /// Prepare the host to install the VM. This involves rebooting the machine.

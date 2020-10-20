@@ -980,6 +980,7 @@ where
 
             run_hacky_spec17(
                 &ushell,
+                &dir!(user_home, RESEARCH_WORKSPACE_PATH, SPEC_2017_DIR),
                 wkload,
                 if cfg.mmu_overhead {
                     Some((&mmu_overhead_file, &cfg.perf_counters))

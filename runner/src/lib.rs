@@ -157,6 +157,12 @@ pub mod paths {
     /// Path to redis.conf.
     pub const REDIS_CONF: &str = "bmks/redis.conf";
 
+    /// Path to SPEC 2017 benchmark directory.
+    pub const SPEC_2017_DIR: &str = "bmks/spec2017";
+
+    /// Path to SPEC 2017 config.
+    pub const SPEC_2017_CONF: &str = "spec-linux-x86.cfg";
+
     /// Path to benchmarks directory.
     pub const ZEROSIM_BENCHMARKS_DIR: &str = "bmks";
 

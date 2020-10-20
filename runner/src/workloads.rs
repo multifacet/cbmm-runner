@@ -1229,36 +1229,30 @@ pub enum Spec2017Workload {
 
 pub fn run_hacky_spec17(
     shell: &SshShell,
+    spec_dir: &str,
     workload: Spec2017Workload,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     // The spec workloads default to 4 threads, so we require 4 cores.
     pin_cores: [usize; 4],
 ) -> Result<(), failure::Error> {
-    const MCF_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
-                            CPU/605.mcf_s/run/run_base_refspeed_markm-thp-m64.0000";
-
-    const XZ_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
-                           CPU/657.xz_s/run/run_base_refspeed_markm-thp-m64.0000";
-
-    const XALANCBMK_PATH: &str = "/proj/superpages-PG0/images/spec2017/benchspec/\
-                                  CPU/623.xalancbmk_s/run/\
-                                  run_base_refspeed_markm-thp-m64.0000";
-
-    const MCF_CMD: &str = "./mcf_s_base.markm-thp-m64 inp.in";
-
-    const XZ_CMD: &str = "./xz_s_base.markm-thp-m64 cpu2006docs.tar.xz 6643 \
+    const MCF_CMD: &str = "./mcf_s inp.in";
+    const XZ_CMD: &str = "./xz_s cpu2006docs.tar.xz 6643 \
                           055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c\
                           774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa\
                           5ad2c04fbc447549c2810fae 1036078272 1111795472 4";
+    const XALANCBMK_CMD: &str = "./xalancbmk_s -v t5.xml xalanc.xsl";
 
-    const XALANCBMK_CMD: &str = "./xalancbmk_s_base.markm-thp-m64 -v t5.xml xalanc.xsl";
-
-    let (cmd, bmk_dir) = match workload {
-        Spec2017Workload::Mcf => (MCF_CMD, MCF_PATH),
-        Spec2017Workload::Xz => (XZ_CMD, XZ_PATH),
-        Spec2017Workload::Xalancbmk => (XALANCBMK_CMD, XALANCBMK_PATH),
+    let (cmd, bmk) = match workload {
+        Spec2017Workload::Mcf => (MCF_CMD, "mcf_s"),
+        Spec2017Workload::Xz => (XZ_CMD, "xz_s"),
+        Spec2017Workload::Xalancbmk => (XALANCBMK_CMD, "xalancbmk_s"),
     };
+
+    let bmk_dir = format!(
+        "{}/benchspec/CPU/*{}/run/run_base_refspeed_markm-thp-m64.0000",
+        spec_dir, bmk
+    );
 
     let pin_cores = pin_cores
         .iter()
