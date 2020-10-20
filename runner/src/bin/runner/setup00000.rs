@@ -1056,7 +1056,10 @@ where
 
     const SPEC_WORKLOADS: &[&str] = &[
         "perlbench_s",
-        "gcc_s",
+        // FIXME: For gcc alone, the binary name is `sgcc` instead of `gcc_s`?! So we just exclude
+        // it. A more thorough script would look at the runcpu log and figure out the appropriate
+        // name.
+        // "gcc_s",
         "xalancbmk_s",
         "x264_s",
         "deepsjeng_s",
