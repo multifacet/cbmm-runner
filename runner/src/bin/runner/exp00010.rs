@@ -413,6 +413,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         ("never".into(), "never".into(), 0)
     } else if sub_m.is_present("THP_HUGE_ADDR") {
         ("never".into(), "never".into(), 0)
+    } else if sub_m.is_present("THP_HUGE_ADDR_RANGES") {
+        ("never".into(), "never".into(), 0)
     } else {
         ("always".into(), "always".into(), 1)
     };
