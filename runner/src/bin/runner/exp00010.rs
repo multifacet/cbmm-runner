@@ -665,9 +665,9 @@ where
         Workload::ThpUbmkShm { .. } => "ubmk-shm",
         Workload::Memcached { .. } => "memcached",
         Workload::Graph500 { .. } => "graph500",
-        Workload::Spec2017Xz { .. } => "xz_s_base.markm-thp-m64",
-        Workload::Spec2017Mcf { .. } => "mcf_s_base.markm-thp-m64",
-        Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s_base.markm-thp-m64",
+        Workload::Spec2017Xz { .. } => "xz_s",
+        Workload::Spec2017Mcf { .. } => "mcf_s",
+        Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
         Workload::Canneal { .. } => "canneal",
     };
 
