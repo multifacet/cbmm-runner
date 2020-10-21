@@ -1066,6 +1066,7 @@ where
         "leela_s",
         "exchange2_s",
         "xz_s",
+        "mcf_s",
         "specrand_is",
     ];
 
