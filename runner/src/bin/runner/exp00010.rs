@@ -377,22 +377,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let memtrace = memtrace::parse_cli_options(sub_m);
     let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
     let perf_record = sub_m.is_present("PERF_RECORD");
-    let perf_counters: Vec<String> = sub_m.values_of("PERF_COUNTER").map_or_else(
-        || {
-            vec![
-                "dtlb_load_misses.walk_active".into(),
-                "dtlb_store_misses.walk_active".into(),
-                "dtlb_load_misses.miss_causes_a_walk".into(),
-                "dtlb_store_misses.miss_causes_a_walk".into(),
-                "cpu_clk_unhalted.thread_any".into(),
-                "inst_retired.any".into(),
-                "faults".into(),
-                "migrations".into(),
-                "cs".into(),
-            ]
-        },
-        |counters| counters.map(Into::into).collect(),
-    );
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
@@ -464,6 +448,30 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let local_git_hash = runner::local_research_workspace_git_hash()?;
     let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
     let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
+
+    let (load_misses, store_misses) = {
+        let suffix = runner::page_walk_perf_counter_suffix(&ushell)?;
+        (
+            format!("dtlb_load_misses.{}", suffix),
+            format!("dtlb_store_misses.{}", suffix),
+        )
+    };
+    let perf_counters: Vec<String> = sub_m.values_of("PERF_COUNTER").map_or_else(
+        || {
+            vec![
+                load_misses,
+                store_misses,
+                "dtlb_load_misses.miss_causes_a_walk".into(),
+                "dtlb_store_misses.miss_causes_a_walk".into(),
+                "cpu_clk_unhalted.thread_any".into(),
+                "inst_retired.any".into(),
+                "faults".into(),
+                "migrations".into(),
+                "cs".into(),
+            ]
+        },
+        |counters| counters.map(Into::into).collect(),
+    );
 
     let cfg = Config {
         exp: (10, "bare_metal".into(), workload_name.into()),
