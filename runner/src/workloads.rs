@@ -1269,12 +1269,12 @@ pub fn run_hacky_spec17(
                 "sudo taskset -c {} \
                 perf stat \
                 -e {} \
-                -- {} 2>&1 | \
-                tee {}",
+                -o {} \
+                -- {}",
                 pin_cores,
                 counters.join(" -e "),
+                mmu_overhead_file,
                 cmd,
-                mmu_overhead_file
             )
             .cwd(bmk_dir),
         )?;
