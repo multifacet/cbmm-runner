@@ -1030,7 +1030,7 @@ pub fn gen_standard_host_output(out_file: &str, shell: &SshShell) -> Result<(), 
 pub fn page_walk_perf_counter_suffix(shell: &SshShell) -> Result<String, failure::Error> {
     let output = shell
         .run(cmd!(
-            "sudo perf list | grep -o walk_active || echo walk_duration"
+            "sudo perf list | grep -o walk_active | uniq || echo walk_duration"
         ))?
         .stdout;
 
