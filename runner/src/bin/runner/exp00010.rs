@@ -1112,7 +1112,7 @@ fn turn_on_huge_addr(
                 .collect::<Vec<_>>()
                 .join(";");
             shell.run(cmd!(
-                "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+                "echo \"{}\" | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
                 addrs
             ))?;
         }
