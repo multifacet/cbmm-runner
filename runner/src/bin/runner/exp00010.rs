@@ -19,8 +19,8 @@ use runner::{
         run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
         run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop,
         run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
-        MemcachedWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx, TimeMmapTouchConfig,
-        TimeMmapTouchPattern,
+        CannealWorkload, MemcachedWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -63,7 +63,9 @@ enum Workload {
     Spec2017Mcf,
     Spec2017Xalancbmk,
     Spec2017Xz,
-    Canneal,
+    Canneal {
+        workload: CannealWorkload,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -208,6 +210,16 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@subcommand canneal =>
             (about: "Run the canneal workload.")
+            (@group CANNEAL_WORKLOAD =>
+                (@arg SMALL: --small
+                 "Use the small workload.")
+                (@arg MEDIUM: --medium
+                 "Use the medium workload.")
+                (@arg LARGE: --large
+                 "Use the large workload.")
+                (@arg NATIVE: --native
+                 "Use the native workload (default).")
+             )
         )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
@@ -365,7 +377,19 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             (wk, "hacky_spec17", 0, 0, None)
         }
 
-        ("canneal", Some(_)) => (Workload::Canneal, "canneal", 0, 0, None),
+        ("canneal", Some(sub_m)) => {
+            let workload = if sub_m.is_present("SMALL") {
+                CannealWorkload::Small
+            } else if sub_m.is_present("MEDIUM") {
+                CannealWorkload::Medium
+            } else if sub_m.is_present("LARGE") {
+                CannealWorkload::Large
+            } else {
+                CannealWorkload::Native
+            };
+
+            (Workload::Canneal{ workload }, "canneal", 0, 0, None)
+        }
 
         _ => unreachable!(),
     };
@@ -1006,9 +1030,10 @@ where
             )?;
         }
 
-        Workload::Canneal => {
+        Workload::Canneal { workload } => {
             run_canneal(
                 &ushell,
+                workload,
                 if cfg.mmu_overhead {
                     Some((&mmu_overhead_file, &cfg.perf_counters))
                 } else {

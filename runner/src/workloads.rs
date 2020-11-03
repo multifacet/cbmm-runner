@@ -1299,20 +1299,34 @@ pub fn run_hacky_spec17(
     Ok(())
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum CannealWorkload {
+    Small,
+    Medium,
+    Large,
+    Native,
+}
+
 pub fn run_canneal(
     shell: &SshShell,
+    workload: CannealWorkload,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
     const CANNEAL_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/";
-    const CANNEAL_CMD: &str = "./canneal 1 15000 2000 2500000.nets 6000";
+    const CANNEAL_CMD: &str = "./canneal 1 15000 2000 input.nets 6000";
     const NET_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inputs/";
-    const NET_NAME: &str = "input_native.tar";
 
     // Extract the input file
-    shell.run(cmd!("tar -xvf {}", NET_NAME).cwd(NET_PATH))?;
-    shell.run(cmd!("mv {}/*.nets {}", NET_PATH, CANNEAL_PATH))?;
+    let input_file = match workload {
+        CannealWorkload::Small => "input_simsmall.tar",
+        CannealWorkload::Medium => "input_simmedium.tar",
+        CannealWorkload::Large => "input_simlarge.tar",
+        CannealWorkload::Native => "input_native.tar",
+    };
+    shell.run(cmd!("tar -xvf {}", input_file).cwd(NET_PATH))?;
+    shell.run(cmd!("mv {}/*.nets {}/input.nets", NET_PATH, CANNEAL_PATH))?;
 
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
