@@ -1305,6 +1305,7 @@ pub enum CannealWorkload {
     Medium,
     Large,
     Native,
+    Rand { size: usize },
 }
 
 pub fn run_canneal(
@@ -1319,14 +1320,23 @@ pub fn run_canneal(
     const NET_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inputs/";
 
     // Extract the input file
-    let input_file = match workload {
-        CannealWorkload::Small => "input_simsmall.tar",
-        CannealWorkload::Medium => "input_simmedium.tar",
-        CannealWorkload::Large => "input_simlarge.tar",
-        CannealWorkload::Native => "input_native.tar",
-    };
-    shell.run(cmd!("tar -xvf {}", input_file).cwd(NET_PATH))?;
-    shell.run(cmd!("mv {}/*.nets {}/input.nets", NET_PATH, CANNEAL_PATH))?;
+    if let CannealWorkload::Rand { size } = workload {
+        shell.run(cmd!(
+            "~/0sim-workspace/bmks/canneal/rand_canneal_input.py {} > {}/input.nets",
+            size,
+            CANNEAL_PATH
+        ))?;
+    } else {
+        let input_file = match workload {
+            CannealWorkload::Small => "input_simsmall.tar",
+            CannealWorkload::Medium => "input_simmedium.tar",
+            CannealWorkload::Large => "input_simlarge.tar",
+            CannealWorkload::Native => "input_native.tar",
+            _ => "error",
+        };
+        shell.run(cmd!("tar -xvf {}", input_file).cwd(NET_PATH))?;
+        shell.run(cmd!("mv {}/*.nets {}/input.nets", NET_PATH, CANNEAL_PATH))?;
+    }
 
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(

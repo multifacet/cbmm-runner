@@ -219,6 +219,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
                  "Use the large workload.")
                 (@arg NATIVE: --native
                  "Use the native workload (default).")
+                (@arg RAND: --rand +takes_value {validator::is::<usize>}
+                 "Generate a random workload with a specified number of nets.")
              )
         )
         (@arg EAGER: --eager
@@ -384,6 +386,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 CannealWorkload::Medium
             } else if sub_m.is_present("LARGE") {
                 CannealWorkload::Large
+            } else if sub_m.is_present("RAND") {
+                let size = sub_m.value_of("RAND").unwrap().parse::<usize>().unwrap();
+                CannealWorkload::Rand { size }
             } else {
                 CannealWorkload::Native
             };
