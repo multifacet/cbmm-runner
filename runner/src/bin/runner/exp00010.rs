@@ -222,6 +222,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
                 (@arg RAND: --rand +takes_value {validator::is::<usize>}
                  "Generate a random workload with a specified number of nets.")
              )
+             (@group RAND_DIST =>
+                (@arg DIST_UNIFORM: --dist_uniform requires[RAND]
+                 "Use a uniform distribution to generate the canneal input file.")
+                (@arg DIST_NORMAL: --dist_normal requires[RAND]
+                 "Use a normal distribution to generate the canneal input file.")
+             )
+             (@arg RAND_NUM_INPUTS: --rand_num_inputs requires[RAND]
+              "Have a random number of inputs per net in the canneal input file.")
         )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
@@ -388,12 +396,26 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 CannealWorkload::Large
             } else if sub_m.is_present("RAND") {
                 let size = sub_m.value_of("RAND").unwrap().parse::<usize>().unwrap();
-                CannealWorkload::Rand { size }
+                let uniform_dist = if sub_m.is_present("DIST_NORMAL") {
+                    false
+                } else {
+                    true
+                };
+                let rand_num_inputs = if sub_m.is_present("RAND_NUM_INPUTS") {
+                    true
+                } else {
+                    false
+                };
+                CannealWorkload::Rand {
+                    size,
+                    uniform_dist,
+                    rand_num_inputs,
+                }
             } else {
                 CannealWorkload::Native
             };
 
-            (Workload::Canneal{ workload }, "canneal", 0, 0, None)
+            (Workload::Canneal { workload }, "canneal", 0, 0, None)
         }
 
         _ => unreachable!(),

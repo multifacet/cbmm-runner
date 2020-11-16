@@ -1305,7 +1305,11 @@ pub enum CannealWorkload {
     Medium,
     Large,
     Native,
-    Rand { size: usize },
+    Rand {
+        size: usize,
+        uniform_dist: bool,
+        rand_num_inputs: bool,
+    },
 }
 
 pub fn run_canneal(
@@ -1320,10 +1324,25 @@ pub fn run_canneal(
     const NET_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inputs/";
 
     // Extract the input file
-    if let CannealWorkload::Rand { size } = workload {
+    if let CannealWorkload::Rand {
+        size,
+        uniform_dist,
+        rand_num_inputs,
+    } = workload
+    {
         shell.run(cmd!(
-            "~/0sim-workspace/bmks/canneal/rand_canneal_input.py {} > {}/input.nets",
+            "~/0sim-workspace/bmks/canneal/rand_canneal_input.py {} {} {} > {}/input.nets",
             size,
+            if uniform_dist {
+                "--dist_uniform"
+            } else {
+                "--dist_normal"
+            },
+            if rand_num_inputs {
+                "--rand_num_inputs"
+            } else {
+                ""
+            },
             CANNEAL_PATH
         ))?;
     } else {
