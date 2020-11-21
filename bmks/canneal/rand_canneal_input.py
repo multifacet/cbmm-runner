@@ -23,10 +23,8 @@ def rand_input(uniform, num_nets):
         # Try to fit 3 standard deviations on either side of the mean
         stdev = int(num_nets / 6)
         rand = int(random.normalvariate(mean, stdev))
-        if rand > num_nets - 1:
-            rand = num_nets - 1
-        elif rand < 0:
-            rand = 0
+        while rand > num_nets - 1 or rand < 0:
+            rand = int(random.normalvariate(mean, stdev))
 
         return rand
 
