@@ -34,3 +34,6 @@
 [submodule "bmks/graph500"]
 	path = bmks/graph500
 	url = https://github.com/mark-i-m/graph500.git
+[submodule "bmks/BadgerTrap"]
+	path = bmks/BadgerTrap
+	url = https://github.com/mark-i-m/BadgerTrap.git
