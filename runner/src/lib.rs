@@ -151,6 +151,9 @@ pub mod paths {
     /// Path to the graph500 submodule
     pub const ZEROSIM_GRAPH500_SUBMODULE: &str = "bmks/graph500";
 
+    /// Path to the BadgerTrap submodule
+    pub const ZEROSIM_BADGERTRAP_SUBMODULE: &str = "bmks/BadgerTrap";
+
     /// Path to the thp-ubmk source directory.
     pub const THP_UBMK_DIR: &str = "bmks/thp-ubmk";
 

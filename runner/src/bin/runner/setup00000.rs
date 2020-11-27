@@ -712,6 +712,7 @@ where
             ZEROSIM_ZLIB_SUBMODULE,
             ZEROSIM_YCSB_SUBMODULE,
             ZEROSIM_GRAPH500_SUBMODULE,
+            ZEROSIM_BADGERTRAP_SUBMODULE,
         ];
 
         runner::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
@@ -991,6 +992,9 @@ where
     let user_home = &get_user_home_dir(&ushell)?;
     download_and_extract(ushell, Artifact::Parsec, user_home, None)?;
     ushell.run(cmd!("./parsecmgmt -a build -p canneal").cwd("parsec-3.0/bin/"))?;
+
+    // Build BadgerTrap client program.
+    ushell.run(cmd!("make").cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BADGERTRAP_SUBMODULE)))?;
 
     Ok(())
 }
