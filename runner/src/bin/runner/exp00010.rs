@@ -129,6 +129,7 @@ struct Config {
     perf_record: bool,
     perf_counters: Vec<String>,
     smaps_periodic: bool,
+    badger_trap: bool,
 
     username: String,
     host: String,
@@ -263,6 +264,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect the given counters instead of the default ones.")
         (@arg SMAPS_PERIODIC: --smaps_periodic
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
+        (@arg BADGER_TRAP: --badger_trap
+         "Use badger_trap to measure TLB misses.")
     };
 
     let app = damon::add_cli_options(app);
@@ -429,6 +432,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
     let perf_record = sub_m.is_present("PERF_RECORD");
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
+    let badger_trap = sub_m.is_present("BADGER_TRAP");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -551,6 +555,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_record,
         perf_counters,
         smaps_periodic,
+        badger_trap,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -654,6 +659,11 @@ where
         user_home,
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("mmu")
+    );
+    let badger_trap_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("bt")
     );
 
     let params = serde_json::to_string(&cfg)?;
@@ -765,6 +775,14 @@ where
             huge_addr.clone(),
             ThpHugeAddrProcess::Command(proc_name_trunc.into()),
         )?;
+    }
+
+    // Turn on BadgerTrap if needed
+    if cfg.badger_trap {
+        ushell.run(cmd!(
+            "~/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
+            proc_name
+        ))?;
     }
 
     // Run the workload.
@@ -1104,6 +1122,14 @@ where
                 "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
             ))?;
         })
+    }
+
+    // Extract relevant data from dmesg for BadgerTrap, if needed.
+    if cfg.badger_trap {
+        ushell.run(cmd!(
+            "dmesg | grep 'BadgerTrap:' | tee {}",
+            badger_trap_file
+        ))?;
     }
 
     ushell.run(cmd!("date"))?;
