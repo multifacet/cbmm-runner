@@ -18,8 +18,8 @@ use runner::{
     workloads::{
         run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
         run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop,
-        run_time_mmap_touch, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
-        CannealWorkload, MemcachedWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx,
+        run_time_mmap_touch, CannealWorkload, Damon, LocalityMemAccessConfig,
+        LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx,
         TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
@@ -130,6 +130,7 @@ struct Config {
     perf_counters: Vec<String>,
     smaps_periodic: bool,
     badger_trap: bool,
+    kbadgerd: bool,
 
     username: String,
     host: String,
@@ -266,6 +267,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
         (@arg BADGER_TRAP: --badger_trap
          "Use badger_trap to measure TLB misses.")
+        (@arg KBADGERD: --kbadgerd
+         "Use kbadgerd to measure TLB misses.")
     };
 
     let app = damon::add_cli_options(app);
@@ -433,6 +436,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let perf_record = sub_m.is_present("PERF_RECORD");
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
     let badger_trap = sub_m.is_present("BADGER_TRAP");
+    let kbadgerd = sub_m.is_present("KBADGERD");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -556,6 +560,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_counters,
         smaps_periodic,
         badger_trap,
+        kbadgerd,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -785,6 +790,11 @@ where
         ))?;
     }
 
+    // Turn on kbadgerd if needed.
+    if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
+        unimplemented!("--kbadgerd");
+    }
+
     // Run the workload.
     match cfg.workload {
         Workload::TimeLoop { n } => {
@@ -985,6 +995,18 @@ where
                                     huge_addr.clone(),
                                     ThpHugeAddrProcess::Pid(memcached_pid),
                                 )?;
+                            }
+                            // Turn on kbadgerd if needed.
+                            if cfg.kbadgerd {
+                                let memcached_pid = shell
+                                    .run(cmd!("pgrep memcached"))?
+                                    .stdout
+                                    .as_str()
+                                    .parse::<usize>()?;
+                                ushell.run(cmd!(
+                                    "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                                    memcached_pid
+                                ))?;
                             }
                             Ok(())
                         },
