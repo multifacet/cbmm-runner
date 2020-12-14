@@ -794,6 +794,9 @@ where
     if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
         unimplemented!("--kbadgerd");
     }
+    if cfg.kbadgerd {
+        ushell.run(cmd!("sudo modprobe kbadgerd"))?;
+    }
 
     // Run the workload.
     match cfg.workload {
