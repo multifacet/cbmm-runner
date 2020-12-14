@@ -1154,6 +1154,11 @@ where
         ))?;
     }
 
+    if cfg.kbadgerd {
+        ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
+        ushell.run(cmd!("dmesg | grep 'kbadgerd:' | tee {}", badger_trap_file))?;
+    }
+
     ushell.run(cmd!("date"))?;
 
     ushell.run(cmd!("free -h"))?;
