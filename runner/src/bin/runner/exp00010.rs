@@ -989,6 +989,7 @@ where
                                     .run(cmd!("pgrep memcached"))?
                                     .stdout
                                     .as_str()
+                                    .trim()
                                     .parse::<usize>()?;
                                 turn_on_huge_addr(
                                     shell,
@@ -1002,6 +1003,7 @@ where
                                     .run(cmd!("pgrep memcached"))?
                                     .stdout
                                     .as_str()
+                                    .trim()
                                     .parse::<usize>()?;
                                 ushell.run(cmd!(
                                     "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
