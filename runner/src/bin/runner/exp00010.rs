@@ -1162,7 +1162,12 @@ where
     if cfg.kbadgerd {
         ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
         // We wait until the results have been written... hopefully.
-        std::thread::sleep(std::time::Duration::from_secs(10));
+        while ushell
+            .run(cmd!("dmesg | grep -q 'kbadgerd: Results of inspection'").allow_error())
+            .is_err()
+        {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
         ushell.run(cmd!("dmesg | grep 'kbadgerd:' | tee {}", badger_trap_file))?;
     }
 
