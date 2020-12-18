@@ -792,12 +792,21 @@ where
     }
 
     // Turn on kbadgerd if needed.
-    if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
-        unimplemented!("--kbadgerd");
-    }
     if cfg.kbadgerd {
         ushell.run(cmd!("sudo modprobe kbadgerd"))?;
     }
+
+    let _kbadgerd_thread = if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
+        Some(ushell.spawn(cmd!(
+            "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ;\
+             echo `pgrep {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+            proc_name,
+            proc_name,
+            proc_name
+        ))?)
+    } else {
+        None
+    };
 
     // Run the workload.
     match cfg.workload {
