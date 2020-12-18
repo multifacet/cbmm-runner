@@ -785,7 +785,8 @@ where
     // Turn on BadgerTrap if needed
     if cfg.badger_trap {
         ushell.run(cmd!(
-            "~/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
+            "{}/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
+            user_home,
             proc_name
         ))?;
     }
