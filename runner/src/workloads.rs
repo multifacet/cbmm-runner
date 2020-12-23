@@ -1226,7 +1226,7 @@ pub fn run_thp_ubmk_shm(
 /// Represents a single SPEC 2017 workload.
 pub enum Spec2017Workload {
     Mcf,
-    Xz,
+    Xz { size: usize },
     Xalancbmk,
 }
 
@@ -1247,9 +1247,17 @@ pub fn run_hacky_spec17(
     const XALANCBMK_CMD: &str = "./xalancbmk_s -v t5.xml xalanc.xsl";
 
     let (cmd, bmk) = match workload {
-        Spec2017Workload::Mcf => (MCF_CMD, "mcf_s"),
-        Spec2017Workload::Xz => (XZ_CMD, "xz_s"),
-        Spec2017Workload::Xalancbmk => (XALANCBMK_CMD, "xalancbmk_s"),
+        Spec2017Workload::Mcf => (MCF_CMD.to_string(), "mcf_s"),
+        Spec2017Workload::Xz { size } => {
+            // If size is 0, just use the default command otherwise use the custom one
+            let cmd = if size == 0 {
+                XZ_CMD.to_string()
+            } else {
+                spec17_xz_get_cmd_with_size(shell, size)?
+            };
+            (cmd, "xz_s")
+        }
+        Spec2017Workload::Xalancbmk => (XALANCBMK_CMD.to_string(), "xalancbmk_s"),
     };
 
     let bmk_dir = format!(
@@ -1297,6 +1305,54 @@ pub fn run_hacky_spec17(
     }
 
     Ok(())
+}
+
+fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, SshError> {
+    const INPUT_FILE: &str = "~/xz_input.tar.xz";
+    const RAW_INPUT_FILE: &str = "~/xz_input.tar";
+    // These directories add up to be about 25GB
+    let constituent_dirs = vec!["~/qemu-4.0.0/", "~/parsec-3.0/", "~/kernel-*/"];
+
+    // If the input file does not exist, we have to create it
+    let result = shell.run(cmd!("test -f {}", INPUT_FILE));
+    let create_input = match result {
+        Err(e) => {
+            // The file does not exist if test returns 1.
+            // We can't handle any other error
+            match e {
+                SshError::NonZeroExit { cmd: _, exit } => {
+                    if exit == 1 {
+                        true
+                    } else {
+                        return Err(e);
+                    }
+                }
+                _ => {
+                    return Err(e);
+                }
+            }
+        }
+        Ok(_) => false,
+    };
+
+    if create_input {
+        shell.run(cmd!(
+            "tar cf {} {}",
+            RAW_INPUT_FILE,
+            constituent_dirs.join(" ")
+        ))?;
+        shell.run(cmd!("xz -4 < {} > {}", RAW_INPUT_FILE, INPUT_FILE))?;
+    }
+
+    // Calculate the SHA 512 hash of the uncompressed input
+    let output = shell.run(cmd!("sha512sum {}", RAW_INPUT_FILE))?.stdout;
+    let mut output = output.split_whitespace();
+    let hash = output.next().unwrap().trim().to_owned();
+
+    // Construct the command
+    let cmd = format!("./xz_s {} {} {} -1 -1 4", INPUT_FILE, size, hash);
+
+    Ok(cmd)
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
