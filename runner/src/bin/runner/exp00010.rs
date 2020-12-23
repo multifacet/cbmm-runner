@@ -62,7 +62,9 @@ enum Workload {
     },
     Spec2017Mcf,
     Spec2017Xalancbmk,
-    Spec2017Xz,
+    Spec2017Xz {
+        size: usize,
+    },
     Canneal {
         workload: CannealWorkload,
     },
@@ -209,6 +211,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "A quick and dirty hack to run a spec workload on cloudlab")
             (@arg WHICH: +required
              "Which spec workload to run.")
+            (@arg SIZE: --spec_size +takes_value {validator::is::<usize>}
+             "The size of the spec workload input.")
         )
         (@subcommand canneal =>
             (about: "Run the canneal workload.")
@@ -383,10 +387,16 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         }
 
         ("hacky_spec17", Some(sub_m)) => {
+            let size = sub_m
+                .value_of("SIZE")
+                .unwrap_or("0")
+                .parse::<usize>()
+                .unwrap();
+
             let wk = match sub_m.value_of("WHICH").unwrap() {
                 "mcf" => Workload::Spec2017Mcf,
                 "xalancbmk" => Workload::Spec2017Xalancbmk,
-                "xz" => Workload::Spec2017Xz,
+                "xz" => Workload::Spec2017Xz { size },
                 _ => panic!("Unknown spec workload"),
             };
 
@@ -1086,10 +1096,12 @@ where
             });
         }
 
-        w @ Workload::Spec2017Mcf | w @ Workload::Spec2017Xz | w @ Workload::Spec2017Xalancbmk => {
+        w @ Workload::Spec2017Mcf
+        | w @ Workload::Spec2017Xz { size: _ }
+        | w @ Workload::Spec2017Xalancbmk => {
             let wkload = match w {
                 Workload::Spec2017Mcf => Spec2017Workload::Mcf,
-                Workload::Spec2017Xz => Spec2017Workload::Xz,
+                Workload::Spec2017Xz { size } => Spec2017Workload::Xz { size },
                 Workload::Spec2017Xalancbmk => Spec2017Workload::Xalancbmk,
                 _ => unreachable!(),
             };
