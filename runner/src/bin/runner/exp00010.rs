@@ -400,6 +400,19 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 _ => panic!("Unknown spec workload"),
             };
 
+            if size != 0 {
+                let size_implemented = match &wk {
+                    Workload::Spec2017Xz { size: _ } => true,
+                    _ => false,
+                };
+
+                if !size_implemented {
+                    unimplemented!(
+                        "the --spec_size flag is not implemented for the chosen workload"
+                    );
+                }
+            }
+
             (wk, "hacky_spec17", 0, 0, None)
         }
 
