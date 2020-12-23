@@ -2,6 +2,8 @@
 
 use bitflags::bitflags;
 
+use super::get_user_home_dir;
+
 use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshError, SshShell, SshSpawnHandle};
@@ -1307,14 +1309,19 @@ pub fn run_hacky_spec17(
     Ok(())
 }
 
-fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, SshError> {
-    const INPUT_FILE: &str = "~/xz_input.tar.xz";
-    const RAW_INPUT_FILE: &str = "~/xz_input.tar";
+// size is the size of the data to perform the workload on in MB
+fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, failure::Error> {
+    let user_home = &get_user_home_dir(&shell)?;
+    let input_file = &dir!(user_home, "xz_input.tar.xz");
+    let raw_input_file = &dir!(user_home, "xz_input.tar");
     // These directories add up to be about 25GB
-    let constituent_dirs = vec!["~/qemu-4.0.0/", "~/parsec-3.0/", "~/kernel-*/"];
+    let constituent_dirs: Vec<String> = vec!["qemu-4.0.0", "parsec-3.0", "kernel-*"]
+        .iter()
+        .map(|&s| dir!(user_home, s))
+        .collect();
 
     // If the input file does not exist, we have to create it
-    let result = shell.run(cmd!("test -f {}", INPUT_FILE));
+    let result = shell.run(cmd!("test -f {}", input_file));
     let create_input = match result {
         Err(e) => {
             // The file does not exist if test returns 1.
@@ -1324,12 +1331,10 @@ fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, 
                     if exit == 1 {
                         true
                     } else {
-                        return Err(e);
+                        Err(e)?
                     }
                 }
-                _ => {
-                    return Err(e);
-                }
+                _ => Err(e)?,
             }
         }
         Ok(_) => false,
@@ -1338,19 +1343,19 @@ fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, 
     if create_input {
         shell.run(cmd!(
             "tar cf {} {}",
-            RAW_INPUT_FILE,
+            raw_input_file,
             constituent_dirs.join(" ")
         ))?;
-        shell.run(cmd!("xz -4 < {} > {}", RAW_INPUT_FILE, INPUT_FILE))?;
+        shell.run(cmd!("xz -4 < {} > {}", raw_input_file, input_file))?;
     }
 
     // Calculate the SHA 512 hash of the uncompressed input
-    let output = shell.run(cmd!("sha512sum {}", RAW_INPUT_FILE))?.stdout;
+    let output = shell.run(cmd!("sha512sum {}", raw_input_file))?.stdout;
     let mut output = output.split_whitespace();
     let hash = output.next().unwrap().trim().to_owned();
 
     // Construct the command
-    let cmd = format!("./xz_s {} {} {} -1 -1 4", INPUT_FILE, size, hash);
+    let cmd = format!("./xz_s {} {} {} -1 -1 4", input_file, size, hash);
 
     Ok(cmd)
 }
