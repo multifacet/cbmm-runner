@@ -1188,15 +1188,27 @@ where
 
     // Extract relevant data from dmesg for BadgerTrap, if needed.
     if cfg.badger_trap {
+        // We need to ensure the relevant process has terminated.
+        ushell.run(cmd!("pkill -9 {}", proc_name))?;
+
+        // We wait until the results have been written...
+        while ushell
+            .run(cmd!("dmesg | grep -q 'BadgerTrap: Statistics for Process'"))
+            .is_err()
+        {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+
         ushell.run(cmd!(
             "dmesg | grep 'BadgerTrap:' | tee {}",
             badger_trap_file
         ))?;
     }
 
+    // Extract relevant data from dmesg for kbadgerd, if needed.
     if cfg.kbadgerd {
         ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
-        // We wait until the results have been written... hopefully.
+        // We wait until the results have been written...
         while ushell
             .run(cmd!("dmesg | grep -q 'kbadgerd: Results of inspection'"))
             .is_err()
