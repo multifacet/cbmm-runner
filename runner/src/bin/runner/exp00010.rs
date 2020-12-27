@@ -821,7 +821,7 @@ where
 
     let _kbadgerd_thread = if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
         Some(ushell.spawn(cmd!(
-            "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ;\
+            "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ; \
              echo `pgrep {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
             proc_name,
             proc_name,
@@ -1193,7 +1193,7 @@ where
 
         // We wait until the results have been written...
         while ushell
-            .run(cmd!("dmesg | grep -q 'BadgerTrap: Statistics for Process'"))
+            .run(cmd!("dmesg | grep -q 'BadgerTrap: END Statistics'"))
             .is_err()
         {
             std::thread::sleep(std::time::Duration::from_secs(10));
@@ -1210,7 +1210,7 @@ where
         ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
         // We wait until the results have been written...
         while ushell
-            .run(cmd!("dmesg | grep -q 'kbadgerd: Results of inspection'"))
+            .run(cmd!("dmesg | grep -q 'kbadgerd: END Results'"))
             .is_err()
         {
             std::thread::sleep(std::time::Duration::from_secs(10));
