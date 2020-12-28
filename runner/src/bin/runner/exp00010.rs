@@ -816,7 +816,10 @@ where
 
     // Turn on kbadgerd if needed.
     if cfg.kbadgerd {
-        ushell.run(cmd!("sudo modprobe kbadgerd"))?;
+        ushell.run(cmd!(
+            "ls /sys/kernel/mm/kbadgerd || \
+            sudo insmod $(ls -td1 kernel-* | head -n1)/kbuild/mm/kbadgerd/kbadgerd.ko"
+        ))?;
     }
 
     let _kbadgerd_thread = if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
