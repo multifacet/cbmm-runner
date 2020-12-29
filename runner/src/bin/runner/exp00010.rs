@@ -818,7 +818,7 @@ where
     if cfg.kbadgerd {
         ushell.run(cmd!(
             "ls /sys/kernel/mm/kbadgerd || \
-            sudo insmod $(ls -td1 kernel-* | head -n1)/kbuild/mm/kbadgerd/kbadgerd.ko"
+            sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/kbadgerd/kbadgerd.ko"
         ))?;
     }
 
