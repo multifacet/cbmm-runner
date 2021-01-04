@@ -40,9 +40,9 @@ pub fn artifact_info(artifact: Artifact) -> Download<'static> {
 
     match artifact {
         Vagrant => Download {
-            url: "https://releases.hashicorp.com/vagrant/2.2.7/vagrant_2.2.7_x86_64.rpm",
-            name: "vagrant_2.2.7_x86_64.rpm",
-            version: "2.2.7",
+            url: "https://releases.hashicorp.com/vagrant/2.2.14/vagrant_2.2.14_x86_64.rpm",
+            name: "vagrant_2.2.14_x86_64.rpm",
+            version: "2.2.14",
         },
         Qemu => Download {
             url: "https://download.qemu.org/qemu-4.0.0.tar.xz",
