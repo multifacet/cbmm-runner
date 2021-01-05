@@ -1192,7 +1192,7 @@ where
     // Extract relevant data from dmesg for BadgerTrap, if needed.
     if cfg.badger_trap {
         // We need to ensure the relevant process has terminated.
-        ushell.run(cmd!("pkill -9 {}", proc_name))?;
+        ushell.run(cmd!("pkill -9 {} || echo 'already dead'", proc_name))?;
 
         // We wait until the results have been written...
         while ushell
