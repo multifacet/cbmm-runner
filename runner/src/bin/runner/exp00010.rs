@@ -113,6 +113,7 @@ struct Config {
     #[name(self.eager)]
     eager: bool,
 
+    #[name(self.transparent_hugepage_enabled == "never")]
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
     transparent_hugepage_khugepaged_defrag: usize,
@@ -302,14 +303,14 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let (workload, workload_name, n, size, pattern) = match sub_m.subcommand() {
         ("time_loop", Some(sub_m)) => {
             let n = sub_m.value_of("N").unwrap().parse::<usize>().unwrap();
-            (Workload::TimeLoop { n }, "time_loop", n, 0, None)
+            (Workload::TimeLoop { n }, "time_loop".into(), n, 0, None)
         }
 
         ("locality_mem_access", Some(sub_m)) => {
             let n = sub_m.value_of("N").unwrap().parse::<usize>().unwrap();
             (
                 Workload::LocalityMemAccess { n },
-                "locality_mem_access",
+                "locality_mem_access".into(),
                 n,
                 0,
                 None,
@@ -327,7 +328,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             (
                 Workload::TimeMmapTouch { size, pattern },
-                "time_mmap_touch",
+                "time_mmap_touch".into(),
                 0,
                 size,
                 Some(pattern),
@@ -344,7 +345,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             (
                 Workload::ThpUbmk { size, reps },
-                "thp_ubmk",
+                "thp_ubmk".into(),
                 reps,
                 size,
                 None,
@@ -361,7 +362,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             (
                 Workload::ThpUbmkShm { size, reps },
-                "thp_ubmk_shm",
+                "thp_ubmk_shm".into(),
                 reps,
                 size,
                 None,
@@ -371,19 +372,31 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         ("memcached", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
-            (Workload::Memcached { size }, "memcached", 0, size, None)
+            (
+                Workload::Memcached { size },
+                "memcached".into(),
+                0,
+                size,
+                None,
+            )
         }
 
         ("mix", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
-            (Workload::Mix { size }, "mix", 0, size, None)
+            (Workload::Mix { size }, "mix".into(), 0, size, None)
         }
 
         ("graph500", Some(sub_m)) => {
             let scale = sub_m.value_of("SCALE").unwrap().parse::<usize>().unwrap();
 
-            (Workload::Graph500 { scale }, "graph500", 0, scale, None)
+            (
+                Workload::Graph500 { scale },
+                "graph500".into(),
+                0,
+                scale,
+                None,
+            )
         }
 
         ("hacky_spec17", Some(sub_m)) => {
@@ -413,7 +426,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 }
             }
 
-            (wk, "hacky_spec17", 0, 0, None)
+            let wk_name = format!("hacky_spec17_{}", sub_m.value_of("WHICH").unwrap());
+
+            (wk, wk_name, 0, 0, None)
         }
 
         ("canneal", Some(sub_m)) => {
@@ -444,7 +459,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 CannealWorkload::Native
             };
 
-            (Workload::Canneal { workload }, "canneal", 0, 0, None)
+            (Workload::Canneal { workload }, "canneal".into(), 0, 0, None)
         }
 
         _ => unreachable!(),
@@ -556,7 +571,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     );
 
     let cfg = Config {
-        exp: (10, "bare_metal".into(), workload_name.into()),
+        exp: (10, "bare_metal".into(), workload_name),
 
         workload,
 
