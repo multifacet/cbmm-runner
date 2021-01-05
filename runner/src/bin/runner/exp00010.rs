@@ -134,6 +134,7 @@ struct Config {
     smaps_periodic: bool,
     badger_trap: bool,
     kbadgerd: bool,
+    kbadgerd_sleep_interval: Option<usize>,
 
     username: String,
     host: String,
@@ -274,6 +275,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Use badger_trap to measure TLB misses.")
         (@arg KBADGERD: --kbadgerd
          "Use kbadgerd to measure TLB misses.")
+        (@arg KBADGERD_SLEEP_INTERVAL: --kbadgerd_sleep_interval
+         +takes_value {validator::is::<usize>} requires[KBADGERD]
+         "Sets the sleep_interval for kbadgerd.")
     };
 
     let app = damon::add_cli_options(app);
@@ -475,6 +479,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
     let badger_trap = sub_m.is_present("BADGER_TRAP");
     let kbadgerd = sub_m.is_present("KBADGERD");
+    let kbadgerd_sleep_interval = sub_m
+        .value_of("KBADGERD_SLEEP_INTERVAL")
+        .map(|s| s.parse::<usize>().unwrap());
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -599,6 +606,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         smaps_periodic,
         badger_trap,
         kbadgerd,
+        kbadgerd_sleep_interval,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -834,6 +842,12 @@ where
         ushell.run(cmd!(
             "ls /sys/kernel/mm/kbadgerd || \
             sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/kbadgerd/kbadgerd.ko"
+        ))?;
+    }
+    if let Some(sleep_interval) = cfg.kbadgerd_sleep_interval {
+        ushell.run(cmd!(
+            "echo {} | sudo tee /sys/kernel/mm/kbadgerd/sleep_interval",
+            sleep_interval
         ))?;
     }
 
