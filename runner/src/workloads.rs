@@ -1229,7 +1229,7 @@ pub fn run_thp_ubmk_shm(
 pub enum Spec2017Workload {
     Mcf,
     Xz { size: usize },
-    Xalancbmk,
+    Xalancbmk { size: usize },
 }
 
 pub fn run_hacky_spec17(
@@ -1246,7 +1246,8 @@ pub fn run_hacky_spec17(
                           055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c\
                           774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa\
                           5ad2c04fbc447549c2810fae 1036078272 1111795472 4";
-    const XALANCBMK_CMD: &str = "./xalancbmk_s -v t5.xml xalanc.xsl";
+    const XALANCBMK_CMD: &str = "./xalancbmk_s -v input.xml xalanc.xsl > /dev/null";
+    let user_home = &get_user_home_dir(&shell)?;
 
     let (cmd, bmk) = match workload {
         Spec2017Workload::Mcf => (MCF_CMD.to_string(), "mcf_s"),
@@ -1259,13 +1260,30 @@ pub fn run_hacky_spec17(
             };
             (cmd, "xz_s")
         }
-        Spec2017Workload::Xalancbmk => (XALANCBMK_CMD.to_string(), "xalancbmk_s"),
+        Spec2017Workload::Xalancbmk { size: _ } => (XALANCBMK_CMD.to_string(), "xalancbmk_s"),
     };
 
     let bmk_dir = format!(
         "{}/benchspec/CPU/*{}/run/run_base_refspeed_markm-thp-m64.0000",
         spec_dir, bmk
     );
+
+    // If this is the Xalanc benchmark, make sure it's using the right input file
+    if let Spec2017Workload::Xalancbmk { size } = workload {
+        // If size is 0, just use the default input file
+        if size == 0 {
+            shell.run(cmd!("cp t5.xml input.xml").cwd(&bmk_dir))?;
+        } else {
+            shell.run(
+                cmd!(
+                    "{}/0sim-workspace/bmks/spec2017/rand_xalanc_input.py {} > input.xml",
+                    user_home,
+                    size
+                )
+                .cwd(&bmk_dir),
+            )?;
+        }
+    }
 
     let pin_cores = pin_cores
         .iter()

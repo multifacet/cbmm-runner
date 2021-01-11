@@ -61,7 +61,9 @@ enum Workload {
         scale: usize,
     },
     Spec2017Mcf,
-    Spec2017Xalancbmk,
+    Spec2017Xalancbmk {
+        size: usize,
+    },
     Spec2017Xz {
         size: usize,
     },
@@ -412,7 +414,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             let wk = match sub_m.value_of("WHICH").unwrap() {
                 "mcf" => Workload::Spec2017Mcf,
-                "xalancbmk" => Workload::Spec2017Xalancbmk,
+                "xalancbmk" => Workload::Spec2017Xalancbmk { size },
                 "xz" => Workload::Spec2017Xz { size },
                 _ => panic!("Unknown spec workload"),
             };
@@ -420,6 +422,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             if size != 0 {
                 let size_implemented = match &wk {
                     Workload::Spec2017Xz { size: _ } => true,
+                    Workload::Spec2017Xalancbmk { size: _ } => true,
                     _ => false,
                 };
 
@@ -1143,11 +1146,11 @@ where
 
         w @ Workload::Spec2017Mcf
         | w @ Workload::Spec2017Xz { size: _ }
-        | w @ Workload::Spec2017Xalancbmk => {
+        | w @ Workload::Spec2017Xalancbmk { size: _ } => {
             let wkload = match w {
                 Workload::Spec2017Mcf => Spec2017Workload::Mcf,
                 Workload::Spec2017Xz { size } => Spec2017Workload::Xz { size },
-                Workload::Spec2017Xalancbmk => Spec2017Workload::Xalancbmk,
+                Workload::Spec2017Xalancbmk { size } => Spec2017Workload::Xalancbmk { size },
                 _ => unreachable!(),
             };
 
