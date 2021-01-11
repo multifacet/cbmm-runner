@@ -457,6 +457,7 @@ where
             "iptables-services",
             "openmpi-devel",
             "libgomp",
+            "words", // for xalanc workload creation
         ]),
 
         // Add user to libvirt group after installing
