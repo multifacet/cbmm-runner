@@ -780,18 +780,18 @@ where
     }
 
     let proc_name = match cfg.workload {
-        Workload::TimeLoop { .. } => "time_loop",
-        Workload::LocalityMemAccess { .. } => "locality_mem_access",
-        Workload::TimeMmapTouch { .. } => "time_mmap_touch",
-        Workload::Mix { .. } => unimplemented!(),
-        Workload::ThpUbmk { .. } => "ubmk",
-        Workload::ThpUbmkShm { .. } => "ubmk-shm",
-        Workload::Memcached { .. } => "memcached",
-        Workload::Graph500 { .. } => "graph500",
-        Workload::Spec2017Xz { .. } => "xz_s",
-        Workload::Spec2017Mcf { .. } => "mcf_s",
-        Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
-        Workload::Canneal { .. } => "canneal",
+        Workload::TimeLoop { .. } => Some("time_loop"),
+        Workload::LocalityMemAccess { .. } => Some("locality_mem_access"),
+        Workload::TimeMmapTouch { .. } => Some("time_mmap_touch"),
+        Workload::Mix { .. } => None,
+        Workload::ThpUbmk { .. } => Some("ubmk"),
+        Workload::ThpUbmkShm { .. } => Some("ubmk-shm"),
+        Workload::Memcached { .. } => Some("memcached"),
+        Workload::Graph500 { .. } => Some("graph500"),
+        Workload::Spec2017Xz { .. } => Some("xz_s"),
+        Workload::Spec2017Mcf { .. } => Some("mcf_s"),
+        Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
+        Workload::Canneal { .. } => Some("canneal"),
     };
 
     if cfg.smaps_periodic {
@@ -800,7 +800,7 @@ where
             period: PERIOD,
             cmd: format!(
                 "((sudo cat /proc/`pgrep {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
-                proc_name,
+                proc_name.unwrap(),
                 dir!(
                     user_home,
                     setup00000::HOSTNAME_SHARED_RESULTS_DIR,
@@ -817,6 +817,7 @@ where
 
     // Set `huge_addr` if needed.
     if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
+        let proc_name = proc_name.unwrap();
         // We need to truncate the name to 15 characters because Linux will truncate current->comm
         // to 15 characters. In order for them to match we truncate it here...
         let proc_name_trunc = if proc_name.len() > 15 {
@@ -836,7 +837,7 @@ where
         ushell.run(cmd!(
             "{}/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
             user_home,
-            proc_name
+            proc_name.unwrap()
         ))?;
     }
 
@@ -858,9 +859,9 @@ where
         Some(ushell.spawn(cmd!(
             "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ; \
              echo `pgrep {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-            proc_name,
-            proc_name,
-            proc_name
+            proc_name.unwrap(),
+            proc_name.unwrap(),
+            proc_name.unwrap()
         ))?)
     } else {
         None
@@ -1224,7 +1225,10 @@ where
     // Extract relevant data from dmesg for BadgerTrap, if needed.
     if cfg.badger_trap {
         // We need to ensure the relevant process has terminated.
-        ushell.run(cmd!("pkill -9 {} || echo 'already dead'", proc_name))?;
+        ushell.run(cmd!(
+            "pkill -9 {} || echo 'already dead'",
+            proc_name.unwrap()
+        ))?;
 
         // We wait until the results have been written...
         while ushell
