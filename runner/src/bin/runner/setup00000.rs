@@ -405,17 +405,17 @@ where
                 "centos-release-scl", "libunwind-devel", "libfdt-devel"
             ]),
 
-            spurs_util::centos::yum_install(&["devtoolset-7"]),
+            spurs_util::centos::yum_install(&["devtoolset-8", "devtoolset-8-gcc-c++"]),
 
             // Set up SCL as the default
-            cmd!("echo 'source /opt/rh/devtoolset-7/enable' | \
+            cmd!("echo 'source /opt/rh/devtoolset-8/enable' | \
                   sudo tee /etc/profile.d/recent-compilers.sh"),
 
             // SCL cannibalizes sudo, but their version kinda sucks because it doesn't take
             // any flags. So restore the original functionality by moving SCL's sudo away.
-            cmd!("sudo mv /opt/rh/devtoolset-7/root/usr/bin/sudo \
-                  /opt/rh/devtoolset-7/root/usr/bin/scl-sudo || \
-                  ls /opt/rh/devtoolset-7/root/usr/bin/scl-sudo"),
+            cmd!("sudo mv /opt/rh/devtoolset-8/root/usr/bin/sudo \
+                  /opt/rh/devtoolset-8/root/usr/bin/scl-sudo || \
+                  ls /opt/rh/devtoolset-8/root/usr/bin/scl-sudo"),
         }
     }
 
@@ -462,10 +462,12 @@ where
             "automake",
             "rpmdevtools",
             "python3",
+            "python3-devel",
             "iptables-services",
             "openmpi-devel",
             "libgomp",
             "words", // for xalanc workload creation
+            "libcurl-devel",
         ]),
 
         // Add user to libvirt group after installing
@@ -716,6 +718,7 @@ where
             ZEROSIM_MEMHOG_SUBMODULE,
             ZEROSIM_METIS_SUBMODULE,
             ZEROSIM_MEMCACHED_SUBMODULE,
+            ZEROSIM_MONGODB_SUBMODULE,
             ZEROSIM_NULLFS_SUBMODULE,
             ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
             ZEROSIM_ZLIB_SUBMODULE,
@@ -859,6 +862,7 @@ where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
     let ncores = runner::get_num_cores(&ushell)?;
+    let user_home = &get_user_home_dir(&ushell)?;
 
     // Build 0sim trace tool
     ushell.run(
@@ -922,6 +926,16 @@ where
         cmd!("make -j {}", ncores),
     }
 
+    // MongoDB
+    let gcc_path = ushell.run(cmd!("which gcc"))?.stdout;
+    let gcc_path = gcc_path.trim();
+    let gpp_path = ushell.run(cmd!("which g++"))?.stdout;
+    let gpp_path = gpp_path.trim();
+    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH,ZEROSIM_MONGODB_SUBMODULE) =>
+        cmd!("sudo python3 -m pip install -r etc/pip/compile-requirements.txt"),
+        cmd!("python3 buildscripts/scons.py CC={} CXX={} install-mongod", gcc_path, gpp_path),
+    }
+
     // nullfs (for redis bgsave)
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE) =>
         cmd!("make -j {}", ncores),
@@ -974,7 +988,7 @@ where
     ushell.run(
         cmd!(
             "mvn -pl :memcached-binding -pl :redis-binding -pl \
-            :kyotocabinet-binding -am clean package"
+            :kyotocabinet-binding -pl :mongodb-binding -am clean package"
         )
         .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE)),
     )?;
@@ -998,7 +1012,6 @@ where
     )?;
 
     // Download PARSEC and build canneal
-    let user_home = &get_user_home_dir(&ushell)?;
     download_and_extract(ushell, Artifact::Parsec, user_home, None)?;
     ushell.run(cmd!("./parsecmgmt -a build -p canneal").cwd("parsec-3.0/bin/"))?;
 
@@ -1331,15 +1344,18 @@ where
             "epel-release",
             "centos-release-scl",
         ]))?;
-        vrshell.run(spurs_util::centos::yum_install(&["devtoolset-7"]))?;
+        vrshell.run(spurs_util::centos::yum_install(&[
+            "devtoolset-8",
+            "devtoolset-8-gcc-c++",
+        ]))?;
         vrshell.run(cmd!(
-            "echo 'source /opt/rh/devtoolset-7/enable' | \
+            "echo 'source /opt/rh/devtoolset-8/enable' | \
              sudo tee /etc/profile.d/recent-compilers.sh"
         ))?;
         vrshell.run(cmd!(
-            "sudo mv /opt/rh/devtoolset-7/root/usr/bin/sudo \
-             /opt/rh/devtoolset-7/root/usr/bin/scl-sudo || \
-             ls /opt/rh/devtoolset-7/root/usr/bin/scl-sudo"
+            "sudo mv /opt/rh/devtoolset-8/root/usr/bin/sudo \
+             /opt/rh/devtoolset-8/root/usr/bin/scl-sudo || \
+             ls /opt/rh/devtoolset-8/root/usr/bin/scl-sudo"
         ))?;
     }
 
