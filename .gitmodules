@@ -37,3 +37,6 @@
 [submodule "bmks/BadgerTrap"]
 	path = bmks/BadgerTrap
 	url = https://github.com/mark-i-m/BadgerTrap.git
+[submodule "bmks/mongo"]
+	path = bmks/mongo
+	url = https://github.com/mongodb/mongo.git

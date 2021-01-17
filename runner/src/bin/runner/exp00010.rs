@@ -17,10 +17,10 @@ use runner::{
     time,
     workloads::{
         run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
-        run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop,
-        run_time_mmap_touch, CannealWorkload, Damon, LocalityMemAccessConfig,
-        LocalityMemAccessMode, MemcachedWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx,
-        TimeMmapTouchConfig, TimeMmapTouchPattern,
+        run_memcached_gen_data, run_mix, run_mongodb_workload, run_thp_ubmk, run_thp_ubmk_shm,
+        run_time_loop, run_time_mmap_touch, CannealWorkload, Damon, LocalityMemAccessConfig,
+        LocalityMemAccessMode, MemcachedWorkloadConfig, MongoDBWorkloadConfig, Pintool,
+        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -53,6 +53,11 @@ enum Workload {
     },
     Memcached {
         size: usize,
+    },
+    MongoDB {
+        op_count: usize,
+        read_prop: f32,
+        update_prop: f32,
     },
     Mix {
         size: usize,
@@ -201,6 +206,18 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run the `memcached` workload.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
+        )
+        (@subcommand mongodb =>
+            (about: "Run the MongoDB workload.")
+            (@arg OP_COUNT: --op_count +takes_value {validator::is::<usize>}
+             "The number of operations to perform during the workload.\
+             The default is 1000.")
+            (@arg READ_PROP: --read_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop.")
+            (@arg UPDATE_PROP: --update_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop")
         )
         (@subcommand mix =>
             (about: "Run the `mix` workload.")
@@ -386,6 +403,46 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 "memcached".into(),
                 0,
                 size,
+                None,
+            )
+        }
+
+        ("mongodb", Some(sub_m)) => {
+            let op_count = sub_m
+                .value_of("OP_COUNT")
+                .unwrap_or("1000")
+                .parse::<usize>()
+                .unwrap();
+            let read_prop = sub_m
+                .value_of("READ_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+            let update_prop = sub_m
+                .value_of("UPDATE_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+
+            if read_prop > 1.0 || read_prop < 0.0 {
+                panic!("--read_prop must be between 0 and 1.");
+            }
+            if update_prop > 1.0 || update_prop < 0.0 {
+                panic!("--update_prop must be between 0 and 1.");
+            }
+            if (read_prop + update_prop) > 1.0 {
+                panic!("The sum of --read_prop and --update_prop must not be greater than 1.");
+            }
+
+            (
+                Workload::MongoDB {
+                    op_count,
+                    read_prop,
+                    update_prop,
+                },
+                "mongodb".into(),
+                0,
+                op_count,
                 None,
             )
         }
@@ -792,6 +849,7 @@ where
         Workload::ThpUbmk { .. } => Some("ubmk"),
         Workload::ThpUbmkShm { .. } => Some("ubmk-shm"),
         Workload::Memcached { .. } => Some("memcached"),
+        Workload::MongoDB { .. } => Some("mongod"),
         Workload::Graph500 { .. } => Some("graph500"),
         Workload::Spec2017Xz { .. } => Some("xz_s"),
         Workload::Spec2017Mcf { .. } => Some("mcf_s"),
@@ -865,7 +923,11 @@ where
         ))?;
     }
 
-    let _kbadgerd_thread = if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached { .. }) {
+    let _kbadgerd_thread = if cfg.kbadgerd
+        && !matches!(
+            cfg.workload,
+            Workload::Memcached { .. } | Workload::MongoDB { .. }
+        ) {
         Some(ushell.spawn(cmd!(
             "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ; \
              echo `pgrep {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
@@ -1090,6 +1152,57 @@ where
                                 ushell.run(cmd!(
                                     "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
                                     memcached_pid
+                                ))?;
+                            }
+                            Ok(())
+                        },
+                    }
+                )?
+            );
+        }
+
+        Workload::MongoDB {
+            op_count,
+            read_prop,
+            update_prop,
+        } => {
+            time!(
+                timers,
+                "Workload",
+                run_mongodb_workload(
+                    &ushell,
+                    &MongoDBWorkloadConfig {
+                        bmks_dir: &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR),
+                        db_dir: &dir!(user_home, "mongodb"),
+                        cache_size_mb: None,
+                        server_pin_core: Some(tctx.next()),
+                        client_pin_core: {
+                            tctx.skip();
+                            tctx.next()
+                        },
+                        op_count: op_count,
+                        record_count: op_count,
+                        read_prop: read_prop,
+                        update_prop: update_prop,
+                        insert_prop: 1.0 - read_prop - update_prop,
+                        output_file: None,
+                        mmu_perf: if cfg.mmu_overhead {
+                            Some((mmu_overhead_file, &cfg.perf_counters))
+                        } else {
+                            None
+                        },
+                        server_start_cb: |shell| {
+                            // Turn on kbadgerd if needed.
+                            if cfg.kbadgerd {
+                                let mongod_pid = shell
+                                    .run(cmd!("pgrep mongod"))?
+                                    .stdout
+                                    .as_str()
+                                    .trim()
+                                    .parse::<usize>()?;
+                                ushell.run(cmd!(
+                                    "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                                    mongod_pid
                                 ))?;
                             }
                             Ok(())
