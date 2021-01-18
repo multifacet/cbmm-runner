@@ -137,6 +137,7 @@ struct Config {
     badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
+    mm_econ: bool,
 
     username: String,
     host: String,
@@ -280,6 +281,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg KBADGERD_SLEEP_INTERVAL: --kbadgerd_sleep_interval
          +takes_value {validator::is::<usize>} requires[KBADGERD]
          "Sets the sleep_interval for kbadgerd.")
+        (@arg MM_ECON: --mm_econ
+         "Enable mm_econ.")
     };
 
     let app = damon::add_cli_options(app);
@@ -485,6 +488,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let kbadgerd_sleep_interval = sub_m
         .value_of("KBADGERD_SLEEP_INTERVAL")
         .map(|s| s.parse::<usize>().unwrap());
+    let mm_econ = sub_m.is_present("MM_ECON");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -610,6 +614,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
+        mm_econ,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -839,6 +844,11 @@ where
             user_home,
             proc_name.unwrap()
         ))?;
+    }
+
+    // Turn on mm_econ if needed.
+    if cfg.mm_econ {
+        ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
     }
 
     // Turn on kbadgerd if needed.
