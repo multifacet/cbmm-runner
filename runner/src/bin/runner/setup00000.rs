@@ -70,6 +70,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          private repository, the --secret option must also be passed giving the GitHub personal \
          access token or password.")
 
+        (@arg WKSPC_BRANCH: --wkspc_branch +takes_value requires[CLONE_WKSPC]
+         "(Optional) If passed, clone the specified branch name. If not pased, master is used. \
+         requires --clone_wkspc.")
+
         (@arg SECRET: +takes_value --secret
          "(Optional) If we should clone the workspace, this is the Github personal access \
           token or password for cloning the repo.")
@@ -141,6 +145,8 @@ where
 
     /// Should we clone/update the workspace?
     clone_wkspc: bool,
+    /// What branch of the workspace should we use?
+    wkspc_branch: Option<&'a str>,
     /// The PAT or password to clone/update the workspace with, if needed.
     secret: Option<&'a str>,
 
@@ -200,6 +206,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let unstable_names = sub_m.is_present("UNSTABLE_DEVICE_NAMES");
 
     let clone_wkspc = sub_m.is_present("CLONE_WKSPC");
+    let wkspc_branch = sub_m.value_of("WKSPC_BRANCH");
     let secret = sub_m.value_of("SECRET");
 
     let firewall = sub_m.is_present("FIREWALL");
@@ -237,6 +244,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         firewall,
         commitish,
         clone_wkspc,
+        wkspc_branch,
         secret,
         host_bmks,
         spec_2017,
@@ -716,7 +724,7 @@ where
             ZEROSIM_BADGERTRAP_SUBMODULE,
         ];
 
-        runner::clone_research_workspace(&ushell, cfg.secret, SUBMODULES)?;
+        runner::clone_research_workspace(&ushell, cfg.wkspc_branch, cfg.secret, SUBMODULES)?;
     }
 
     Ok(())

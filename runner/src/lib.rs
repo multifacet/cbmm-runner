@@ -136,6 +136,9 @@ pub mod paths {
     /// Path to the memcached submodule.
     pub const ZEROSIM_MEMCACHED_SUBMODULE: &str = "bmks/memcached";
 
+    /// Path to the MongoDB submodule.
+    pub const ZEROSIM_MONGODB_SUBMODULE: &str = "bmks/mongo";
+
     /// Path to the nullfs submodule
     pub const ZEROSIM_NULLFS_SUBMODULE: &str = "bmks/nullfs";
 
@@ -270,20 +273,26 @@ where
 /// *NOTE*: This function intentionally does not take the repo URL. It should always be the above.
 pub fn clone_research_workspace(
     ushell: &SshShell,
+    branch: Option<&str>,
     secret: Option<&str>,
     submodules: &[&str],
 ) -> Result<String, failure::Error> {
+    let branch_name = branch.unwrap_or("master");
+
     // Check if the repo is already cloned.
     if let Ok(_hash) = research_workspace_git_hash(&ushell) {
         // If so, just update it.
         with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH) =>
+            cmd!("git fetch"),
+            cmd!("git checkout {}", branch_name),
             cmd!("git pull"),
             cmd!("git submodule update"),
         }
     } else {
         // Clone the repo.
         ushell.run(cmd!(
-            "git clone {} 0sim-workspace",
+            "git clone -b {} {} 0sim-workspace",
+            branch_name,
             RESEARCH_WORKSPACE_REPO.git_repo_access_url(secret)
         ))?;
     }
