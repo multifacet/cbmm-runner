@@ -654,7 +654,7 @@ where
     runner::perf_for_all(&ushell)?;
 
     // Turn on/off compaction and force it to happen if needed
-    if matches!(cfg.workload, Workload::ThpUbmkShm {..}) {
+    if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
         runner::turn_on_thp(
             &ushell,
             /* enabled */ "never",
@@ -865,7 +865,7 @@ where
         ))?;
     }
 
-    let _kbadgerd_thread = if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached{..}) {
+    let _kbadgerd_thread = if cfg.kbadgerd && !matches!(cfg.workload, Workload::Memcached { .. }) {
         Some(ushell.spawn(cmd!(
             "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ; \
              echo `pgrep {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
@@ -1224,7 +1224,7 @@ where
 
     // Tell damon to write data, if needed. (Graph500 waits for damon to finish, so we don't need
     // to do it again).
-    if cfg.damon && !matches!(cfg.workload, Workload::Graph500{..}) {
+    if cfg.damon && !matches!(cfg.workload, Workload::Graph500 { .. }) {
         time!(timers, "Waiting for DAMON to flush data buffers", {
             ushell.run(cmd!(
                 "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
