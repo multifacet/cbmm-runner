@@ -138,6 +138,7 @@ struct Config {
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
     mm_econ: bool,
+    mm_econ_profile: Option<String>,
 
     username: String,
     host: String,
@@ -283,6 +284,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Sets the sleep_interval for kbadgerd.")
         (@arg MM_ECON: --mm_econ
          "Enable mm_econ.")
+        (@arg MM_ECON_PROFILE: --mm_econ_profile +takes_value
+         requires[MM_ECON]
+         "Use the given profile with mm_econ (start,end,count;start,end,count; no spaces).")
     };
 
     let app = damon::add_cli_options(app);
@@ -489,6 +493,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .value_of("KBADGERD_SLEEP_INTERVAL")
         .map(|s| s.parse::<usize>().unwrap());
     let mm_econ = sub_m.is_present("MM_ECON");
+    let mm_econ_profile = sub_m
+        .value_of("MM_ECON_PROFILE")
+        .map(|v| v.replace(",", " "));
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -615,6 +622,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kbadgerd,
         kbadgerd_sleep_interval,
         mm_econ,
+        mm_econ_profile,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -849,6 +857,12 @@ where
     // Turn on mm_econ if needed.
     if cfg.mm_econ {
         ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
+    }
+    if let Some(profile) = &cfg.mm_econ_profile {
+        ushell.run(cmd!(
+            "echo '{}' | sudo tee /sys/kernel/mm/mm_econ/preloaded_profile",
+            profile
+        ))?;
     }
 
     // Turn on kbadgerd if needed.
