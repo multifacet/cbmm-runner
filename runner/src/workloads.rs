@@ -410,10 +410,7 @@ where
 
 /// The configuration of a MongoDB workload.
 #[derive(Debug)]
-pub struct MongoDBWorkloadConfig<'s, F>
-where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
-{
+pub struct MongoDBWorkloadConfig<'s> {
     /// The path of the bmks directory on the remote.
     pub bmks_dir: &'s str,
     /// The path of the database directory
@@ -427,36 +424,17 @@ where
     /// The core number that the workload client is pinned to.
     pub client_pin_core: usize,
 
-    /// The number of operations to perform in the workload
-    pub op_count: usize,
-    /// The number of entries to start the workload with
-    pub record_count: usize,
-    /// The proportion of reads for the workload to perform
-    pub read_prop: f32,
-    /// The proportion of updates for the workload to perform
-    pub update_prop: f32,
-    /// The proportion of inserts for the workload to perform
-    pub insert_prop: f32,
-    /// The file to which the workload will write its output. If `None`, then `/dev/null` is used.
-    pub output_file: Option<&'s str>,
-
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
     pub mmu_perf: Option<(String, &'s [String])>,
-
-    /// A callback executed after the memcached server starts but before the workload starts.
-    pub server_start_cb: F,
 }
 
 /// Start a `MongoDB` server in daemon mode with a given amount of memory for its
 /// cache.
-pub fn start_mongodb<F>(
+pub fn start_mongodb(
     shell: &SshShell,
-    cfg: &MongoDBWorkloadConfig<'_, F>,
-) -> Result<(), failure::Error>
-where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
-{
+    cfg: &MongoDBWorkloadConfig<'_>,
+) -> Result<(), failure::Error> {
     let mongod_dir = format!("{}/mongo/build/opt/mongo", cfg.bmks_dir);
 
     let taskset = if let Some(server_pin_core) = cfg.server_pin_core {
@@ -475,6 +453,8 @@ where
     shell.run(cmd!("mkdir -p {}", cfg.db_dir))?;
     shell.run(cmd!("sudo rm -rf {}/*", cfg.db_dir))?;
 
+    // FIXME: The --fork flag might be a problem if something grabs the PID of
+    // the first process, but not the forked process
     shell.run(
         cmd!(
             "sudo {} ./mongod --fork --logpath {}/log --dbpath {} {}",
@@ -488,90 +468,6 @@ where
 
     // Wait for the server to start
     while let Err(..) = shell.run(cmd!("nc -z localhost 27017")) {}
-
-    Ok(())
-}
-
-/// Run the `mongodb_gen_data` workload.
-pub fn run_mongodb_workload<F>(
-    shell: &SshShell,
-    cfg: &MongoDBWorkloadConfig<'_, F>,
-) -> Result<(), failure::Error>
-where
-    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
-{
-    let user_home = get_user_home_dir(&shell)?;
-    let ycsb_dir = format!("{}/YCSB/", cfg.bmks_dir);
-    let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
-
-    // Start server
-    start_mongodb(&shell, cfg)?;
-
-    // Create the YCSB workload file
-    shell.run(cmd!(
-        "echo \"recordcount={}\" > {}",
-        cfg.record_count,
-        ycsb_wkld_file
-    ))?;
-    shell.run(cmd!(
-        "echo \"operationcount={}\" >> {}",
-        cfg.op_count,
-        ycsb_wkld_file
-    ))?;
-    shell.run(cmd!(
-        "echo \"workload=site.ycsb.workloads.CoreWorkload\" >> {}",
-        ycsb_wkld_file
-    ))?;
-    shell.run(cmd!("echo \"readallfields=true\" >> {}", ycsb_wkld_file))?;
-    shell.run(cmd!(
-        "echo \"readproportion={:.3}\" >> {}",
-        cfg.read_prop,
-        ycsb_wkld_file
-    ))?;
-    shell.run(cmd!(
-        "echo \"updateproportion={:.3}\" >> {}",
-        cfg.update_prop,
-        ycsb_wkld_file
-    ))?;
-    shell.run(cmd!("echo \"scanproportion=0\" >> {}", ycsb_wkld_file))?;
-    shell.run(cmd!(
-        "echo \"insertproportion={:.3}\" >> {}",
-        cfg.insert_prop,
-        ycsb_wkld_file
-    ))?;
-    shell.run(cmd!(
-        "echo \"requestdistribution=zipfian\" >> {}",
-        ycsb_wkld_file
-    ))?;
-
-    // Load the database before starting the workload
-    shell.run(cmd!("./bin/ycsb load mongodb -s -P {}", ycsb_wkld_file).cwd(&ycsb_dir))?;
-
-    // Run the callback
-    (cfg.server_start_cb)(shell)?;
-
-    // Start `perf` if needed.
-    if let Some((mmu_overhead_file, counters)) = &cfg.mmu_perf {
-        shell.spawn(cmd!(
-            "sudo perf stat -e {} -p `pgrep mongod` 2>&1 | tee {}",
-            counters.join(" -e "),
-            mmu_overhead_file
-        ))?;
-
-        // Wait for perf to start collection.
-        shell.run(cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash())?;
-    }
-
-    // Run workload
-    shell.run(cmd!("./bin/ycsb run mongodb -s -P {}", ycsb_wkld_file).cwd(&ycsb_dir))?;
-
-    // Make sure mongod dies
-    shell.run(cmd!("sudo pkill mongod"))?;
-
-    // Make sure perf is done.
-    shell.run(cmd!(
-        "while [[ $(pgrep perf) ]] ; do sleep 1 ; done ; echo done"
-    ))?;
 
     Ok(())
 }
@@ -1060,6 +956,18 @@ pub enum YcsbWorkload {
     D,
     E,
     F,
+    Custom {
+        /// The number of entries to start the workload with
+        record_count: usize,
+        /// The number of operations to perform in the workload
+        op_count: usize,
+        /// The proportion of reads for the workload to perform
+        read_prop: f32,
+        /// The proportion of updates for the workload to perform
+        update_prop: f32,
+        /// The proportion of inserts for the workload to perform
+        insert_prop: f32,
+    },
 }
 
 /// Which backend to use for YCSB.
@@ -1070,6 +978,7 @@ where
 {
     Memcached(MemcachedWorkloadConfig<'s, F>),
     Redis(RedisWorkloadConfig<'s>),
+    MongoDB(MongoDBWorkloadConfig<'s>),
     KyotoCabinet,
 }
 
@@ -1109,6 +1018,8 @@ where
     F: Fn() -> Result<(), E>,
     F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
+    let user_home = get_user_home_dir(&shell)?;
+    let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
     let workload_file = match cfg.workload {
         YcsbWorkload::A => "workloads/workloada",
         YcsbWorkload::B => "workloads/workloadb",
@@ -1116,7 +1027,54 @@ where
         YcsbWorkload::D => "workloads/workloadd",
         YcsbWorkload::E => "workloads/workloade",
         YcsbWorkload::F => "workloads/workloadf",
+        YcsbWorkload::Custom { .. } => &ycsb_wkld_file,
     };
+
+    // If this is a custom workload, we have to build the workload file
+    if let YcsbWorkload::Custom {
+        record_count,
+        op_count,
+        read_prop,
+        update_prop,
+        insert_prop,
+    } = cfg.workload
+    {
+        shell.run(cmd!(
+            "echo \"recordcount={}\" > {}",
+            record_count,
+            ycsb_wkld_file
+        ))?;
+        shell.run(cmd!(
+            "echo \"operationcount={}\" >> {}",
+            op_count,
+            ycsb_wkld_file
+        ))?;
+        shell.run(cmd!(
+            "echo \"workload=site.ycsb.workloads.CoreWorkload\" >> {}",
+            ycsb_wkld_file
+        ))?;
+        shell.run(cmd!("echo \"readallfields=true\" >> {}", ycsb_wkld_file))?;
+        shell.run(cmd!(
+            "echo \"readproportion={:.3}\" >> {}",
+            read_prop,
+            ycsb_wkld_file
+        ))?;
+        shell.run(cmd!(
+            "echo \"updateproportion={:.3}\" >> {}",
+            update_prop,
+            ycsb_wkld_file
+        ))?;
+        shell.run(cmd!("echo \"scanproportion=0\" >> {}", ycsb_wkld_file))?;
+        shell.run(cmd!(
+            "echo \"insertproportion={:.3}\" >> {}",
+            insert_prop,
+            ycsb_wkld_file
+        ))?;
+        shell.run(cmd!(
+            "echo \"requestdistribution=zipfian\" >> {}",
+            ycsb_wkld_file
+        ))?;
+    }
 
     /// The number of KB a record takes.
     const RECORD_SIZE_KB: usize = 16;
@@ -1182,6 +1140,44 @@ where
             with_shell! { shell in &cfg.ycsb_path =>
                 cmd!("./bin/ycsb run redis -s -P {} {}", workload_file, ycsb_flags),
             }
+        }
+
+        YcsbSystem::MongoDB(cfg_mongodb) => {
+            start_mongodb(&shell, cfg_mongodb)?;
+
+            // Load the database before starting the workload
+            shell.run(
+                cmd!("./bin/ycsb load mongodb -s -P {}", ycsb_wkld_file).cwd(&cfg.ycsb_path),
+            )?;
+
+            // Run the callback
+            (cfg.callback)()?;
+
+            // Start `perf` if needed.
+            if let Some((mmu_overhead_file, counters)) = &cfg_mongodb.mmu_perf {
+                shell.spawn(cmd!(
+                    "sudo perf stat -e {} -p `pgrep mongod` 2>&1 | tee {}",
+                    counters.join(" -e "),
+                    mmu_overhead_file
+                ))?;
+
+                // Wait for perf to start collection.
+                shell.run(
+                    cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
+                )?;
+            }
+
+            // Run workload
+            shell
+                .run(cmd!("./bin/ycsb run mongodb -s -P {}", ycsb_wkld_file).cwd(&cfg.ycsb_path))?;
+
+            // Make sure mongod dies
+            shell.run(cmd!("sudo pkill mongod"))?;
+
+            // Make sure perf is done.
+            shell.run(cmd!(
+                "while [[ $(pgrep perf) ]] ; do sleep 1 ; done ; echo done"
+            ))?;
         }
 
         YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
