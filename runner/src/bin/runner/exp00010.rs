@@ -17,10 +17,11 @@ use runner::{
     time,
     workloads::{
         run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
-        run_memcached_gen_data, run_mix, run_mongodb_workload, run_thp_ubmk, run_thp_ubmk_shm,
-        run_time_loop, run_time_mmap_touch, CannealWorkload, Damon, LocalityMemAccessConfig,
+        run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop,
+        run_time_mmap_touch, run_ycsb_workload, CannealWorkload, Damon, LocalityMemAccessConfig,
         LocalityMemAccessMode, MemcachedWorkloadConfig, MongoDBWorkloadConfig, Pintool,
-        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig,
+        YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -1166,48 +1167,60 @@ where
             read_prop,
             update_prop,
         } => {
+            let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
+            let ycsb_path = &dir!(bmks_dir, "YCSB");
+            let mongodb_config = MongoDBWorkloadConfig {
+                bmks_dir: bmks_dir,
+                db_dir: &dir!(user_home, "mongodb"),
+                cache_size_mb: None,
+                server_pin_core: Some(tctx.next()),
+                client_pin_core: {
+                    tctx.skip();
+                    tctx.next()
+                },
+                mmu_perf: if cfg.mmu_overhead {
+                    Some((mmu_overhead_file, &cfg.perf_counters))
+                } else {
+                    None
+                },
+            };
+            let ycsb_cfg = YcsbConfig {
+                workload: YcsbWorkload::Custom {
+                    record_count: op_count,
+                    op_count: op_count,
+                    read_prop: read_prop,
+                    update_prop: update_prop,
+                    insert_prop: 1.0 - read_prop - update_prop,
+                },
+                system: YcsbSystem::MongoDB(mongodb_config),
+                ycsb_path: ycsb_path,
+                callback: || {
+                    // Turn on kbadgerd if needed.
+                    if cfg.kbadgerd {
+                        if let Ok(mongod_pid) = ushell
+                            .run(cmd!("pgrep mongod"))?
+                            .stdout
+                            .as_str()
+                            .trim()
+                            .parse::<usize>()
+                        {
+                            ushell.run(cmd!(
+                                "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                                mongod_pid
+                            ))?;
+                        } else {
+                            ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
+                        }
+                    }
+                    Ok(())
+                },
+            };
+
             time!(
                 timers,
                 "Workload",
-                run_mongodb_workload(
-                    &ushell,
-                    &MongoDBWorkloadConfig {
-                        bmks_dir: &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR),
-                        db_dir: &dir!(user_home, "mongodb"),
-                        cache_size_mb: None,
-                        server_pin_core: Some(tctx.next()),
-                        client_pin_core: {
-                            tctx.skip();
-                            tctx.next()
-                        },
-                        op_count: op_count,
-                        record_count: op_count,
-                        read_prop: read_prop,
-                        update_prop: update_prop,
-                        insert_prop: 1.0 - read_prop - update_prop,
-                        output_file: None,
-                        mmu_perf: if cfg.mmu_overhead {
-                            Some((mmu_overhead_file, &cfg.perf_counters))
-                        } else {
-                            None
-                        },
-                        server_start_cb: |shell| {
-                            // Turn on kbadgerd if needed.
-                            if cfg.kbadgerd {
-                                let mongod_pid = shell
-                                    .run(cmd!("pgrep mongod"))?
-                                    .stdout
-                                    .as_str()
-                                    .trim()
-                                    .parse::<usize>()?;
-                                ushell.run(cmd!(
-                                    "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-                                    mongod_pid
-                                ))?;
-                            }
-                            Ok(())
-                        },
-                    }
+                run_ycsb_workload::<spurs::SshError, _, fn(&SshShell) -> Result<(), failure::Error>>(
+                    &ushell, ycsb_cfg,
                 )?
             );
         }
