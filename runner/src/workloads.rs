@@ -1154,8 +1154,8 @@ where
             (cfg.callback)()?;
 
             // Start `perf` if needed.
-            if let Some((mmu_overhead_file, counters)) = &cfg_mongodb.mmu_perf {
-                shell.spawn(cmd!(
+            let perf_handle = if let Some((mmu_overhead_file, counters)) = &cfg_mongodb.mmu_perf {
+                let handle = shell.spawn(cmd!(
                     "sudo perf stat -e {} -p `pgrep mongod` 2>&1 | tee {}",
                     counters.join(" -e "),
                     mmu_overhead_file
@@ -1165,7 +1165,11 @@ where
                 shell.run(
                     cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
                 )?;
-            }
+
+                Some(handle)
+            } else {
+                None
+            };
 
             // Run workload
             shell
@@ -1175,9 +1179,10 @@ where
             shell.run(cmd!("sudo pkill mongod"))?;
 
             // Make sure perf is done.
-            shell.run(cmd!(
-                "while [[ $(pgrep perf) ]] ; do sleep 1 ; done ; echo done"
-            ))?;
+            if let Some(handle) = perf_handle {
+                let (_, result) = handle.join();
+                result?;
+            }
         }
 
         YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
