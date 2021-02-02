@@ -1197,6 +1197,24 @@ where
                 } else {
                     None
                 },
+                server_start_cb: |shell| {
+                    // Set `huge_addr` if needed.
+                    if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
+                        let mongod_pid = shell
+                            .run(cmd!("pgrep mongod"))?
+                            .stdout
+                            .as_str()
+                            .trim()
+                            .parse::<usize>()?;
+                        turn_on_huge_addr(
+                            shell,
+                            huge_addr.clone(),
+                            ThpHugeAddrProcess::Pid(mongod_pid),
+                        )?;
+                    }
+
+                    Ok(())
+                },
             };
             let ycsb_cfg = YcsbConfig {
                 workload: YcsbWorkload::Custom {
@@ -1233,9 +1251,7 @@ where
             time!(
                 timers,
                 "Workload",
-                run_ycsb_workload::<spurs::SshError, _, fn(&SshShell) -> Result<(), failure::Error>>(
-                    &ushell, ycsb_cfg,
-                )?
+                run_ycsb_workload::<spurs::SshError, _, _>(&ushell, ycsb_cfg,)?
             );
         }
 

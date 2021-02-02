@@ -410,7 +410,10 @@ where
 
 /// The configuration of a MongoDB workload.
 #[derive(Debug)]
-pub struct MongoDBWorkloadConfig<'s> {
+pub struct MongoDBWorkloadConfig<'s, F>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
     /// The path of the bmks directory on the remote.
     pub bmks_dir: &'s str,
     /// The path of the database directory
@@ -427,14 +430,20 @@ pub struct MongoDBWorkloadConfig<'s> {
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
     pub mmu_perf: Option<(String, &'s [String])>,
+
+    /// A callback executed after the mongodb server starts but before the workload starts.
+    pub server_start_cb: F,
 }
 
 /// Start a `MongoDB` server in daemon mode with a given amount of memory for its
 /// cache.
-pub fn start_mongodb(
+pub fn start_mongodb<F>(
     shell: &SshShell,
-    cfg: &MongoDBWorkloadConfig<'_>,
-) -> Result<(), failure::Error> {
+    cfg: &MongoDBWorkloadConfig<'_, F>,
+) -> Result<(), failure::Error>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
     let mongod_dir = format!("{}/mongo/build/opt/mongo", cfg.bmks_dir);
 
     let taskset = if let Some(server_pin_core) = cfg.server_pin_core {
@@ -468,6 +477,9 @@ pub fn start_mongodb(
 
     // Wait for the server to start
     while let Err(..) = shell.run(cmd!("nc -z localhost 27017")) {}
+
+    // Run the callback.
+    (cfg.server_start_cb)(shell)?;
 
     Ok(())
 }
@@ -978,7 +990,7 @@ where
 {
     Memcached(MemcachedWorkloadConfig<'s, F>),
     Redis(RedisWorkloadConfig<'s>),
-    MongoDB(MongoDBWorkloadConfig<'s>),
+    MongoDB(MongoDBWorkloadConfig<'s, F>),
     KyotoCabinet,
 }
 
