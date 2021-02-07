@@ -485,6 +485,14 @@ pub fn disable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
     Ok(())
 }
 
+/// Turn on ASLR.
+pub fn enable_aslr(shell: &SshShell) -> Result<(), failure::Error> {
+    shell.run(cmd!(
+        "echo 2 | sudo tee /proc/sys/kernel/randomize_va_space"
+    ))?;
+    Ok(())
+}
+
 /// Allow any user to run `perf`.
 pub fn perf_for_all(shell: &SshShell) -> Result<(), failure::Error> {
     shell.run(cmd!(

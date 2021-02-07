@@ -145,6 +145,7 @@ struct Config {
     kbadgerd_sleep_interval: Option<usize>,
     mm_econ: bool,
     mm_econ_profile: Option<String>,
+    enable_aslr: bool,
 
     username: String,
     host: String,
@@ -305,6 +306,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MM_ECON_PROFILE: --mm_econ_profile +takes_value
          requires[MM_ECON]
          "Use the given profile with mm_econ (start,end,count;start,end,count; no spaces).")
+        (@arg ENABLE_ASLR: --enable_aslr
+         "Enable ASLR.")
     };
 
     let app = damon::add_cli_options(app);
@@ -554,6 +557,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mm_econ_profile = sub_m
         .value_of("MM_ECON_PROFILE")
         .map(|v| v.replace(",", " "));
+    let enable_aslr = sub_m.is_present("ENABLE_ASLR");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -681,6 +685,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kbadgerd_sleep_interval,
         mm_econ,
         mm_econ_profile,
+        enable_aslr,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -714,7 +719,13 @@ where
     );
 
     // Turn of ASLR
-    runner::disable_aslr(&ushell)?;
+    if cfg.enable_aslr {
+        // ASLR is enabled by default on startup, so this probably isn't
+        // necessary, but it's good to be explicit.
+        runner::enable_aslr(&ushell)?;
+    } else {
+        runner::disable_aslr(&ushell)?;
+    }
 
     // Allow `perf` as any user
     runner::perf_for_all(&ushell)?;
