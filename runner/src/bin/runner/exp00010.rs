@@ -934,6 +934,9 @@ where
             profile
         ))?;
     }
+    if cfg.mm_econ {
+        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
 
     // Turn on kbadgerd if needed.
     if cfg.kbadgerd {
