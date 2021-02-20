@@ -146,6 +146,7 @@ struct Config {
     mm_econ: bool,
     mm_econ_profile: Option<String>,
     enable_aslr: bool,
+    pftrace: bool,
 
     username: String,
     host: String,
@@ -308,6 +309,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Use the given profile with mm_econ (start,end,count;start,end,count; no spaces).")
         (@arg ENABLE_ASLR: --enable_aslr
          "Enable ASLR.")
+        (@arg PFTRACE: --pftrace
+         "Enable page fault tracing (requires an instrumented kernel).")
     };
 
     let app = damon::add_cli_options(app);
@@ -558,6 +561,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .value_of("MM_ECON_PROFILE")
         .map(|v| v.replace(",", " "));
     let enable_aslr = sub_m.is_present("ENABLE_ASLR");
+    let pftrace = sub_m.is_present("PFTRACE");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -686,6 +690,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mm_econ,
         mm_econ_profile,
         enable_aslr,
+        pftrace,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -800,6 +805,11 @@ where
         user_home,
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("bt")
+    );
+    let pftrace_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("pftrace")
     );
 
     let params = serde_json::to_string(&cfg)?;
@@ -936,6 +946,10 @@ where
     }
     if cfg.mm_econ {
         ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
+
+    if cfg.pftrace {
+        ushell.run(cmd!("echo 1 | /proc/pftrace_enable"))?;
     }
 
     // Turn on kbadgerd if needed.
@@ -1198,7 +1212,7 @@ where
             let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
             let ycsb_path = &dir!(bmks_dir, "YCSB");
             let mongodb_config = MongoDBWorkloadConfig {
-                bmks_dir: bmks_dir,
+                bmks_dir,
                 db_dir: &dir!(user_home, "mongodb"),
                 cache_size_mb: None,
                 server_pin_core: Some(tctx.next()),
@@ -1233,13 +1247,13 @@ where
             let ycsb_cfg = YcsbConfig {
                 workload: YcsbWorkload::Custom {
                     record_count: op_count,
-                    op_count: op_count,
-                    read_prop: read_prop,
-                    update_prop: update_prop,
+                    op_count,
+                    read_prop,
+                    update_prop,
                     insert_prop: 1.0 - read_prop - update_prop,
                 },
                 system: YcsbSystem::MongoDB(mongodb_config),
-                ycsb_path: ycsb_path,
+                ycsb_path,
                 callback: || {
                     // Turn on kbadgerd if needed.
                     if cfg.kbadgerd {
@@ -1370,6 +1384,12 @@ where
                 tctx.next(),
             )?;
         }
+    }
+
+    if cfg.pftrace {
+        ushell.run(cmd!("echo 0 | /proc/pftrace_enable"))?;
+        ushell.run(cmd!("sync"))?;
+        ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
     }
 
     if cfg.mmstats {
