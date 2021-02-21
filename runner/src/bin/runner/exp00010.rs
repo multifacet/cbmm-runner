@@ -949,7 +949,7 @@ where
     }
 
     if cfg.pftrace {
-        ushell.run(cmd!("echo 1 | /proc/pftrace_enable"))?;
+        ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
     }
 
     // Turn on kbadgerd if needed.
@@ -1387,7 +1387,7 @@ where
     }
 
     if cfg.pftrace {
-        ushell.run(cmd!("echo 0 | /proc/pftrace_enable"))?;
+        ushell.run(cmd!("echo 0 | sudo tee /proc/pftrace_enable"))?;
         ushell.run(cmd!("sync"))?;
         ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
     }
