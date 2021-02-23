@@ -892,7 +892,7 @@ where
             name: "smaps",
             period: PERIOD,
             cmd: format!(
-                "((sudo cat /proc/`pgrep {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
+                "((sudo cat /proc/`pgrep -x {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
                 proc_name.unwrap(),
                 dir!(
                     user_home,
@@ -972,8 +972,8 @@ where
             Workload::Memcached { .. } | Workload::MongoDB { .. }
         ) {
         Some(ushell.spawn(cmd!(
-            "while ! [ `pgrep {}` ] ; do echo 'Waiting for process {}' ; done ; \
-             echo `pgrep {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+            "while ! [ `pgrep -x {}` ] ; do echo 'Waiting for process {}' ; done ; \
+             echo `pgrep -x {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
             proc_name.unwrap(),
             proc_name.unwrap(),
             proc_name.unwrap()
