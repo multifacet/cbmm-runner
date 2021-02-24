@@ -811,6 +811,11 @@ where
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("pftrace")
     );
+    let pftrace_rejected_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("rejected")
+    );
 
     let params = serde_json::to_string(&cfg)?;
 
@@ -1388,6 +1393,10 @@ where
 
     if cfg.pftrace {
         ushell.run(cmd!("echo 0 | sudo tee /proc/pftrace_enable"))?;
+        ushell.run(cmd!(
+            "cat /proc/pftrace_rejected | tee {}",
+            pftrace_rejected_file
+        ))?;
         ushell.run(cmd!("sync"))?;
         ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
     }
