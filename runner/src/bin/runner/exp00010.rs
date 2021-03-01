@@ -59,6 +59,7 @@ enum Workload {
         op_count: usize,
         read_prop: f32,
         update_prop: f32,
+        tmpfs_size: Option<usize>,
     },
     Mix {
         size: usize,
@@ -222,6 +223,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg UPDATE_PROP: --update_prop +takes_value {validator::is::<f32>}
              "The proportion of read operations to perform as a value between 0 and 1.\
              The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop")
+            (@arg TMPFS_SIZE: --tmpfs_size + takes_value {validator::is::<usize>}
+             "Place the MongoDB database in a tmpfs of the specified size in GB.")
         )
         (@subcommand mix =>
             (about: "Run the `mix` workload.")
@@ -434,6 +437,11 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 .unwrap_or("0.5")
                 .parse::<f32>()
                 .unwrap();
+            let tmpfs_size = if let Some(size) = sub_m.value_of("TMPFS_SIZE") {
+                Some(size.parse::<usize>().unwrap())
+            } else {
+                None
+            };
 
             if read_prop > 1.0 || read_prop < 0.0 {
                 panic!("--read_prop must be between 0 and 1.");
@@ -450,6 +458,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                     op_count,
                     read_prop,
                     update_prop,
+                    tmpfs_size,
                 },
                 "mongodb".into(),
                 0,
@@ -1213,12 +1222,14 @@ where
             op_count,
             read_prop,
             update_prop,
+            tmpfs_size,
         } => {
             let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
             let ycsb_path = &dir!(bmks_dir, "YCSB");
             let mongodb_config = MongoDBWorkloadConfig {
                 bmks_dir,
                 db_dir: &dir!(user_home, "mongodb"),
+                tmpfs_size,
                 cache_size_mb: None,
                 server_pin_core: Some(tctx.next()),
                 client_pin_core: {

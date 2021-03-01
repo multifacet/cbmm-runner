@@ -418,6 +418,9 @@ where
     pub bmks_dir: &'s str,
     /// The path of the database directory
     pub db_dir: &'s str,
+    /// The size of the tmpfs in GB mounted at db_dir. If None, don't mount anything to
+    /// db_dir
+    pub tmpfs_size: Option<usize>,
 
     /// The cache size of `MongoDB` server in MB. The default will be used if None.
     pub cache_size_mb: Option<usize>,
@@ -461,6 +464,11 @@ where
     // Create the DB directory if it doesn't exist and clear it.
     shell.run(cmd!("mkdir -p {}", cfg.db_dir))?;
     shell.run(cmd!("sudo rm -rf {}/*", cfg.db_dir))?;
+
+    // See if we should mount a tmpfs to the DB directory
+    if let Some(tmpfs_size) = cfg.tmpfs_size {
+        shell.run(cmd!("sudo mount -t tmpfs -o size={}g tmpfs {}", tmpfs_size, cfg.db_dir))?;
+    }
 
     // FIXME: The --fork flag might be a problem if something grabs the PID of
     // the first process, but not the forked process
