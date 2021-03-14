@@ -1024,6 +1024,9 @@ where
     /// The path of the YCSB directory.
     pub ycsb_path: &'s str,
 
+    /// Path for the results file of the YCSB output
+    pub ycsb_result_file: Option<&'s str>,
+
     /// A callback to run after the loading phase is complete.
     pub callback: F,
 }
@@ -1049,6 +1052,7 @@ where
         YcsbWorkload::F => "workloads/workloadf",
         YcsbWorkload::Custom { .. } => &ycsb_wkld_file,
     };
+    let ycsb_result_file = cfg.ycsb_result_file.unwrap_or("");
 
     // If this is a custom workload, we have to build the workload file
     if let YcsbWorkload::Custom {
@@ -1127,7 +1131,7 @@ where
             (cfg.callback)()?;
 
             with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb run memcached -s -P {} {}", workload_file, ycsb_flags),
+                cmd!("./bin/ycsb run memcached -s -P {} {} | tee {}", workload_file, ycsb_flags, ycsb_result_file),
             }
         }
 
@@ -1158,7 +1162,7 @@ where
             (cfg.callback)()?;
 
             with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb run redis -s -P {} {}", workload_file, ycsb_flags),
+                cmd!("./bin/ycsb run redis -s -P {} {} | tee {}", workload_file, ycsb_flags, ycsb_result_file),
             }
         }
 
@@ -1192,8 +1196,14 @@ where
             };
 
             // Run workload
-            shell
-                .run(cmd!("./bin/ycsb run mongodb -s -P {}", ycsb_wkld_file).cwd(&cfg.ycsb_path))?;
+            shell.run(
+                cmd!(
+                    "./bin/ycsb run mongodb -s -P {} | tee {}",
+                    ycsb_wkld_file,
+                    ycsb_result_file
+                )
+                .cwd(&cfg.ycsb_path),
+            )?;
 
             // Make sure mongod dies
             shell.run(cmd!("sudo pkill mongod"))?;

@@ -818,6 +818,11 @@ where
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("mmu")
     );
+    let ycsb_result_file = &dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("ycsb")
+    );
     let badger_trap_file = dir!(
         user_home,
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
@@ -1282,6 +1287,7 @@ where
                 },
                 system: YcsbSystem::MongoDB(mongodb_config),
                 ycsb_path,
+                ycsb_result_file: Some(ycsb_result_file),
                 callback: || {
                     // Turn on kbadgerd if needed.
                     if cfg.kbadgerd {

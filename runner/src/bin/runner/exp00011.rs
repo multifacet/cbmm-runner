@@ -447,6 +447,7 @@ where
                 workload: cfg.workload,
                 system,
                 ycsb_path: &ycsb_path,
+                ycsb_result_file: None,
                 callback,
             }
         )?
