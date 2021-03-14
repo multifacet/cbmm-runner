@@ -467,7 +467,11 @@ where
 
     // See if we should mount a tmpfs to the DB directory
     if let Some(tmpfs_size) = cfg.tmpfs_size {
-        shell.run(cmd!("sudo mount -t tmpfs -o size={}g tmpfs {}", tmpfs_size, cfg.db_dir))?;
+        shell.run(cmd!(
+            "sudo mount -t tmpfs -o size={}g tmpfs {}",
+            tmpfs_size,
+            cfg.db_dir
+        ))?;
     }
 
     // FIXME: The --fork flag might be a problem if something grabs the PID of
