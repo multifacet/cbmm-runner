@@ -565,6 +565,13 @@ where
 {
     use runner::get_device_id;
 
+    // Remove any existing swap partitions from /etc/fstab because we plan to do all of our own
+    // mounting and unmounting. Moreover, if fstab contains a swap partition that we destroy during
+    // setup, systemd will sit around trying to find it and adding minutes to every reboot.
+    ushell.run(cmd!(
+        r#"sudo sed -i 's/^.*swap.*$/#& # COMMENTED OUT BY setup00000/' /etc/fstab"#
+    ))?;
+
     if cfg.resize_root {
         runner::resize_root_partition(ushell)?;
     }
