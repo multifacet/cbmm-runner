@@ -272,7 +272,7 @@ where
 
     set_perf_scaling_gov(&ushell)?;
 
-    set_kernel_printk_level(&ushell, 4)?;
+    set_kernel_printk_level(&ushell, 5)?;
 
     Ok(ushell)
 }
