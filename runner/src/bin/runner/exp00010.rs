@@ -147,7 +147,7 @@ struct Config {
     mm_econ: bool,
     mm_econ_profile: Option<String>,
     enable_aslr: bool,
-    pftrace: bool,
+    pftrace: Option<usize>,
 
     username: String,
     host: String,
@@ -314,6 +314,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Enable ASLR.")
         (@arg PFTRACE: --pftrace
          "Enable page fault tracing (requires an instrumented kernel).")
+        (@arg PFTRACE_THRESHOLD: --pftrace_threshold
+         +takes_value {validator::is::<usize>} requires[PFTRACE]
+         "Sets the pftrace_threshold for minimum latency to be sampled.")
     };
 
     let app = damon::add_cli_options(app);
@@ -570,7 +573,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .value_of("MM_ECON_PROFILE")
         .map(|v| v.replace(",", " "));
     let enable_aslr = sub_m.is_present("ENABLE_ASLR");
-    let pftrace = sub_m.is_present("PFTRACE");
+    let pftrace = sub_m.is_present("PFTRACE").then(|| {
+        sub_m
+            .value_of("PFTRACE_THRESHOLD")
+            .map(|s| s.parse::<usize>().unwrap())
+            .unwrap_or(100000)
+    });
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -962,8 +970,12 @@ where
         ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
     }
 
-    if cfg.pftrace {
+    if let Some(threshold) = cfg.pftrace {
         ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
+        ushell.run(cmd!(
+            "echo {} | sudo tee /proc/pftrace_threshold",
+            threshold
+        ))?;
     }
 
     // Turn on kbadgerd if needed.
@@ -1402,7 +1414,7 @@ where
         }
     }
 
-    if cfg.pftrace {
+    if cfg.pftrace.is_some() {
         ushell.run(cmd!("echo 0 | sudo tee /proc/pftrace_enable"))?;
         ushell.run(cmd!(
             "cat /proc/pftrace_rejected | tee {}",
