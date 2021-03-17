@@ -964,6 +964,11 @@ where
 
     if cfg.pftrace {
         ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
+
+        // We want the first traced page fault to be from a process with root priveleges so that we
+        // don't have trouble opening the output file. For some reason, this command seems to do
+        // the trick, even though it fails.
+        ushell.run(cmd!("sudo memcached").allow_error())?;
     }
 
     // Turn on kbadgerd if needed.
