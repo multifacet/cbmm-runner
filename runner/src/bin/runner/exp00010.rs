@@ -1421,6 +1421,7 @@ where
             pftrace_rejected_file
         ))?;
         ushell.run(cmd!("cat /proc/pftrace_discarded_from_interrupt"))?;
+        ushell.run(cmd!("cat /proc/pftrace_discarded_from_error"))?;
         ushell.run(cmd!("sync"))?;
         ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
     }
