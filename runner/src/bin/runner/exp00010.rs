@@ -141,6 +141,7 @@ struct Config {
     perf_record: bool,
     perf_counters: Vec<String>,
     smaps_periodic: bool,
+    mmap_tracker: bool,
     badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
@@ -299,6 +300,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect the given counters instead of the default ones.")
         (@arg SMAPS_PERIODIC: --smaps_periodic
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
+        (@arg MMAP_TRACKER: --mmap_tracker
+         "Record stats for mmap calls for the main workload process.")
         (@arg BADGER_TRAP: --badger_trap
          "Use badger_trap to measure TLB misses.")
         (@arg KBADGERD: --kbadgerd
@@ -566,6 +569,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
     let perf_record = sub_m.is_present("PERF_RECORD");
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
+    let mmap_tracker = sub_m.is_present("MMAP_TRACKER");
     let badger_trap = sub_m.is_present("BADGER_TRAP");
     let kbadgerd = sub_m.is_present("KBADGERD");
     let kbadgerd_sleep_interval = sub_m
@@ -705,6 +709,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_record,
         perf_counters,
         smaps_periodic,
+        mmap_tracker,
         badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
@@ -806,6 +811,11 @@ where
     let mmstats_file = cfg.gen_file_name("mmstats");
     let meminfo_file = cfg.gen_file_name("meminfo");
     let smaps_file = cfg.gen_file_name("smaps");
+    let mmap_tracker_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("mmap")
+    );
     let damon_output_path = cfg.gen_file_name("damon");
     let damon_output_path = dir!(
         user_home,
@@ -949,6 +959,16 @@ where
                 &smaps_file
             ),
         })?;
+    }
+
+    if cfg.mmap_tracker {
+        ushell.spawn(cmd!(
+            "while ! pgrep {} >> /dev/null; do sleep 0.01; done; sudo {}/bmks/mmap_tracker.py -p `pgrep {}` | tee {}",
+            proc_name.unwrap(),
+            &dir!(user_home, RESEARCH_WORKSPACE_PATH),
+            proc_name.unwrap(),
+            mmap_tracker_file
+        ))?;
     }
 
     // Set `huge_addr` if needed.
