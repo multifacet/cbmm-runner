@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python2
 from bcc import BPF
 import argparse
 from time import strftime
