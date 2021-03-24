@@ -2,6 +2,7 @@
 from bcc import BPF
 import argparse
 from time import strftime
+import sys
 
 parser = argparse.ArgumentParser(description = "Record statistics for each mmap call")
 parser.add_argument("-p", "--pid", help="PID of the process to track")
@@ -13,10 +14,9 @@ bpf_text = """
 #include <uapi/linux/ptrace.h>
 #include <bcc/proto.h>
 
-BPF_PERF_OUTPUT(mmap_events);
-
 struct mmap_info_t {
     unsigned long addr;
+    unsigned long ret_addr;
     unsigned long len;
     unsigned long prot;
     unsigned long flags;
@@ -27,14 +27,19 @@ struct mmap_info_t {
     char comm[TASK_COMM_LEN];
 };
 
+BPF_HASH(maps, u64, struct mmap_info_t);
+BPF_PERF_OUTPUT(mmap_events);
+
 TRACEPOINT_PROBE(syscalls, sys_enter_mmap) {
-    u32 pid = bpf_get_current_pid_tgid() >> 32;
-    u32 tid = bpf_get_current_pid_tgid() & 0xFFFFFFFF;
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    u32 pid = pid_tgid >> 32;
+    u32 tid = pid_tgid & 0xFFFFFFFF;
     if(FILTER_PID)
         return 0;
 
     struct mmap_info_t info = {};
     info.addr = args->addr;
+    info.ret_addr = 0;
     info.len = args->len;
     info.prot = args->prot;
     info.flags = args->flags;
@@ -44,7 +49,26 @@ TRACEPOINT_PROBE(syscalls, sys_enter_mmap) {
     info.tid = tid;
     bpf_get_current_comm(&info.comm, sizeof(info.comm));
 
-    mmap_events.perf_submit(args, &info, sizeof(info));
+    maps.update(&pid_tgid, &info);
+
+    return 0;
+}
+
+TRACEPOINT_PROBE(syscalls, sys_exit_mmap) {
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    u32 pid = pid_tgid >> 32;
+    if(FILTER_PID)
+        return 0;
+
+    struct mmap_info_t *info;
+    info = maps.lookup(&pid_tgid);
+    if (info == 0)
+        return 0;
+
+    info->ret_addr = args->ret;
+    mmap_events.perf_submit(args, info, sizeof(*info));
+
+    maps.delete(&pid_tgid);
 
     return 0;
 }
@@ -63,9 +87,9 @@ if args.ebpf:
 
 b = BPF(text=bpf_text)
 
-header_string = "%-10.10s %-6s %-6s %-12s %-8s %-8s %-8s %-8s %-8s"
-format_string = "%-10.10s %-6d %-6d %-12x %-8x %-8x %-8x %-8d %-8x"
-print(header_string % ("COMM", "PID", "TID", "ADDR", "LEN", "PROT",
+header_string = "%-10.10s %-6s %-6s %-12s %-12s %-8s %-8s %-8s %-8s %-8s"
+format_string = "%-10.10s %-6d %-6d %-12x %-12x %-8x %-8x %-8x %-8d %-8x"
+print(header_string % ("COMM", "PID", "TID", "ADDR", "RETADDR", "LEN", "PROT",
         "FLAGS", "FD", "OFF"))
 
 def handle_mmap_event(cpu, data, size):
@@ -79,8 +103,9 @@ def handle_mmap_event(cpu, data, size):
     else:
         fd = event.fd
 
-    print(format_string % (event.comm, event.pid, event.tid, event.addr,
+    print(format_string % (event.comm, event.pid, event.tid, event.addr, event.ret_addr,
         event.len, event.prot, event.flags, fd, event.off))
+    sys.stdout.flush()
 
 b["mmap_events"].open_perf_buffer(handle_mmap_event)
 
