@@ -5,7 +5,7 @@ from time import strftime
 import sys
 
 parser = argparse.ArgumentParser(description = "Record statistics for each mmap call")
-parser.add_argument("-p", "--pid", help="PID of the process to track")
+parser.add_argument("-c", "--comm", help="The name of the process to track")
 parser.add_argument("--ebpf", action="store_true", help="Print the eBPF script")
 args = parser.parse_args()
 
@@ -30,10 +30,31 @@ struct mmap_info_t {
 BPF_HASH(maps, u64, struct mmap_info_t);
 BPF_PERF_OUTPUT(mmap_events);
 
+static bool strequals(char *s1, char *s2, u32 len) {
+    for (u32 i = 0; i < len; i++) {
+        if (s1[i] != s2[i]) {
+            return false;
+        }
+
+        if (s1[i] == '\\0') {
+            return true;
+        }
+    }
+
+    // For whatever reason, the BPF validator complains if this isn't here
+    for (u32 i = 0; i < 2; i++){}
+
+    return true;
+}
+
 TRACEPOINT_PROBE(syscalls, sys_enter_mmap) {
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 pid = pid_tgid >> 32;
     u32 tid = pid_tgid & 0xFFFFFFFF;
+    char comm[TASK_COMM_LEN];
+    char target[TASK_COMM_LEN] = "TARGET_COMM";
+
+    bpf_get_current_comm(&comm, sizeof(comm));
     if(FILTER_PID)
         return 0;
 
@@ -57,6 +78,10 @@ TRACEPOINT_PROBE(syscalls, sys_enter_mmap) {
 TRACEPOINT_PROBE(syscalls, sys_exit_mmap) {
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 pid = pid_tgid >> 32;
+    char comm[TASK_COMM_LEN];
+    char target[TASK_COMM_LEN] = "TARGET_COMM";
+
+    bpf_get_current_comm(&comm, sizeof(comm));
     if(FILTER_PID)
         return 0;
 
@@ -76,8 +101,12 @@ TRACEPOINT_PROBE(syscalls, sys_exit_mmap) {
 """
 
 # Do some fancy code substitution
-if args.pid:
-    bpf_text = bpf_text.replace("FILTER_PID", "(pid != %s)" % args.pid)
+if args.comm:
+    if len(args.comm) > 16:
+        args.comm = args.comm[0:15]
+
+    bpf_text = bpf_text.replace("TARGET_COMM", args.comm)
+    bpf_text = bpf_text.replace("FILTER_PID", "(strequals(comm, target, TASK_COMM_LEN) == false)" )
 else:
     bpf_text = bpf_text.replace("FILTER_PID", "0")
 
