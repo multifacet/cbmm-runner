@@ -116,8 +116,8 @@ if args.ebpf:
 
 b = BPF(text=bpf_text)
 
-header_string = "%-10.10s %-6s %-6s %-12s %-12s %-8s %-8s %-8s %-8s %-8s"
-format_string = "%-10.10s %-6d %-6d %-12x %-12x %-8x %-8x %-8x %-8d %-8x"
+header_string = "%-10.10s %-6s %-6s %-14s %-14s %-10s %-10s %-10s %-8s %-10s"
+format_string = "%-10.10s %-6d %-6d 0x%-12x 0x%-12x 0x%-8x 0x%-8x 0x%-8x %-8d 0x%-8x"
 print(header_string % ("COMM", "PID", "TID", "ADDR", "RETADDR", "LEN", "PROT",
         "FLAGS", "FD", "OFF"))
 
