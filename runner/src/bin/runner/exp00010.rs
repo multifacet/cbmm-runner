@@ -148,6 +148,7 @@ struct Config {
     mm_econ_profile: Option<String>,
     enable_aslr: bool,
     pftrace: Option<usize>,
+    asynczero: bool,
 
     username: String,
     host: String,
@@ -317,6 +318,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg PFTRACE_THRESHOLD: --pftrace_threshold
          +takes_value {validator::is::<usize>} requires[PFTRACE]
          "Sets the pftrace_threshold for minimum latency to be sampled.")
+        (@arg ASYNCZERO: --asynczero
+         "Enable async pre-zeroing.")
     };
 
     let app = damon::add_cli_options(app);
@@ -579,6 +582,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             .map(|s| s.parse::<usize>().unwrap())
             .unwrap_or(100000)
     });
+    let asynczero = sub_m.is_present("ASYNCZERO");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -708,6 +712,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mm_econ_profile,
         enable_aslr,
         pftrace,
+        asynczero,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -739,6 +744,17 @@ where
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
+
+    // Start asynczeroing daemon and throttle it up a bit.
+    if cfg.asynczero {
+        ushell.run(cmd!(
+            "ls /sys/kernel/mm/asynczero || \
+            sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/asynczero/asynczero.ko"
+        ))?;
+        ushell.run(cmd!(
+            "echo 10000000 | sudo tee /sys/module/asynczero/parameters/count"
+        ))?;
+    }
 
     // Turn of ASLR
     if cfg.enable_aslr {
@@ -1012,6 +1028,17 @@ where
     } else {
         None
     };
+
+    // Wait a bit for asynczero...
+    if cfg.asynczero {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        ushell.run(cmd!(
+            "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
+        ))?;
+        ushell.run(cmd!(
+            "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
+        ))?;
+    }
 
     // Run the workload.
     match cfg.workload {
