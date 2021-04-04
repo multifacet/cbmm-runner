@@ -468,6 +468,15 @@ where
             "libgomp",
             "words", // for xalanc workload creation
             "libcurl-devel",
+            "cmake3",
+            "bison",
+            "flex",
+            "ncurses-devel",
+            "centos-release-scl",
+            "llvm-toolset-7",
+            "llvm-toolset-7-llvm-devel",
+            "llvm-toolset-7-llvm-static",
+            "llvm-toolset-7-clang-devel",
         ]),
 
         // Add user to libvirt group after installing
