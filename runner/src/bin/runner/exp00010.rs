@@ -977,6 +977,8 @@ where
             proc_name.unwrap(),
             mmap_tracker_file
         ))?;
+        // Wait some time for the BPF validator to do its job
+        ushell.run(cmd!("sleep 10"))?;
     }
 
     // Set `huge_addr` if needed.
