@@ -962,9 +962,17 @@ where
     }
 
     if cfg.mmap_tracker {
+        // This is needed for BPF to compile, but we don't want it enabled all
+        // of the time because it interferes with gcc and g++
+        let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
+
+        // Install BCC if it hasn't been installed already
+        install_bcc(&ushell)?;
+
         ushell.spawn(cmd!(
-            "while ! pgrep {} >> /dev/null; do sleep 0.01; done; sudo {}/bmks/mmap_tracker.py -p `pgrep {}` | tee {}",
-            proc_name.unwrap(),
+            "{}; \
+            sudo {}/bmks/mmap_tracker.py -c {} | tee {}",
+            enable_bpf_cmd,
             &dir!(user_home, RESEARCH_WORKSPACE_PATH),
             proc_name.unwrap(),
             mmap_tracker_file
@@ -1625,3 +1633,38 @@ fn turn_on_huge_addr(
 
     Ok(())
 }
+
+/// Build bcc tools from source and install them
+fn install_bcc(shell: &SshShell) -> Result<(), spurs::SshError> {
+    let enable = "source /opt/rh/llvm-toolset-7/enable";
+    let bcc_exists = shell.run(cmd!("test -d bcc"));
+
+    if let Err(bcc_test_err) = bcc_exists {
+        // If test returned one, bcc does not exist, and should be built.
+        // Any other error is unrecoverable
+        if let spurs::SshError::NonZeroExit { cmd: _, exit} = bcc_test_err {
+            if exit != 1 {
+                return Ok(());
+            }
+        } else {
+            return Err(bcc_test_err);
+        }
+    } else {
+        // If test returned without an error, it exists, so there's nothing to do
+        return Ok(());
+    }
+
+    // Enable LLVM by default
+    shell.run(cmd!("echo 'source /opt/rh/llvm-toolset-7/enable' | \
+          sudo tee /etc/profile.d/llvm.sh"))?;
+
+    // Clone bcc
+    shell.run(cmd!("git clone -b v0.19.0 https://github.com/iovisor/bcc.git"))?;
+    shell.run(cmd!("mkdir bcc/build"))?;
+    shell.run(cmd!("{}; cmake3 ..", enable).cwd("bcc/build"))?;
+    shell.run(cmd!("{}; make", enable).cwd("bcc/build"))?;
+    shell.run(cmd!("{}; sudo make install", enable).cwd("bcc/build"))?;
+
+    Ok(())
+}
+
