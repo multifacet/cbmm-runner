@@ -4,6 +4,8 @@
 //! needs to be installed. If `--damon` is used, then `setup00002` with the DAMON kernel is needed.
 //! If `--thp_huge_addr` is used, then `setup00002` with an instrumented kernel is needed.
 
+use std::fs;
+
 use clap::clap_app;
 
 use runner::{
@@ -147,6 +149,7 @@ struct Config {
     kbadgerd_sleep_interval: Option<usize>,
     mm_econ: bool,
     mm_econ_profile: Option<String>,
+    mm_econ_benefit_file: Option<String>,
     enable_aslr: bool,
     pftrace: Option<usize>,
     asynczero: bool,
@@ -314,6 +317,13 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MM_ECON_PROFILE: --mm_econ_profile +takes_value
          requires[MM_ECON]
          "Use the given profile with mm_econ (start,end,count;start,end,count; no spaces).")
+        (@arg MM_ECON_BENEFIT_FILE: --mm_econ_benefit_file +takes_value
+         requires[MM_ECON]
+         "Import a list of conditions for a memory mapping and the benefit of that mapping being \
+         huge. The list taken from the csv file specified in this argument. The file should have the format\n\
+         SECTION,ADDR_COMP,ADDR,LEN_COMP,LEN,PROT_COMP,PROT,FLAGS_COMP,FLAGS,FD_COMP,FD,OFF_COMP,OFF,MISSES\n\
+         where SECTION can be code, data, heap, or mmap and *_COMP can be >, <, or =. \
+         A condition is ignored if its corresponding *_COMP field it empty.")
         (@arg ENABLE_ASLR: --enable_aslr
          "Enable ASLR.")
         (@arg PFTRACE: --pftrace
@@ -579,6 +589,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mm_econ_profile = sub_m
         .value_of("MM_ECON_PROFILE")
         .map(|v| v.replace(",", " "));
+    let mm_econ_benefit_file = sub_m
+        .is_present("MM_ECON_BENEFIT_FILE")
+        .then(|| String::from(sub_m.value_of("MM_ECON_BENEFIT_FILE").unwrap()));
     let enable_aslr = sub_m.is_present("ENABLE_ASLR");
     let pftrace = sub_m.is_present("PFTRACE").then(|| {
         sub_m
@@ -715,6 +728,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kbadgerd_sleep_interval,
         mm_econ,
         mm_econ_profile,
+        mm_econ_benefit_file,
         enable_aslr,
         pftrace,
         asynczero,
@@ -1012,6 +1026,21 @@ where
         ushell.run(cmd!(
             "echo '{}' | sudo tee /sys/kernel/mm/mm_econ/preloaded_profile",
             profile
+        ))?;
+    }
+    if let Some(filename) = &cfg.mm_econ_benefit_file {
+        let filter_csv = fs::read_to_string(filename)?;
+
+        ushell.run(cmd!(
+            "echo 1 | sudo tee /sys/kernel/mm/mm_econ/mmap_filters_enabled"
+        ))?;
+        ushell.run(cmd!(
+            "echo -n {} | sudo tee /sys/kernel/mm/mm_econ/process_comm",
+            proc_name.unwrap()
+        ))?;
+        ushell.run(cmd!(
+            "echo -n '{}' | sudo tee /sys/kernel/mm/mm_econ/mmap_filters",
+            filter_csv
         ))?;
     }
     if cfg.mm_econ {
