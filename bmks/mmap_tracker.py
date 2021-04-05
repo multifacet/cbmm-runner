@@ -106,7 +106,7 @@ if args.comm:
         args.comm = args.comm[0:15]
 
     bpf_text = bpf_text.replace("TARGET_COMM", args.comm)
-    bpf_text = bpf_text.replace("FILTER_PID", "(strequals(comm, target, TASK_COMM_LEN) == false)" )
+    bpf_text = bpf_text.replace("FILTER_PID", "!strequals(comm, target, TASK_COMM_LEN)" )
 else:
     bpf_text = bpf_text.replace("FILTER_PID", "0")
 
@@ -124,7 +124,7 @@ print(header_string % ("COMM", "PID", "TID", "ADDR", "RETADDR", "LEN", "PROT",
 def handle_mmap_event(cpu, data, size):
     event = b["mmap_events"].event(data)
 
-    # For some reason, event.fd isn't being sign extended of something
+    # For some reason, event.fd isn't being sign extended or something
     # because without this, event.fd shows up as 4294967295 when it should
     # be -1
     if event.fd == 4294967295:
