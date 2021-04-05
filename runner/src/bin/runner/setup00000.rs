@@ -14,7 +14,7 @@ use runner::{
     dir,
     downloads::{artifact_info, download, download_and_extract, Artifact},
     exp_0sim::*,
-    get_user_home_dir,
+    get_user_home_dir, install_bcc,
     paths::{setup00000::*, *},
     rsync_to_remote, with_shell, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
     Login, ServiceAction,
@@ -564,6 +564,9 @@ where
     ))?;
 
     runner::service(&ushell, "libvirtd", ServiceAction::Restart)?;
+
+    // Install BCC if it hasn't been already
+    install_bcc(&ushell)?;
 
     Ok(())
 }
