@@ -8,7 +8,7 @@
 #define ADDRESS ((void*)0x7f5707200000ul)
 #define REPS 50
 
-#define WAIT_TIME 65
+#define WAIT_TIME_PER_100GB 65.0 // seconds
 
 struct hpage {
 	char buf[1 << 21];
@@ -153,6 +153,7 @@ int main(int argc, const char *argv[]) {
 
 	// Number of huge pages.
 	const unsigned long n = size << 9;
+	const unsigned int wait_time = WAIT_TIME_PER_100GB * size / 100.0 + 1;
 
 	//for (unsigned long i = 0; i < n; ++i) {
 	//	write_hpage(&mem[i]);
@@ -170,14 +171,14 @@ int main(int argc, const char *argv[]) {
 	unsigned long elapsed_secs = elapsed / CLOCKS_PER_SEC;
 	printf("Created a region %lu GB (%lu huge pages) in %lu seconds. "
 		"Waiting %lus.\n",
-		size, n, elapsed_secs, WAIT_TIME - elapsed_secs);
+		size, n, elapsed_secs, wait_time - elapsed_secs);
 
-	if (elapsed_secs >= WAIT_TIME) {
+	if (elapsed_secs >= wait_time) {
 		printf("Didn't wait long enough!\n");
 		exit(-1);
 	}
 
-	int ret = sleep(WAIT_TIME - elapsed_secs);
+	int ret = sleep(wait_time - elapsed_secs);
 	if (ret != 0) {
 		printf("Didn't wait long enough! Sleep interrupted.\n");
 		exit(-1);
