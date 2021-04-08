@@ -878,6 +878,11 @@ where
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("rejected")
     );
+    let mmap_filter_csv_name = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("mmap-filters.csv")
+    );
 
     let params = serde_json::to_string(&cfg)?;
 
@@ -1030,6 +1035,10 @@ where
     }
     if let Some(filename) = &cfg.mm_econ_benefit_file {
         let filter_csv = fs::read_to_string(filename)?;
+
+        // Be sure to save the contents of the mmap_filter in the results
+        // so we can reference them later
+        ushell.run(cmd!("echo -n '{}' > {}", filter_csv, mmap_filter_csv_name))?;
 
         ushell.run(cmd!(
             "echo 1 | sudo tee /sys/kernel/mm/mm_econ/mmap_filters_enabled"
