@@ -1058,7 +1058,10 @@ where
 
     // Wait a bit for asynczero...
     if cfg.asynczero {
-        std::thread::sleep(std::time::Duration::from_secs(10));
+        // We wait longer for larger machines. Assuming that you can zero at about 6GBps...
+        let wait_time = cfg.size as u64 / 6;
+        std::thread::sleep(std::time::Duration::from_secs(wait_time));
+
         ushell.run(cmd!(
             "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
         ))?;
