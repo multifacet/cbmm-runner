@@ -43,8 +43,8 @@ def calc_num_inputs(rand):
 # Get the number of nets to use
 num_nets = int(sys.argv[1])
 
-# If there is a second argument, get the distrobution
-if len(sys.argv) >= 3:
+# If there is a second argument, get the distribution
+if len(sys.argv) >= 4:
     if sys.argv[2] == "--dist_uniform":
         dist_uniform = True
     elif sys.argv[2] == "--dist_normal":
@@ -57,7 +57,7 @@ else:
 
 # If there is a third argument, determine if there should be a random number
 # of inputs per net
-if len(sys.argv) >= 4:
+if len(sys.argv) >= 5:
     if sys.argv[3] == "--rand_num_inputs":
         rand_num_inputs = True
     else:
@@ -67,17 +67,22 @@ if len(sys.argv) >= 4:
 else:
     rand_num_inputs = False
 
+# The last argument is the output filename
+filename = sys.argv[-1]
+f = open(filename, "w")
+
 # This is kind of arbitrary, but seems to matchup with what's done in the parsec inputs
 size = int(sqrt(num_nets))
 size = size - (size % 100)
 size += 200
 
-#Print the first line
-print(str(num_nets) + " " + str(size) + " " + str(size))
+# Write the first line
+f.write(str(num_nets) + " " + str(size) + " " + str(size) + "\n")
 
 #Print the nets
 for i in range(num_nets):
-    used_nets = [i]
+    if i % 1000000 == 0:
+        print(i)
 
     num_inputs = calc_num_inputs(rand_num_inputs)
 
@@ -86,15 +91,13 @@ for i in range(num_nets):
 
     # Then add on the inputs to the net
     for j in range(num_inputs):
-        # Make sure the inputs aren't itself or a prebious input
         rand = rand_input(dist_uniform, num_nets)
-        while rand in used_nets:
-            rand = rand_input(dist_uniform, num_nets)
 
         line += index_to_net(rand) + " "
-        used_nets.append(rand)
 
     # Finish with END
-    line += "END"
+    line += "END\n"
 
-    print(line)
+    f.write(line)
+
+f.close()

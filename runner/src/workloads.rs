@@ -1613,7 +1613,7 @@ pub fn run_canneal(
     } = workload
     {
         shell.run(cmd!(
-            "~/0sim-workspace/bmks/canneal/rand_canneal_input.py {} {} {} > {}/input.nets",
+            "~/0sim-workspace/bmks/canneal/rand_canneal_input.py {} {} {} {}/input.nets",
             size,
             if uniform_dist {
                 "--dist_uniform"
