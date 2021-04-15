@@ -116,7 +116,6 @@ if __name__ == '__main__':
     # Write the first line
     f.write(str(num_nets) + " " + str(size) + " " + str(size) + "\n")
 
-    print(pool_params)
     with Pool() as p:
         results = p.starmap(gen_lines, pool_params)
         for group in results:
