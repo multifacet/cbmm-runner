@@ -1518,7 +1518,7 @@ pub fn run_hacky_spec17(
         } else {
             shell.run(
                 cmd!(
-                    "{}/0sim-workspace/bmks/spec2017/rand_xalanc_input.py {} > input.xml",
+                    "{}/0sim-workspace/bmks/spec2017/rand_xalanc_input.py {} input.xml",
                     user_home,
                     size
                 )
