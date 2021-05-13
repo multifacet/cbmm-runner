@@ -1,5 +1,7 @@
 //! Common workloads.
 
+use std::time::Instant;
+
 use bitflags::bitflags;
 
 use super::get_user_home_dir;
@@ -307,6 +309,7 @@ where
 pub fn run_memcached_gen_data<F>(
     shell: &SshShell,
     cfg: &MemcachedWorkloadConfig<'_, F>,
+    runtime_file: &str,
 ) -> Result<(), failure::Error>
 where
     F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
@@ -339,7 +342,12 @@ where
         cmd
     };
 
+    let start = Instant::now();
+
     shell.run(cmd)?;
+
+    let duration = Instant::now() - start;
+    shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
     // Make sure memcached dies (this is needed for tools to stop recording and output data).
     shell.run(cmd!("memcached-tool localhost:11211"))?;
@@ -933,7 +941,10 @@ pub fn run_mix(
     size_gb: usize,
     eager: Option<&str>,
     tctx: &mut TasksetCtx,
+    runtime_file: &str,
 ) -> Result<(), failure::Error> {
+    let start = Instant::now();
+
     let redis_handles = run_redis_gen_data(
         shell,
         &RedisWorkloadConfig {
@@ -967,6 +978,9 @@ pub fn run_mix(
 
     // Wait for redis client to finish
     redis_handles.client_spawn_handle.join().1?;
+
+    let duration = Instant::now() - start;
+    shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
     Ok(())
 }
@@ -1307,6 +1321,7 @@ pub fn run_thp_ubmk(
     // counter, use `perf list`.
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
+    runtime_file: &str,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
     // If reps is 0, omit the parameter
@@ -1315,6 +1330,8 @@ pub fn run_thp_ubmk(
     } else {
         reps.to_string()
     };
+
+    let start = Instant::now();
 
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
@@ -1352,6 +1369,9 @@ pub fn run_thp_ubmk(
         shell
             .run(cmd!("sudo taskset -c {} ./ubmk {} {}", pin_core, size, reps_str).cwd(bmk_dir))?;
     }
+
+    let duration = Instant::now() - start;
+    shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
     Ok(())
 }
@@ -1441,6 +1461,7 @@ pub fn run_hacky_spec17(
     workload: Spec2017Workload,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
+    runtime_file: &str,
     // The spec workloads default to 4 threads, so we require 4 cores.
     pin_cores: [usize; 4],
 ) -> Result<(), failure::Error> {
@@ -1494,6 +1515,8 @@ pub fn run_hacky_spec17(
         .collect::<Vec<_>>()
         .join(",");
 
+    let start = Instant::now();
+
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
@@ -1526,6 +1549,10 @@ pub fn run_hacky_spec17(
     } else {
         shell.run(cmd!("sudo taskset -c {} {}", pin_cores, cmd,).cwd(bmk_dir))?;
     }
+
+    // Output the workload runtime in ms as measure of workload performance.
+    let duration = Instant::now() - start;
+    shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
     Ok(())
 }
@@ -1599,6 +1626,7 @@ pub fn run_canneal(
     workload: CannealWorkload,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
+    runtime_file: &str,
     pin_core: usize,
 ) -> Result<(), failure::Error> {
     const CANNEAL_PATH: &str = "parsec-3.0/pkgs/kernels/canneal/inst/amd64-linux.gcc/bin/";
@@ -1643,6 +1671,8 @@ pub fn run_canneal(
         shell.run(cmd!("mv {}/*.nets {}/input.nets", NET_PATH, CANNEAL_PATH))?;
     }
 
+    let start = Instant::now();
+
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
@@ -1674,6 +1704,10 @@ pub fn run_canneal(
     } else {
         shell.run(cmd!("sudo taskset -c {} {}", pin_core, CANNEAL_CMD).cwd(CANNEAL_PATH))?;
     }
+
+    // Output the workload runtime in ms as measure of workload performance.
+    let duration = Instant::now() - start;
+    shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
     Ok(())
 }

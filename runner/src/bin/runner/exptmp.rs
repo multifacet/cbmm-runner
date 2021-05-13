@@ -239,6 +239,8 @@ where
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
 
+    let runtime_file = cfg.gen_file_name("runtime");
+
     let mut tctx = TasksetCtx::new(cfg.cores);
 
     // Warm up
@@ -361,7 +363,8 @@ where
                         damon: None,
                         mmu_perf: None,
                         server_start_cb: |_| Ok(()),
-                    }
+                    },
+                    &runtime_file
                 )?
             );
 

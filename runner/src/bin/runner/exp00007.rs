@@ -268,6 +268,8 @@ where
     let guest_mem_file = cfg.gen_file_name("guest_mem");
     let params = serde_json::to_string(&cfg)?;
 
+    let runtime_file = cfg.gen_file_name("runtime");
+
     vshell.run(cmd!(
         "echo '{}' > {}",
         escape_for_bash(&params),
@@ -383,7 +385,8 @@ where
                         damon: None,
                         mmu_perf: None,
                         server_start_cb: |_| Ok(()),
-                    }
+                    },
+                    &runtime_file
                 )?
             );
         }
@@ -497,6 +500,7 @@ where
                     size >> 20,
                     eager,
                     &mut tctx,
+                    &runtime_file,
                 )?
             });
         }

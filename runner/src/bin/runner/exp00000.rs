@@ -360,6 +360,8 @@ where
         })?;
     }
 
+    let runtime_file = cfg.gen_file_name("runtime");
+
     vshell.run(cmd!(
         "echo '{}' > {}",
         escape_for_bash(&params),
@@ -459,7 +461,8 @@ where
                         },
                         mmu_perf: None,
                         server_start_cb: |_| Ok(()),
-                    }
+                    },
+                    &runtime_file
                 )?
             );
         }

@@ -227,6 +227,8 @@ where
     let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
     let params = serde_json::to_string(&cfg)?;
 
+    let runtime_file = cfg.gen_file_name("runtime");
+
     vshell.run(cmd!(
         "echo '{}' > {}",
         escape_for_bash(&params),
@@ -336,7 +338,8 @@ where
                     damon: None,
                     mmu_perf: None,
                     server_start_cb: |_| Ok(()),
-                }
+                },
+                &runtime_file
             )?
         );
     }

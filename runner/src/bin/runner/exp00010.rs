@@ -883,6 +883,11 @@ where
         setup00000::HOSTNAME_SHARED_RESULTS_DIR,
         cfg.gen_file_name("mmap-filters.csv")
     );
+    let runtime_file = dir!(
+        user_home,
+        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+        cfg.gen_file_name("runtime")
+    );
 
     let params = serde_json::to_string(&cfg)?;
 
@@ -1210,6 +1215,7 @@ where
                     } else {
                         None
                     },
+                    &runtime_file,
                     tctx.next(),
                 )?
             );
@@ -1325,7 +1331,8 @@ where
                             }
                             Ok(())
                         },
-                    }
+                    },
+                    &runtime_file
                 )?
             );
         }
@@ -1427,6 +1434,7 @@ where
                     size,
                     eager,
                     &mut tctx,
+                    &runtime_file,
                 )?
             });
         }
@@ -1492,6 +1500,7 @@ where
                 } else {
                     None
                 },
+                &runtime_file,
                 [tctx.next(), tctx.next(), tctx.next(), tctx.next()],
             )?;
         }
@@ -1510,6 +1519,7 @@ where
                 } else {
                     None
                 },
+                &runtime_file,
                 tctx.next(),
             )?;
         }
