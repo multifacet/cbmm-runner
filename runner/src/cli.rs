@@ -40,7 +40,10 @@ pub mod setup_kernel {
             Arg::with_name("HTTPS")
                 .long("https")
                 .takes_value(true)
-                .help("The git repository to compile the kernel from as an HTTPS URL."),
+                .help(
+                    "The git repository to compile the kernel from as an HTTPS URL. \
+                     If the repo is private, a username and secret are required.",
+                ),
         )
         .arg(
             Arg::with_name("SSH")
