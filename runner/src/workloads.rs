@@ -194,6 +194,9 @@ where
     /// Indicates that we should run the workload under DAMON.
     pub damon: Option<Damon<'s>>,
 
+    /// The subcommand that determines if memcached is called with cb_wrapper
+    pub cb_wrapper_cmd: String,
+
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
     pub mmu_perf: Option<String>,
@@ -246,9 +249,10 @@ where
     };
 
     shell.run(cmd!(
-        "{}{}{}/memcached {} -m {} -d -u {} -f 1.11 -v",
+        "{}{}{} {}/memcached {} -m {} -d -u {} -f 1.11 -v",
         pintool,
         taskset,
+        cfg.cb_wrapper_cmd,
         cfg.memcached,
         if cfg.allow_oom { "-M" } else { "" },
         cfg.server_size_mb,
@@ -438,6 +442,9 @@ where
     /// The core number that the workload client is pinned to.
     pub client_pin_core: usize,
 
+    /// The subcommand that determines if memcached is called with cb_wrapper
+    pub cb_wrapper_cmd: String,
+
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
     pub mmu_perf: Option<(String, &'s [String])>,
@@ -486,8 +493,9 @@ where
     // the first process, but not the forked process
     shell.run(
         cmd!(
-            "sudo {} ./mongod --fork --logpath {}/log --dbpath {} {}",
+            "sudo {} {} ./mongod --fork --logpath {}/log --dbpath {} {}",
             taskset,
+            cfg.cb_wrapper_cmd,
             cfg.db_dir,
             cfg.db_dir,
             wired_tiger_cache_size,
@@ -1316,6 +1324,7 @@ pub fn run_thp_ubmk(
     size: usize,
     reps: usize,
     bmk_dir: &str,
+    cb_wrapper_cmd: String,
     // The output file as well as a list of perf counters to record. Most processors can only
     // support 4-5 hardware counters, but you can do more software counters. To see the type of a
     // counter, use `perf list`.
@@ -1340,10 +1349,12 @@ pub fn run_thp_ubmk(
                 perf stat \
                 -e {} \
                 -D 65000 \
-                -- ./ubmk {} {} 2>&1 | \
+                -- {} \
+                ./ubmk {} {} 2>&1 | \
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
+                cb_wrapper_cmd,
                 size,
                 reps_str,
                 mmu_overhead_file
@@ -1353,12 +1364,13 @@ pub fn run_thp_ubmk(
     } else if let Some(perf_file) = perf_file {
         shell.run(
             cmd!(
-                "(sudo taskset -c {} ./ubmk {} 10000 &) && \
+                "(sudo taskset -c {} {} ./ubmk {} 10000 &) && \
                  sudo perf record -a -C {} -g -F 99 -D 65000 sleep 180 && \
                  sudo pkill ubmk && \
                  sudo perf report --stdio > {} && \
                  echo DONE",
                 pin_core,
+                cb_wrapper_cmd,
                 size,
                 pin_core,
                 perf_file,
@@ -1367,7 +1379,7 @@ pub fn run_thp_ubmk(
         )?;
     } else {
         shell
-            .run(cmd!("sudo taskset -c {} ./ubmk {} {}", pin_core, size, reps_str).cwd(bmk_dir))?;
+            .run(cmd!("sudo taskset -c {} {} ./ubmk {} {}", pin_core, cb_wrapper_cmd, size, reps_str).cwd(bmk_dir))?;
     }
 
     let duration = Instant::now() - start;
@@ -1382,6 +1394,7 @@ pub fn run_thp_ubmk_shm(
     reps: usize,
     use_huge_pages: bool,
     bmk_dir: &str,
+    cb_wrapper_cmd: String,
     // The output file as well as a list of perf counters to record. Most processors can only
     // support 4-5 hardware counters, but you can do more software counters. To see the type of a
     // counter, use `perf list`.
@@ -1405,10 +1418,12 @@ pub fn run_thp_ubmk_shm(
                 perf stat \
                 -e {} \
                 -D 5000 \
-                -- ./ubmk-shm {} {} {} 2>&1 | \
+                -- {} \
+                ./ubmk-shm {} {} {} 2>&1 | \
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
+                cb_wrapper_cmd,
                 use_huge_pages,
                 size,
                 reps_str,
@@ -1419,12 +1434,13 @@ pub fn run_thp_ubmk_shm(
     } else if let Some(perf_file) = perf_file {
         shell.run(
             cmd!(
-                "(sudo taskset -c {} ./ubmk-shm {} {} 10000 &) && \
+                "(sudo taskset -c {} {} ./ubmk-shm {} {} 10000 &) && \
                  sudo perf record -a -C {} -g -F 99 -D 5000 sleep 180 && \
                  sudo pkill ubmk-shm && \
                  sudo perf report --stdio > {} && \
                  echo DONE",
                 pin_core,
+                cb_wrapper_cmd,
                 use_huge_pages,
                 size,
                 pin_core,
@@ -1435,8 +1451,9 @@ pub fn run_thp_ubmk_shm(
     } else {
         shell.run(
             cmd!(
-                "sudo taskset -c {} ./ubmk-shm {} {} {}",
+                "sudo taskset -c {} {} ./ubmk-shm {} {} {}",
                 pin_core,
+                cb_wrapper_cmd,
                 use_huge_pages,
                 size,
                 reps_str
@@ -1459,6 +1476,7 @@ pub fn run_hacky_spec17(
     shell: &SshShell,
     spec_dir: &str,
     workload: Spec2017Workload,
+    cb_wrapper_cmd: String,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     runtime_file: &str,
@@ -1524,10 +1542,11 @@ pub fn run_hacky_spec17(
                 perf stat \
                 -e {} \
                 -o {} \
-                -- {}",
+                -- {} {}",
                 pin_cores,
                 counters.join(" -e "),
                 mmu_overhead_file,
+                cb_wrapper_cmd,
                 cmd,
             )
             .cwd(bmk_dir),
@@ -1537,17 +1556,18 @@ pub fn run_hacky_spec17(
         shell.run(
             cmd!(
                 "sudo perf record -a -C {} -g -F 99 \
-                 taskset -c {} {} && \
+                 taskset -c {} {} {} && \
                  sudo perf report --stdio > {}",
                 pin_cores,
                 pin_cores,
+                cb_wrapper_cmd,
                 cmd,
                 perf_file,
             )
             .cwd(bmk_dir),
         )?;
     } else {
-        shell.run(cmd!("sudo taskset -c {} {}", pin_cores, cmd,).cwd(bmk_dir))?;
+        shell.run(cmd!("sudo taskset -c {} {} {}", pin_cores, cb_wrapper_cmd, cmd,).cwd(bmk_dir))?;
     }
 
     // Output the workload runtime in ms as measure of workload performance.
@@ -1624,6 +1644,7 @@ pub enum CannealWorkload {
 pub fn run_canneal(
     shell: &SshShell,
     workload: CannealWorkload,
+    cb_wrapper_cmd: String,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     runtime_file: &str,
@@ -1679,10 +1700,11 @@ pub fn run_canneal(
                 "sudo taskset -c {} \
                 perf stat \
                 -e {} \
-                -- {} 2>&1 | \
+                -- {} {} 2>&1 | \
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
+                cb_wrapper_cmd,
                 CANNEAL_CMD,
                 mmu_overhead_file
             )
@@ -1692,17 +1714,18 @@ pub fn run_canneal(
         shell.run(
             cmd!(
                 "sudo perf record -a -C {} -g -F 99 \
-                taskset -c {} {} && \
+                taskset -c {} {} {} && \
                 sudo perf report --stdio > {}",
                 pin_core,
                 pin_core,
+                cb_wrapper_cmd,
                 CANNEAL_CMD,
                 perf_file,
             )
             .cwd(CANNEAL_PATH),
         )?;
     } else {
-        shell.run(cmd!("sudo taskset -c {} {}", pin_core, CANNEAL_CMD).cwd(CANNEAL_PATH))?;
+        shell.run(cmd!("sudo taskset -c {} {} {}", pin_core, cb_wrapper_cmd, CANNEAL_CMD).cwd(CANNEAL_PATH))?;
     }
 
     // Output the workload runtime in ms as measure of workload performance.

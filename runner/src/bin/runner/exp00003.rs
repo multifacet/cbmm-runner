@@ -252,6 +252,7 @@ where
                 pf_time: None,
                 pintool: None,
                 damon: None,
+                cb_wrapper_cmd: "".to_string(),
                 mmu_perf: None,
                 server_start_cb: |_| Ok(()),
             },

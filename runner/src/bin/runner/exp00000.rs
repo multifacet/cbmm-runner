@@ -459,6 +459,7 @@ where
                         } else {
                             None
                         },
+                        cb_wrapper_cmd: "".to_string(),
                         mmu_perf: None,
                         server_start_cb: |_| Ok(()),
                     },
