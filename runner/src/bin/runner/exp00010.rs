@@ -321,9 +321,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          requires[MM_ECON]
          "Import a list of conditions for a memory mapping and the benefit of that mapping being \
          huge. The list taken from the csv file specified in this argument. The file should have the format\n\
-         SECTION,ADDR_COMP,ADDR,LEN_COMP,LEN,PROT_COMP,PROT,FLAGS_COMP,FLAGS,FD_COMP,FD,OFF_COMP,OFF,MISSES\n\
-         where SECTION can be code, data, heap, or mmap and *_COMP can be >, <, or =. \
-         A condition is ignored if its corresponding *_COMP field it empty.")
+         SECTION,MISSES,CONSTRAINTS\n\
+         where SECTION can be code, data, heap, or mmap,\n\
+         CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
+         QUANTITY can be section_off, addr, len, prot, flags, fd, or off\n\
+         COMP can be >, <, or =.")
         (@arg ENABLE_ASLR: --enable_aslr
          "Enable ASLR.")
         (@arg PFTRACE: --pftrace
@@ -1038,28 +1040,28 @@ where
             profile
         ))?;
     }
-    if let Some(filename) = &cfg.mm_econ_benefit_file {
+    if cfg.mm_econ {
+        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
+
+    // Generate the cb_wrapper command if necessary
+    let cb_wrapper_cmd = if let Some(filename) = &cfg.mm_econ_benefit_file {
         let filter_csv = fs::read_to_string(filename)?;
+        let cb_wrapper_file = dir!(
+            user_home,
+            RESEARCH_WORKSPACE_PATH,
+            ZEROSIM_BENCHMARKS_DIR,
+            "cb_wrapper"
+        );
 
         // Be sure to save the contents of the mmap_filter in the results
         // so we can reference them later
         ushell.run(cmd!("echo -n '{}' > {}", filter_csv, mmap_filter_csv_name))?;
 
-        ushell.run(cmd!(
-            "echo 1 | sudo tee /sys/kernel/mm/mm_econ/mmap_filters_enabled"
-        ))?;
-        ushell.run(cmd!(
-            "echo -n {} | sudo tee /sys/kernel/mm/mm_econ/process_comm",
-            proc_name.unwrap()
-        ))?;
-        ushell.run(cmd!(
-            "echo -n '{}' | sudo tee /sys/kernel/mm/mm_econ/mmap_filters",
-            filter_csv
-        ))?;
-    }
-    if cfg.mm_econ {
-        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
-    }
+        format!("{} {}", cb_wrapper_file, mmap_filter_csv_name)
+    } else {
+        "".to_string()
+    };
 
     if let Some(threshold) = cfg.pftrace {
         ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
@@ -1205,6 +1207,7 @@ where
                     size,
                     reps,
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
+                    cb_wrapper_cmd,
                     if cfg.mmu_overhead {
                         Some((&mmu_overhead_file, &cfg.perf_counters))
                     } else {
@@ -1231,6 +1234,7 @@ where
                     reps,
                     cfg.transparent_hugepage_enabled == "always",
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
+                    cb_wrapper_cmd,
                     if cfg.mmu_overhead {
                         Some((&mmu_overhead_file, &cfg.perf_counters))
                     } else {
@@ -1296,6 +1300,7 @@ where
                         } else {
                             None
                         },
+                        cb_wrapper_cmd,
                         mmu_perf: if cfg.mmu_overhead {
                             Some(mmu_overhead_file)
                         } else {
@@ -1355,6 +1360,7 @@ where
                     tctx.skip();
                     tctx.next()
                 },
+                cb_wrapper_cmd,
                 mmu_perf: if cfg.mmu_overhead {
                     Some((mmu_overhead_file, &cfg.perf_counters))
                 } else {
@@ -1490,6 +1496,7 @@ where
                 &ushell,
                 &dir!(user_home, RESEARCH_WORKSPACE_PATH, SPEC_2017_DIR),
                 wkload,
+                cb_wrapper_cmd,
                 if cfg.mmu_overhead {
                     Some((&mmu_overhead_file, &cfg.perf_counters))
                 } else {
@@ -1509,6 +1516,7 @@ where
             run_canneal(
                 &ushell,
                 workload,
+                cb_wrapper_cmd,
                 if cfg.mmu_overhead {
                     Some((&mmu_overhead_file, &cfg.perf_counters))
                 } else {
