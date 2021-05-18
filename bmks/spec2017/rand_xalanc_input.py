@@ -91,19 +91,38 @@ def print_item(item_number, num_cats):
     line += "</item>\n"
     return line
 
-def print_regions(start, num_regions, start_items, num_items, num_cats):
-    print("region " + str(start))
+def print_items(start, num_items, num_cats):
+    print("item " + str(start))
+
     line = ""
-    line += "<regions>\n"
-    for i in range(start, start + num_regions):
-        region = "region" + number_to_letters(i)
-        line += "<" + region + ">\n"
-        for j in range(start_items, start_items + num_items):
-            line += print_item(j, num_cats)
+    for i in range(start, start + num_items):
+        line += print_item(i, num_cats)
 
-        line += "</" + region + ">\n"
+    return line
 
-    line += "</regions>\n"
+def print_region(region, start_item, num_items, num_cats):
+    print("region " + region)
+    print(str(start_item) + " " + str(start_item + num_items))
+    line = ""
+
+    line += "<" + region + ">\n"
+
+    # Generate the inputs to the pool for the items
+    pool_params = []
+    pool_size = 1000
+    item_end = start_item + num_items
+    for i in range(start_item, item_end, pool_size):
+        if i + pool_size > item_end:
+            pool_size = item_end - i
+        pool_params.append((i, pool_size, num_cats))
+    # Generate the items
+    with Pool() as p:
+        results = p.starmap(print_items, pool_params)
+        for item in results:
+            line += item
+
+    line += "</" + region + ">\n"
+
     return line
 
 def print_categories(start, num_categories):
@@ -163,32 +182,20 @@ if __name__ == '__main__':
     filename = sys.argv[2]
     f = open(filename, "w")
 
-    num_regions = size
-    items_per_region = 750
-    num_items = size * items_per_region
+    regions = ["africa", "asia", "australia", "europe", "namerica", "samerica"]
+    num_items = size * 750
+    items_in_region = int(num_items / len(regions))
     num_categories = int(math.sqrt(num_items))
     num_auctions = size * 50
 
     f.write(xml_header)
 
-    # Generate the inputs to the pool for the regions
-    pool_params = []
-    pool_size = 200
-    for i in range(0, num_regions, pool_size):
-        if i + pool_size > num_regions:
-            pool_size = num_regions - i
-        pool_params.append((i, pool_size, i * items_per_region, items_per_region, num_categories))
-
     # Generate the regions
-    with Pool() as p:
-        results = p.starmap(print_regions, pool_params)
-        count = 0
-        for region in results:
-            f.write(region)
-
-            count = count + 1
-            if count % 100 == 0:
-                print("Writing " + str(count))
+    f.write("<regions>\n")
+    for (i, region) in enumerate(regions):
+        region_text = print_region(region, i * items_in_region, items_in_region, num_categories)
+        f.write(region_text)
+    f.write("</regions>\n")
 
     # Generate the inputs to the pool for the categories
     pool_params = []
