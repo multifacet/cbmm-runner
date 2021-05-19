@@ -72,6 +72,8 @@ int main(int argc, char *argv[])
     fclose(filter_file);
     fclose(mmap_filters_file);
 
+    printf("Starting process with pid %d\n", pid);
+
     // Execute the intended program
     execv(program_name, &argv[2]);
 
