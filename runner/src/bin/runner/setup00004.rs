@@ -1,20 +1,31 @@
-//! Setup the given host (not test VM) using the kernel compiled from the given kernel source.
-//! (If you want to set up a VM, use setup 2.)
+//! Set up the given host using HawkEye.
 //!
 //! Requires `setup00000` for dependencies, etc.
 
 use clap::clap_app;
 
 use runner::{
-    cli::setup_kernel, exp_0sim::*, get_user_home_dir, paths::*, KernelBaseConfigSource,
-    KernelConfig, KernelPkgType, KernelSrc, Login,
+    exp_0sim::*, get_user_home_dir, paths::*, KernelBaseConfigSource, KernelConfig, KernelPkgType,
+    KernelSrc, Login,
 };
 
 use spurs::{cmd, Execute};
 
+const HAWKEYE_GIT_REPO: &str = "https://github.com/mark-i-m/HawkEye";
+const HAWKEYE_X86_PROFILE_REPO: &str = "https://github.com/mark-i-m/x86-MMU-Profiler";
+
+const HAWKEYE_KERNEL_CONFIG: &[(&str, bool)] = &[
+    ("CONFIG_TRANSPARENT_HUGEPAGE", true),
+    ("CONFIG_PAGE_TABLE_ISOLATION", false),
+    ("CONFIG_RETPOLINE", false),
+    ("CONFIG_GDB_SCRIPTS", true),
+    ("CONFIG_FRAME_POINTERS", true),
+    ("CONFIG_IKHEADERS", true),
+];
+
 pub fn cli_options() -> clap::App<'static, 'static> {
-    let app = clap_app! { setup00003 =>
-        (about: "Sets up the given _centos_ with the given kernel. Requires `sudo`.")
+    let app = clap_app! { setup00004 =>
+        (about: "Sets up the given _centos_ with the HawkEye kernel and tools. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)
         (@setting TrailingVarArg)
@@ -24,20 +35,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "The username on the remote (e.g. markm)")
     };
 
-    let app = setup_kernel::add_cli_options(app);
-
     app
-}
-
-/// Turn `repo` and `branch` into something that is unlikely to cause problems if we use it in a path name.
-fn pathify(repo: &str, branch: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let s = format!("{}{}", repo, branch);
-    let mut h = DefaultHasher::new();
-    s.hash(&mut h);
-    format!("kernel-{:x}", h.finish())
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -47,18 +45,14 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         host: sub_m.value_of("HOSTNAME").unwrap(),
     };
 
-    let (git_repo, commitish, kernel_config, _secret) = setup_kernel::parse_cli_options(sub_m);
-
     // Connect to the remote.
     let ushell = connect_and_setup_host_only(&login)?;
 
     // Clone the given kernel, if needed.
-    let kernel_path = pathify(&git_repo, commitish);
+    ushell.run(cmd!("[ -e HawkEye/ ] || git clone {}", HAWKEYE_GIT_REPO))?;
     ushell.run(cmd!(
-        "[ -e {} ] || git clone {} {}",
-        kernel_path,
-        &git_repo,
-        kernel_path
+        "[ -e x86-MMU-Profiler/ ] || git clone {}",
+        HAWKEYE_X86_PROFILE_REPO
     ))?;
 
     // Install the kernel on the guest.
@@ -78,14 +72,14 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     runner::build_kernel(
         &ushell,
         KernelSrc::Git {
-            repo_path: kernel_path,
-            commitish: commitish.into(),
+            repo_path: "HawkEye".into(),
+            commitish: "ohp".into(),
         },
         KernelConfig {
             base_config: KernelBaseConfigSource::Path(config.into()),
-            extra_options: &kernel_config,
+            extra_options: HAWKEYE_KERNEL_CONFIG,
         },
-        Some(&runner::gen_local_version(commitish, git_hash)),
+        Some(&runner::gen_local_version("ohp", git_hash)),
         KernelPkgType::Rpm,
         /* cpupower */ true,
     )?;
@@ -111,6 +105,45 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     // update grub to choose this entry (new kernel) by default
     ushell.run(cmd!("sudo grub2-set-default 0"))?;
     ushell.run(cmd!("sync"))?;
+
+    // We need the kernel headers installed to build modules.
+    let headers_rpm = ushell
+        .run(
+            cmd!(
+                "ls -Art {}/rpmbuild/RPMS/x86_64/ | grep  headers | tail -n 1",
+                user_home
+            )
+            .use_bash(),
+        )?
+        .stdout;
+    let headers_rpm = headers_rpm.trim();
+    ushell.run(cmd!(
+        "(rpm -q kernel-headers | grep 4.3.0) || \
+         sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
+        user_home,
+        headers_rpm
+    ))?;
+
+    // Build kernel modules.
+    let nprocess = runner::get_num_cores(&ushell)?;
+    ushell.run(cmd!("make -j {} CC=/usr/bin/gcc modules", nprocess).cwd("HawkEye/kbuild"))?;
+    ushell.run(
+        cmd!(
+            "make -j {} CC=/usr/bin/gcc M=hawkeye_modules/async-zero",
+            nprocess
+        )
+        .cwd("HawkEye/kbuild"),
+    )?;
+    ushell.run(
+        cmd!(
+            "make -j {} CC=/usr/bin/gcc M=hawkeye_modules/bloat_recovery",
+            nprocess
+        )
+        .cwd("HawkEye/kbuild"),
+    )?;
+
+    // Build userspace profiling tool
+    ushell.run(cmd!("make -j {}", nprocess).cwd("x86-MMU-Profiler"))?;
 
     Ok(())
 }
