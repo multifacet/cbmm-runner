@@ -2,7 +2,8 @@
 //!
 //! Requires `setup00000` with the appropriate kernel. If mmstats is passed, an instrumented kernel
 //! needs to be installed. If `--damon` is used, then `setup00002` with the DAMON kernel is needed.
-//! If `--thp_huge_addr` is used, then `setup00002` with an instrumented kernel is needed.
+//! If `--thp_huge_addr` is used, then `setup00002` with an instrumented kernel is needed. If
+//! `--hawkeye` is used, then `setup00004` is needed to install hawkeye and related tools.
 
 use std::fs;
 
@@ -11,6 +12,7 @@ use clap::clap_app;
 use runner::{
     background::{BackgroundContext, BackgroundTask},
     cli::{damon, memtrace, validator},
+    cpu::{cpu_family_model, IntelX86Model, Processor},
     dir,
     exp_0sim::*,
     get_cpu_freq, get_user_home_dir,
@@ -153,6 +155,7 @@ struct Config {
     enable_aslr: bool,
     pftrace: Option<usize>,
     asynczero: bool,
+    hawkeye: bool,
 
     username: String,
     host: String,
@@ -333,6 +336,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Sets the pftrace_threshold for minimum latency to be sampled.")
         (@arg ASYNCZERO: --asynczero
          "Enable async pre-zeroing.")
+        (@arg HAWKEYE: --hawkeye
+         conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR PFTRACE EAGER MMSTATS]
+         "Turn on HawkEye (ASPLOS '19).")
     };
 
     let app = damon::add_cli_options(app);
@@ -600,6 +606,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             .unwrap_or(100000)
     });
     let asynczero = sub_m.is_present("ASYNCZERO");
+    let hawkeye = sub_m.is_present("HAWKEYE");
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -672,7 +679,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
 
     let (load_misses, store_misses) = {
-        let suffix = runner::page_walk_perf_counter_suffix(&ushell)?;
+        let suffix = runner::cpu::page_walk_perf_counter_suffix(&ushell)?;
         (
             format!("dtlb_load_misses.{}", suffix),
             format!("dtlb_store_misses.{}", suffix),
@@ -732,6 +739,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         enable_aslr,
         pftrace,
         asynczero,
+        hawkeye,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -769,6 +777,14 @@ where
         ushell.run(cmd!(
             "ls /sys/kernel/mm/asynczero || \
             sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/asynczero/asynczero.ko"
+        ))?;
+        ushell.run(cmd!(
+            "echo 10000000 | sudo tee /sys/module/asynczero/parameters/count"
+        ))?;
+    }
+    if cfg.hawkeye {
+        ushell.run(cmd!(
+            "sudo insmod HawkEye/kbuild/hawkeye_modules/async-zero/asynczero.ko"
         ))?;
         ushell.run(cmd!(
             "echo 10000000 | sudo tee /sys/module/asynczero/parameters/count"
@@ -1100,7 +1116,7 @@ where
     };
 
     // Wait a bit for asynczero...
-    if cfg.asynczero {
+    if cfg.asynczero || cfg.hawkeye {
         // We wait longer for larger machines. Assuming that you can zero at about 6GBps...
         let wait_time = cfg.size as u64 / 6;
         std::thread::sleep(std::time::Duration::from_secs(wait_time));
@@ -1108,9 +1124,39 @@ where
         ushell.run(cmd!(
             "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
         ))?;
-        ushell.run(cmd!(
-            "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
-        ))?;
+
+        if cfg.asynczero {
+            ushell.run(cmd!(
+                "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
+            ))?;
+        } else if cfg.hawkeye {
+            ushell.run(cmd!(
+                "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
+            ))?;
+        }
+    }
+
+    // Turn on hawkeye bloat removal thread and profiler if needed.
+    if cfg.hawkeye {
+        if let Some(proc_name) = proc_name {
+            ushell.run(cmd!(
+                "sudo insmod HawkEye/kbuild/hawkeye_modules/bloat_recovery/remove.ko \
+                 debloat_comm={}",
+                proc_name
+            ))?;
+            ushell.run(cmd!(
+                "./x86-MMU-Profiler/global_profile -p {} {}",
+                proc_name,
+                match cpu_family_model(&ushell)? {
+                    Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
+                    Processor::Intel(IntelX86Model::HaswellConsumer) => "-f haswell",
+
+                    _ => unimplemented!(),
+                }
+            ))?;
+        } else {
+            panic!("HawkEye with nameless processes...");
+        }
     }
 
     // Run the workload.
