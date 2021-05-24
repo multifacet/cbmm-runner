@@ -16,6 +16,7 @@ pub mod output;
 
 pub mod background;
 pub mod cli;
+pub mod cpu;
 pub mod downloads;
 pub mod exp_0sim;
 pub mod hadoop;
@@ -1039,22 +1040,6 @@ pub fn gen_standard_host_output(out_file: &str, shell: &SshShell) -> Result<(), 
     shell.run(cmd!("sync"))?;
 
     Ok(())
-}
-
-/// On Broadwell or older, the `*.walk_duration` perf counters are used to measure the amount of
-/// cycles spent in page walks. On processors after Broadwell, the name of the counter is
-/// `*.walk_active`.
-///
-/// This function checks which it is and returns either `Ok("walk_duration")` or
-/// `Ok("walk_active")`.
-pub fn page_walk_perf_counter_suffix(shell: &SshShell) -> Result<String, failure::Error> {
-    let output = shell
-        .run(cmd!(
-            "(sudo perf list | grep -o walk_active > /tmp/x && cat /tmp/x | uniq) || echo walk_duration"
-        ))?
-        .stdout;
-
-    Ok(output.trim().to_owned())
 }
 
 /// Build bcc tools from source and install them

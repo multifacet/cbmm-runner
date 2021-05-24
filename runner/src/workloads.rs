@@ -281,7 +281,7 @@ where
 
     // Start `perf` if needed.
     Ok(if let Some(output_path) = &cfg.mmu_perf {
-        let pagewalk_pc = super::page_walk_perf_counter_suffix(&shell)?;
+        let pagewalk_pc = crate::cpu::page_walk_perf_counter_suffix(&shell)?;
         let handle = shell.spawn(cmd!(
             "perf stat \
             -e dtlb_load_misses.{} \
