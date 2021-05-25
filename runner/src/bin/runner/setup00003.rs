@@ -61,10 +61,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kernel_path
     ))?;
 
-    // Install the kernel on the guest.
-    //
-    // Building the kernel on the guest is painful, so we will build it on the host and copy it to
-    // the guest via NFS.
+    // Install the kernel.
     let user_home = &get_user_home_dir(&ushell)?;
 
     let git_hash = ushell.run(cmd!("git rev-parse HEAD").cwd(RESEARCH_WORKSPACE_PATH))?;
