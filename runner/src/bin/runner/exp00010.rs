@@ -1058,9 +1058,9 @@ where
         // so we can reference them later
         ushell.run(cmd!("echo -n '{}' > {}", filter_csv, mmap_filter_csv_name))?;
 
-        format!("{} {}", cb_wrapper_file, mmap_filter_csv_name)
+        Some(format!("{} {}", cb_wrapper_file, mmap_filter_csv_name))
     } else {
-        "".to_string()
+        None
     };
 
     if let Some(threshold) = cfg.pftrace {

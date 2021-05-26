@@ -387,7 +387,7 @@ where
             output_file: None,
             eager: None,
             client_pin_core: 0,
-            cb_wrapper_cmd: "".to_string(),
+            cb_wrapper_cmd: None,
             mmu_perf: None,
         }),
 
