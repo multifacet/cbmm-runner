@@ -13,7 +13,6 @@ int main(int argc, char *argv[])
     FILE* filter_file;
     FILE* mmap_filters_file;
     int len;
-    int count = 0;
     int ret;
     pid_t pid;
 
