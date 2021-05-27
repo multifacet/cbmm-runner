@@ -965,6 +965,10 @@ where
         Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
         Workload::Canneal { .. } => Some("canneal"),
     };
+    let proc_name_grep = match cfg.workload {
+        Workload::Mix { .. } => todo!(),
+        _ => proc_name.unwrap(),
+    };
 
     if cfg.smaps_periodic {
         bgctx.spawn(BackgroundTask {
@@ -972,7 +976,7 @@ where
             period: PERIOD,
             cmd: format!(
                 "((sudo cat /proc/`pgrep -x {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
-                proc_name.unwrap(),
+                proc_name_grep,
                 dir!(
                     user_home,
                     setup00000::HOSTNAME_SHARED_RESULTS_DIR,
@@ -1006,14 +1010,10 @@ where
 
     // Set `huge_addr` if needed.
     if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
-        let proc_name = proc_name.unwrap();
         // We need to truncate the name to 15 characters because Linux will truncate current->comm
         // to 15 characters. In order for them to match we truncate it here...
-        let proc_name_trunc = if proc_name.len() > 15 {
-            &proc_name[..15]
-        } else {
-            &proc_name
-        };
+        let proc_name = proc_name.unwrap();
+        let proc_name_trunc = proc_name.get(..15).unwrap_or(proc_name);
         turn_on_huge_addr(
             &ushell,
             huge_addr.clone(),
@@ -1093,9 +1093,9 @@ where
         Some(ushell.spawn(cmd!(
             "while ! [ `pgrep -x {}` ] ; do echo 'Waiting for process {}' ; done ; \
              echo `pgrep -x {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-            proc_name.unwrap(),
-            proc_name.unwrap(),
-            proc_name.unwrap()
+            proc_name_grep,
+            proc_name_grep,
+            proc_name_grep,
         ))?)
     } else {
         None
@@ -1578,10 +1578,7 @@ where
     // Extract relevant data from dmesg for BadgerTrap, if needed.
     if cfg.badger_trap {
         // We need to ensure the relevant process has terminated.
-        ushell.run(cmd!(
-            "pkill -9 {} || echo 'already dead'",
-            proc_name.unwrap()
-        ))?;
+        ushell.run(cmd!("pkill -9 {} || echo 'already dead'", proc_name_grep))?;
 
         // We wait until the results have been written...
         while ushell
