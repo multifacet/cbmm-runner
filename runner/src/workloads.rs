@@ -1378,8 +1378,16 @@ pub fn run_thp_ubmk(
             .cwd(bmk_dir),
         )?;
     } else {
-        shell
-            .run(cmd!("sudo taskset -c {} {} ./ubmk {} {}", pin_core, cb_wrapper_cmd.unwrap_or("".to_string()), size, reps_str).cwd(bmk_dir))?;
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} {} ./ubmk {} {}",
+                pin_core,
+                cb_wrapper_cmd.unwrap_or("".to_string()),
+                size,
+                reps_str
+            )
+            .cwd(bmk_dir),
+        )?;
     }
 
     let duration = Instant::now() - start;
@@ -1567,7 +1575,15 @@ pub fn run_hacky_spec17(
             .cwd(bmk_dir),
         )?;
     } else {
-        shell.run(cmd!("sudo taskset -c {} {} {}", pin_cores, cb_wrapper_cmd.unwrap_or("".to_string()), cmd,).cwd(bmk_dir))?;
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} {} {}",
+                pin_cores,
+                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cmd,
+            )
+            .cwd(bmk_dir),
+        )?;
     }
 
     // Output the workload runtime in ms as measure of workload performance.
@@ -1725,7 +1741,15 @@ pub fn run_canneal(
             .cwd(CANNEAL_PATH),
         )?;
     } else {
-        shell.run(cmd!("sudo taskset -c {} {} {}", pin_core, cb_wrapper_cmd.unwrap_or("".to_string()), CANNEAL_CMD).cwd(CANNEAL_PATH))?;
+        shell.run(
+            cmd!(
+                "sudo taskset -c {} {} {}",
+                pin_core,
+                cb_wrapper_cmd.unwrap_or("".to_string()),
+                CANNEAL_CMD
+            )
+            .cwd(CANNEAL_PATH),
+        )?;
     }
 
     // Output the workload runtime in ms as measure of workload performance.
