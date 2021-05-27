@@ -1037,6 +1037,12 @@ where
     // Build BadgerTrap client program.
     ushell.run(cmd!("make").cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BADGERTRAP_SUBMODULE)))?;
 
+    // Build the cb_wrapper
+    ushell.run(
+        cmd!("gcc -Wall -Werror -o cb_wrapper cb_wrapper.c")
+            .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR)),
+    )?;
+
     Ok(())
 }
 
