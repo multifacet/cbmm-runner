@@ -360,7 +360,7 @@ where
 
     // Make sure perf is done.
     shell.run(cmd!(
-        "while [[ $(pgrep perf) ]] ; do sleep 1 ; done ; echo done"
+        "while [[ $(pgrep -f '^perf stat') ]] ; do sleep 1 ; done ; echo done"
     ))?;
 
     Ok(())
