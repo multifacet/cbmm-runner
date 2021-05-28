@@ -5,8 +5,8 @@
 use clap::clap_app;
 
 use runner::{
-    exp_0sim::*, get_user_home_dir, paths::*, KernelBaseConfigSource, KernelConfig, KernelPkgType,
-    KernelSrc, Login,
+    exp_0sim::*, get_user_home_dir, paths::*, with_shell, KernelBaseConfigSource, KernelConfig,
+    KernelPkgType, KernelSrc, Login,
 };
 
 use spurs::{cmd, Execute};
@@ -46,7 +46,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     };
 
     // Connect to the remote.
-    let ushell = connect_and_setup_host_only(&login)?;
+    let mut ushell = connect_and_setup_host_only(&login)?;
 
     // Clone the given kernel, if needed.
     ushell.run(cmd!("[ -e HawkEye/ ] || git clone {}", HAWKEYE_GIT_REPO))?;
@@ -103,41 +103,19 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     ushell.run(cmd!("sudo grub2-set-default 0"))?;
     ushell.run(cmd!("sync"))?;
 
-    // We need the kernel headers installed to build modules.
-    let headers_rpm = ushell
-        .run(
-            cmd!(
-                "ls -Art {}/rpmbuild/RPMS/x86_64/ | grep  headers | tail -n 1",
-                user_home
-            )
-            .use_bash(),
-        )?
-        .stdout;
-    let headers_rpm = headers_rpm.trim();
-    ushell.run(cmd!(
-        "(rpm -q kernel-headers | grep 4.3.0) || \
-         sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
-        user_home,
-        headers_rpm
-    ))?;
+    // Reboot so the new kernel is running when we build modules.
+    spurs_util::reboot(&mut ushell, /* dry_run */ false)?;
 
     // Build kernel modules.
+    //
+    // For some reason, it fails the first time...
     let nprocess = runner::get_num_cores(&ushell)?;
-    ushell.run(cmd!("make -j {} CC=/usr/bin/gcc modules", nprocess).cwd("HawkEye/kbuild"))?;
-    ushell.run(
-        cmd!(
-            "make -j {} CC=/usr/bin/gcc M=hawkeye_modules/async-zero",
-            nprocess
-        )
-        .cwd("HawkEye/kbuild"),
-    )?;
-    ushell.run(
-        cmd!(
-            "make -j {} CC=/usr/bin/gcc M=hawkeye_modules/bloat_recovery",
-            nprocess
-        )
-        .cwd("HawkEye/kbuild"),
-    )?;
+    with_shell! { ushell in "HawkEye/kbuild" =>
+        cmd!("make CC=/usr/bin/gcc M=hawkeye_modules/async-zero"),
+        cmd!("make CC=/usr/bin/gcc M=hawkeye_modules/async-zero"),
+        cmd!("make CC=/usr/bin/gcc M=hawkeye_modules/bloat_recovery"),
+        cmd!("make CC=/usr/bin/gcc M=hawkeye_modules/bloat_recovery"),
+    };
 
     // Build userspace profiling tool
     ushell.run(cmd!("make -j {}", nprocess).cwd("x86-MMU-Profiler"))?;
