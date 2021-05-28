@@ -42,6 +42,7 @@ pub fn cpu_family_number(ushell: &SshShell) -> Result<usize, failure::Error> {
     Ok(ushell
         .run(cmd!(r#"lscpu | grep 'CPU family' | awk '{{print $3}}'"#))?
         .stdout
+        .trim()
         .parse::<usize>()?)
 }
 
@@ -49,6 +50,7 @@ pub fn cpu_model_number(ushell: &SshShell) -> Result<usize, failure::Error> {
     Ok(ushell
         .run(cmd!(r#"lscpu | grep 'Model:' | awk '{{print $2}}'"#))?
         .stdout
+        .trim()
         .parse::<usize>()?)
 }
 

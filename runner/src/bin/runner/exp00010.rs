@@ -1145,7 +1145,7 @@ where
                 proc_name
             ))?;
             ushell.run(cmd!(
-                "./x86-MMU-Profiler/global_profile -p {} {}",
+                "./x86-MMU-Profiler/global_profile -d -p {} {}",
                 proc_name,
                 match cpu_family_model(&ushell)? {
                     Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
