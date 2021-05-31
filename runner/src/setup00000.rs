@@ -90,6 +90,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) If passed, setup and build SPEC 2017 on the remote machine (on the host only). \
           Because SPEC 2017 is not free, you need to pass runner a path to the SPEC 2017 ISO on the \
           driver machine. The ISO will be copied to the remote machine, mounted, and installed there.")
+        (@arg SPEC_XZ_INPUT: --spec_xz_input +takes_value requires[SPEC_2017]
+         "(Optional) If passed, transfer a .tar.xz file to be used for the xz benchmark from the driver \
+          machine to the remote machine. Requires --spec_2017")
 
         (@arg HOST_PREP: --prepare_host
          "(Optional) Prepare the host for initializing the VM.")
@@ -161,6 +164,8 @@ where
     host_bmks: bool,
     /// Should we install SPEC 2017? If so, what is the ISO path?
     spec_2017: Option<&'a str>,
+    /// Should we pass in an input for xz? Is so, what is the path?
+    spec_xz_input: Option<&'a str>,
 
     /// Should we prepare the host for initing the VM? This needs to be done only once?
     host_prep: bool,
@@ -215,6 +220,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let host_bmks = sub_m.is_present("HOST_BMKS");
     let spec_2017 = sub_m.value_of("SPEC_2017");
+    let spec_xz_input = sub_m.value_of("SPEC_XZ_INPUT");
 
     let host_prep = sub_m.is_present("HOST_PREP");
 
@@ -248,6 +254,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         secret,
         host_bmks,
         spec_2017,
+        spec_xz_input,
         host_prep,
         disable_ept,
         destroy_existing_vm,
@@ -293,6 +300,9 @@ where
     }
     if let Some(iso_path) = cfg.spec_2017 {
         install_spec_2017(&ushell, &cfg, iso_path)?;
+    }
+    if let Some(xz_input_path) = cfg.spec_xz_input {
+        copy_spec_xz_input(&ushell, &cfg, xz_input_path)?;
     }
 
     // Prepare to install VM
@@ -1131,6 +1141,31 @@ where
             .cwd(&spec_dir),
         )?;
     }
+
+    Ok(())
+}
+
+fn copy_spec_xz_input<A>(
+    ushell: &SshShell,
+    cfg: &SetupConfig<'_, A>,
+    spec_xz_input: &str,
+) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+{
+    const TAR_NAME: &str = "xz_input.tar";
+    const TAR_XZ_NAME: &str = "xz_input.tar.xz";
+    let user_home = &get_user_home_dir(&ushell)?;
+
+    rsync_to_remote(&cfg.login, spec_xz_input, user_home)?;
+    let filename: &str = spec_xz_input.split("/").collect::<Vec<&str>>().last().unwrap();
+
+    if filename != TAR_XZ_NAME {
+        ushell.run(cmd!("mv {} {}", filename, TAR_XZ_NAME))?;
+    }
+
+    // We want to decompress into a .tar file so we can compute the checksum later
+    ushell.run(cmd!("xz --decompress < {} > {}", TAR_XZ_NAME, TAR_NAME))?;
 
     Ok(())
 }
