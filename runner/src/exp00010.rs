@@ -1021,6 +1021,7 @@ where
             mmap_tracker_file
         ))?;
         // Wait some time for the BPF validator to do its job
+        println!("Waiting 10s for BPF validator...");
         ushell.run(cmd!("sleep 10"))?;
     }
 
@@ -1121,6 +1122,7 @@ where
     if cfg.asynczero || cfg.hawkeye {
         // We wait longer for larger machines. Assuming that you can zero at about 6GBps...
         let wait_time = cfg.size as u64 / 6;
+        println!("Waiting {}s for BPF validator...", wait_time);
         std::thread::sleep(std::time::Duration::from_secs(wait_time));
 
         ushell.run(cmd!(
