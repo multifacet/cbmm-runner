@@ -974,7 +974,7 @@ where
         Workload::Canneal { .. } => Some("canneal"),
     };
     let proc_name_grep = match cfg.workload {
-        Workload::Mix { .. } => todo!(),
+        Workload::Mix { .. } => "'redis-server|matrix_mult2|memhog'",
         _ => proc_name.unwrap(),
     };
 
