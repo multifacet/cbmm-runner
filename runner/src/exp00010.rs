@@ -1109,7 +1109,7 @@ where
     if cfg.asynczero || cfg.hawkeye {
         // We wait longer for larger machines. Assuming that you can zero at about 6GBps...
         let wait_time = cfg.size as u64 / 6;
-        println!("Waiting {}s for BPF validator...", wait_time);
+        println!("Waiting {}s for async zero daemon...", wait_time);
         std::thread::sleep(std::time::Duration::from_secs(wait_time));
 
         ushell.run(cmd!(
