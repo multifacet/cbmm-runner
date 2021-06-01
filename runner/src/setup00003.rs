@@ -5,7 +5,7 @@
 
 use clap::clap_app;
 
-use runner::{
+use crate::{
     cli::setup_kernel, exp_0sim::*, get_user_home_dir, paths::*, KernelBaseConfigSource,
     KernelConfig, KernelPkgType, KernelSrc, Login,
 };
@@ -72,7 +72,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .stdout;
     let config = config.trim();
 
-    runner::build_kernel(
+    crate::build_kernel(
         &ushell,
         KernelSrc::Git {
             repo_path: kernel_path,
@@ -82,7 +82,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             base_config: KernelBaseConfigSource::Path(config.into()),
             extra_options: &kernel_config,
         },
-        Some(&runner::gen_local_version(commitish, git_hash)),
+        Some(&crate::gen_local_version(commitish, git_hash)),
         KernelPkgType::Rpm,
         /* cpupower */ true,
     )?;

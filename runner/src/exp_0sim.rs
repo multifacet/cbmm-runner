@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use spurs::{cmd, Execute, SshError, SshShell};
 
-use super::paths::*;
+use super::paths;
 
 pub use super::{
     dump_sys_info, oomkiller_blacklist_by_name, set_kernel_printk_level, turn_off_watchdogs, Login,
@@ -298,7 +298,7 @@ pub fn connect_to_vagrant_as_user<A: std::net::ToSocketAddrs + std::fmt::Display
 }
 
 pub fn vagrant_halt(shell: &SshShell) -> Result<(), failure::Error> {
-    let vagrant_path = &dir!(RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
+    let vagrant_path = &dir!(paths::RESEARCH_WORKSPACE_PATH, paths::VAGRANT_SUBDIRECTORY);
 
     // Speed things up...
     ZeroSim::tsc_offsetting(shell, false)?;
@@ -336,7 +336,7 @@ pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
 
     gen_vagrantfile(shell, memgb, cores)?;
 
-    let vagrant_path = &dir!(RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
+    let vagrant_path = &dir!(paths::RESEARCH_WORKSPACE_PATH, paths::VAGRANT_SUBDIRECTORY);
 
     // Make sure to turn off skip_halt, which breaks multi-core boot.
     ZeroSim::skip_halt(shell, false)?;
@@ -680,7 +680,11 @@ pub fn virsh_vcpupin(
 /// Generate a Vagrantfile for a VM with the given amount of memory and number of cores. A
 /// Vagrantfile should already exist containing the correct domain name.
 pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(), failure::Error> {
-    let vagrant_path = &format!("{}/{}", RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
+    let vagrant_path = &format!(
+        "{}/{}",
+        paths::RESEARCH_WORKSPACE_PATH,
+        paths::VAGRANT_SUBDIRECTORY
+    );
 
     // Keep the same VM domain name and box type though...
     let current_name =
@@ -704,9 +708,9 @@ pub fn gen_vagrantfile(shell: &SshShell, memgb: usize, cores: usize) -> Result<(
     let user_home = crate::get_user_home_dir(shell)?;
     let vagrant_full_path = &format!("{}/{}", user_home, vagrant_path).replace("/", r#"\/"#);
     let vm_shared_full_path =
-        &format!("{}/{}", user_home, crate::setup00000::HOSTNAME_SHARED_DIR).replace("/", r#"\/"#);
+        &format!("{}/{}", user_home, paths::setup00000::HOSTNAME_SHARED_DIR).replace("/", r#"\/"#);
     let research_workspace_full_path =
-        &format!("{}/{}", user_home, RESEARCH_WORKSPACE_PATH).replace("/", r#"\/"#);
+        &format!("{}/{}", user_home, paths::RESEARCH_WORKSPACE_PATH).replace("/", r#"\/"#);
 
     with_shell! { shell in vagrant_path =>
         cmd!(
@@ -807,7 +811,7 @@ pub fn gen_standard_sim_output(
     ushell: &SshShell,
     vshell: &SshShell,
 ) -> Result<(), failure::Error> {
-    let guest_sim_file = dir!(setup00000::VAGRANT_RESULTS_DIR, sim_file);
+    let guest_sim_file = dir!(paths::setup00000::VAGRANT_RESULTS_DIR, sim_file);
 
     crate::gen_standard_host_output(sim_file, ushell)?;
 

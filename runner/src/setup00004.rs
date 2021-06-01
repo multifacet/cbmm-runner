@@ -4,7 +4,7 @@
 
 use clap::clap_app;
 
-use runner::{
+use crate::{
     exp_0sim::*, get_user_home_dir, paths::*, with_shell, KernelBaseConfigSource, KernelConfig,
     KernelPkgType, KernelSrc, Login,
 };
@@ -66,7 +66,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .stdout;
     let config = config.trim();
 
-    runner::build_kernel(
+    crate::build_kernel(
         &ushell,
         KernelSrc::Git {
             repo_path: "HawkEye".into(),
@@ -76,7 +76,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             base_config: KernelBaseConfigSource::Path(config.into()),
             extra_options: HAWKEYE_KERNEL_CONFIG,
         },
-        Some(&runner::gen_local_version("ohp", git_hash)),
+        Some(&crate::gen_local_version("ohp", git_hash)),
         KernelPkgType::Rpm,
         /* cpupower */ true,
     )?;
@@ -109,7 +109,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     // Build kernel modules.
     //
     // For some reason, it fails the first time...
-    let nprocess = runner::get_num_cores(&ushell)?;
+    let nprocess = crate::get_num_cores(&ushell)?;
     with_shell! { ushell in "HawkEye/kbuild" =>
         cmd!("make CC=/usr/bin/gcc M=hawkeye_modules/async-zero"),
         cmd!("make CC=/usr/bin/gcc M=hawkeye_modules/async-zero"),

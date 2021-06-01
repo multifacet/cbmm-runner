@@ -9,7 +9,7 @@ use std::fs;
 
 use clap::clap_app;
 
-use runner::{
+use crate::{
     background::{BackgroundContext, BackgroundTask},
     cli::{damon, memtrace, validator},
     cpu::{cpu_family_model, IntelX86Model, Processor},
@@ -676,12 +676,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     };
 
     let ushell = SshShell::with_default_key(login.username, login.host)?;
-    let local_git_hash = runner::local_research_workspace_git_hash()?;
-    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
+    let local_git_hash = crate::local_research_workspace_git_hash()?;
+    let remote_git_hash = crate::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = crate::get_remote_research_settings(&ushell)?;
 
     let (load_misses, store_misses) = {
-        let suffix = runner::cpu::page_walk_perf_counter_suffix(&ushell)?;
+        let suffix = crate::cpu::page_walk_perf_counter_suffix(&ushell)?;
         (
             format!("dtlb_load_misses.{}", suffix),
             format!("dtlb_store_misses.{}", suffix),
@@ -797,17 +797,17 @@ where
     if cfg.enable_aslr {
         // ASLR is enabled by default on startup, so this probably isn't
         // necessary, but it's good to be explicit.
-        runner::enable_aslr(&ushell)?;
+        crate::enable_aslr(&ushell)?;
     } else {
-        runner::disable_aslr(&ushell)?;
+        crate::disable_aslr(&ushell)?;
     }
 
     // Allow `perf` as any user
-    runner::perf_for_all(&ushell)?;
+    crate::perf_for_all(&ushell)?;
 
     // Turn on/off compaction and force it to happen if needed
     if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
-        runner::turn_on_thp(
+        crate::turn_on_thp(
             &ushell,
             /* enabled */ "never",
             /* defrag */ "never",
@@ -823,7 +823,7 @@ where
             "sudo mount -t hugetlbfs -o uid=`id -u`,gid=`id -g`,pagesize=2M,size=8M none /mnt/huge"
         ))?;
     } else {
-        runner::turn_on_thp(
+        crate::turn_on_thp(
             &ushell,
             &cfg.transparent_hugepage_enabled,
             &cfg.transparent_hugepage_defrag,
@@ -834,7 +834,7 @@ where
     }
 
     // Turn of NUMA balancing
-    runner::set_auto_numa(&ushell, false /* off */)?;
+    crate::set_auto_numa(&ushell, false /* off */)?;
 
     // Collect timers on VM
     let mut timers = vec![];
@@ -921,9 +921,9 @@ where
 
     let swapnil_path = dir!(
         user_home,
-        runner::paths::RESEARCH_WORKSPACE_PATH,
-        runner::paths::ZEROSIM_BENCHMARKS_DIR,
-        runner::paths::ZEROSIM_SWAPNIL_PATH
+        crate::paths::RESEARCH_WORKSPACE_PATH,
+        crate::paths::ZEROSIM_BENCHMARKS_DIR,
+        crate::paths::ZEROSIM_SWAPNIL_PATH
     );
     let eager = if cfg.eager {
         Some(swapnil_path.as_str())
@@ -931,7 +931,7 @@ where
         None
     };
 
-    let cores = runner::get_num_cores(&ushell)?;
+    let cores = crate::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
 
     if cfg.mmstats {
@@ -1659,7 +1659,7 @@ where
 
     ushell.run(cmd!(
         "echo -e '{}' > {}",
-        runner::timings_str(timers.as_slice()),
+        crate::timings_str(timers.as_slice()),
         dir!(
             user_home,
             setup00000::HOSTNAME_SHARED_RESULTS_DIR,
@@ -1667,7 +1667,7 @@ where
         )
     ))?;
 
-    runner::gen_standard_host_output(&sim_file, &ushell)?;
+    crate::gen_standard_host_output(&sim_file, &ushell)?;
 
     let glob = cfg.gen_file_name("");
     println!(

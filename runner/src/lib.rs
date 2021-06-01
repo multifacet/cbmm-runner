@@ -22,6 +22,28 @@ pub mod exp_0sim;
 pub mod hadoop;
 pub mod workloads;
 
+// Setup and experimental routines
+pub mod setup00000;
+pub mod setup00001;
+pub mod setup00002;
+pub mod setup00003;
+pub mod setup00004;
+pub mod setup_manual;
+
+pub mod exptmp;
+
+pub mod exp00000;
+pub mod exp00002;
+pub mod exp00003;
+pub mod exp00004;
+pub mod exp00005;
+pub mod exp00006;
+pub mod exp00007;
+pub mod exp00008;
+pub mod exp00009;
+pub mod exp00010;
+pub mod exp00011;
+
 use std::path::Path;
 use std::process::Command;
 
@@ -30,8 +52,6 @@ use failure::ResultExt;
 use serde::{Deserialize, Serialize};
 
 use spurs::{cmd, Execute, SshShell};
-
-use paths::*;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Location of the workspace repo.
@@ -283,7 +303,7 @@ pub fn clone_research_workspace(
     // Check if the repo is already cloned.
     if let Ok(_hash) = research_workspace_git_hash(&ushell) {
         // If so, just update it.
-        with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH) =>
+        with_shell! { ushell in &dir!(paths::RESEARCH_WORKSPACE_PATH) =>
             cmd!("git fetch"),
             cmd!("git checkout {}", branch_name),
             cmd!("git pull"),
@@ -302,7 +322,7 @@ pub fn clone_research_workspace(
     for submodule in submodules {
         ushell.run(
             cmd!("git submodule update --init --recursive -- {}", submodule)
-                .cwd(RESEARCH_WORKSPACE_PATH),
+                .cwd(paths::RESEARCH_WORKSPACE_PATH),
         )?;
     }
 
@@ -312,7 +332,7 @@ pub fn clone_research_workspace(
 
 /// Get the git hash of the remote research workspace.
 pub fn research_workspace_git_hash(ushell: &SshShell) -> Result<String, failure::Error> {
-    let hash = ushell.run(cmd!("git rev-parse HEAD").cwd(RESEARCH_WORKSPACE_PATH))?;
+    let hash = ushell.run(cmd!("git rev-parse HEAD").cwd(paths::RESEARCH_WORKSPACE_PATH))?;
     let hash = hash.stdout.trim();
 
     Ok(hash.into())
@@ -433,7 +453,11 @@ pub fn gen_local_version(branch: &str, hash: &str) -> String {
 
 /// Generate a new vagrant domain name and update the Vagrantfile.
 pub fn gen_new_vagrantdomain(shell: &SshShell, vagrant_box: &str) -> Result<(), failure::Error> {
-    let vagrant_path = &format!("{}/{}", RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
+    let vagrant_path = &format!(
+        "{}/{}",
+        paths::RESEARCH_WORKSPACE_PATH,
+        paths::VAGRANT_SUBDIRECTORY
+    );
     let uniq = shell.run(cmd!("date | sha256sum | head -c 10"))?;
     let uniq = uniq.stdout.trim();
 
@@ -1010,7 +1034,7 @@ pub fn turn_off_watchdogs(shell: &SshShell) -> Result<(), failure::Error> {
 ///
 /// Requires `sudo`.
 pub fn gen_standard_host_output(out_file: &str, shell: &SshShell) -> Result<(), failure::Error> {
-    let out_file = dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, out_file);
+    let out_file = dir!(paths::setup00000::HOSTNAME_SHARED_RESULTS_DIR, out_file);
 
     // Host config
     shell.run(cmd!("echo -e 'Host Config\n=====' > {}", out_file))?;

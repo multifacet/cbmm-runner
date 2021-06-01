@@ -4,7 +4,7 @@
 
 use clap::clap_app;
 
-use runner::{
+use crate::{
     cli::setup_kernel,
     dir,
     exp_0sim::*,
@@ -86,7 +86,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let guest_config_base_name = std::path::Path::new(guest_config).file_name().unwrap();
 
-    runner::build_kernel(
+    crate::build_kernel(
         &ushell,
         KernelSrc::Git {
             repo_path: kernel_path,
@@ -99,7 +99,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             )),
             extra_options: &kernel_config,
         },
-        Some(&runner::gen_local_version(commitish, git_hash)),
+        Some(&crate::gen_local_version(commitish, git_hash)),
         KernelPkgType::Rpm,
         /* cpupower */ false,
     )?;
@@ -144,7 +144,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         cmd!("sudo chmod 0600 {}", VAGRANT_GUEST_SWAPFILE),
         cmd!("sudo chown root:root {}", VAGRANT_GUEST_SWAPFILE),
     }
-    runner::set_remote_research_setting(&ushell, "guest_swap", VAGRANT_GUEST_SWAPFILE)?;
+    crate::set_remote_research_setting(&ushell, "guest_swap", VAGRANT_GUEST_SWAPFILE)?;
 
     // update grub to choose this entry (new kernel) by default
     vshell.run(cmd!("sudo grub2-set-default 0"))?;

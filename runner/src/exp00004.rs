@@ -6,7 +6,7 @@
 
 use clap::clap_app;
 
-use runner::{
+use crate::{
     cli::validator,
     dir,
     exp_0sim::*,
@@ -74,9 +74,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
     let ushell = SshShell::with_default_key(&login.username, &login.host)?;
-    let local_git_hash = runner::local_research_workspace_git_hash()?;
-    let remote_git_hash = runner::research_workspace_git_hash(&ushell)?;
-    let remote_research_settings = runner::get_remote_research_settings(&ushell)?;
+    let local_git_hash = crate::local_research_workspace_git_hash()?;
+    let remote_git_hash = crate::research_workspace_git_hash(&ushell)?;
+    let remote_research_settings = crate::get_remote_research_settings(&ushell)?;
 
     let cfg = Config {
         exp: (4, "memcached_thp_ops_per_page_bare_metal".into()),
@@ -139,7 +139,7 @@ where
     ushell.run(cmd!("sudo swapon /dev/sda3"))?;
 
     // Turn on compaction and force it to happen
-    runner::turn_on_thp(
+    crate::turn_on_thp(
         &ushell,
         &cfg.transparent_hugepage_enabled,
         &cfg.transparent_hugepage_defrag,
@@ -148,7 +148,7 @@ where
         cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
     )?;
 
-    let cores = runner::get_num_cores(&ushell)?;
+    let cores = crate::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
 
     // Run workload
@@ -188,7 +188,7 @@ where
 
     ushell.run(cmd!(
         "echo -e '{}' > {}",
-        runner::timings_str(timers.as_slice()),
+        crate::timings_str(timers.as_slice()),
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, time_file)
     ))?;
 
