@@ -1580,6 +1580,10 @@ where
         ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
     }
 
+    if cfg.mm_econ {
+        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
+
     if cfg.mmstats {
         let mmstats_file = dir!(
             user_home,
@@ -1590,6 +1594,13 @@ where
         ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
+
+        if cfg.mm_econ {
+            ushell.run(cmd!(
+                "cat /sys/kernel/mm/mm_econ/stats | tee -a {}",
+                mmstats_file
+            ))?;
+        }
     }
 
     if cfg.meminfo_periodic || cfg.smaps_periodic {
