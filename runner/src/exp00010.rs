@@ -150,7 +150,6 @@ struct Config {
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
     mm_econ: bool,
-    mm_econ_profile: Option<String>,
     mm_econ_benefit_file: Option<String>,
     enable_aslr: bool,
     pftrace: Option<usize>,
@@ -317,9 +316,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Sets the sleep_interval for kbadgerd.")
         (@arg MM_ECON: --mm_econ
          "Enable mm_econ.")
-        (@arg MM_ECON_PROFILE: --mm_econ_profile +takes_value
-         requires[MM_ECON]
-         "Use the given profile with mm_econ (start,end,count;start,end,count; no spaces).")
         (@arg MM_ECON_BENEFIT_FILE: --mm_econ_benefit_file +takes_value
          requires[MM_ECON]
          "Import a list of conditions for a memory mapping and the benefit of that mapping being \
@@ -594,9 +590,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .value_of("KBADGERD_SLEEP_INTERVAL")
         .map(|s| s.parse::<usize>().unwrap());
     let mm_econ = sub_m.is_present("MM_ECON");
-    let mm_econ_profile = sub_m
-        .value_of("MM_ECON_PROFILE")
-        .map(|v| v.replace(",", " "));
     let mm_econ_benefit_file = sub_m
         .is_present("MM_ECON_BENEFIT_FILE")
         .then(|| String::from(sub_m.value_of("MM_ECON_BENEFIT_FILE").unwrap()));
@@ -736,7 +729,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kbadgerd,
         kbadgerd_sleep_interval,
         mm_econ,
-        mm_econ_profile,
         mm_econ_benefit_file,
         enable_aslr,
         pftrace,
@@ -1051,15 +1043,6 @@ where
     if cfg.mm_econ {
         ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
     }
-    if let Some(profile) = &cfg.mm_econ_profile {
-        ushell.run(cmd!(
-            "echo '{}' | sudo tee /sys/kernel/mm/mm_econ/preloaded_profile",
-            profile
-        ))?;
-    }
-    if cfg.mm_econ {
-        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
-    }
 
     // Generate the cb_wrapper command if necessary
     let cb_wrapper_cmd = if let Some(filename) = &cfg.mm_econ_benefit_file {
@@ -1079,6 +1062,10 @@ where
     } else {
         None
     };
+
+    if cfg.mm_econ {
+        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
 
     if let Some(threshold) = cfg.pftrace {
         ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
