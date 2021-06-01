@@ -10,7 +10,7 @@ use clap::clap_app;
 
 use failure::ResultExt;
 
-use runner::{
+use crate::{
     dir,
     downloads::{artifact_info, download, download_and_extract, Artifact},
     exp_0sim::*,
@@ -539,7 +539,7 @@ where
     // Build and Install QEMU 4.0.0 from source
     let qemu_info = download_and_extract(ushell, Artifact::Qemu, user_home, None)?;
     let qemu_dir = qemu_info.name.trim_end_matches(".tar.xz");
-    let ncores = runner::get_num_cores(&ushell)?;
+    let ncores = crate::get_num_cores(&ushell)?;
 
     with_shell! { ushell in qemu_dir =>
         cmd!("./configure"),
@@ -563,7 +563,7 @@ where
                                sudo tee /lib/udev/rules.d/99-kvm.rules"#
     ))?;
 
-    runner::service(&ushell, "libvirtd", ServiceAction::Restart)?;
+    crate::service(&ushell, "libvirtd", ServiceAction::Restart)?;
 
     // Install BCC if it hasn't been already
     install_bcc(&ushell)?;
@@ -575,7 +575,7 @@ fn set_up_host_devices<A>(ushell: &SshShell, cfg: &SetupConfig<'_, A>) -> Result
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    use runner::get_device_id;
+    use crate::get_device_id;
 
     // Remove any existing swap partitions from /etc/fstab because we plan to do all of our own
     // mounting and unmounting. Moreover, if fstab contains a swap partition that we destroy during
@@ -585,7 +585,7 @@ where
     ))?;
 
     if cfg.resize_root {
-        runner::resize_root_partition(ushell)?;
+        crate::resize_root_partition(ushell)?;
     }
 
     let user_home = &get_user_home_dir(&ushell)?;
@@ -630,8 +630,8 @@ where
         create_thin_swap(&ushell, DM_META_FILE, &mapper_device)?;
 
         // Save so that we can mount on reboot.
-        runner::set_remote_research_setting(&ushell, "dm-meta", DM_META_FILE)?;
-        runner::set_remote_research_setting(&ushell, "dm-data", mapper_device)?;
+        crate::set_remote_research_setting(&ushell, "dm-meta", DM_META_FILE)?;
+        crate::set_remote_research_setting(&ushell, "dm-data", mapper_device)?;
     } else if let Some(swap_devs) = &cfg.swap_devices {
         if swap_devs.is_empty() {
             let unpartitioned =
@@ -654,7 +654,7 @@ where
                 swap_devices.push(dev);
             }
 
-            runner::set_remote_research_setting(&ushell, "swap-devices", &swap_devices)?;
+            crate::set_remote_research_setting(&ushell, "swap-devices", &swap_devices)?;
         }
     }
 
@@ -670,8 +670,8 @@ where
 {
     if cfg.firewall {
         // disable firewalld, enable iptables services
-        runner::service(ushell, "firewalld", ServiceAction::Disable)?;
-        runner::service(ushell, "iptables", ServiceAction::Enable)?;
+        crate::service(ushell, "firewalld", ServiceAction::Disable)?;
+        crate::service(ushell, "iptables", ServiceAction::Enable)?;
 
         with_shell! { ushell =>
             // set policy to ACCEPT so we won't get locked out!
@@ -746,7 +746,7 @@ where
             ZEROSIM_BADGERTRAP_SUBMODULE,
         ];
 
-        runner::clone_research_workspace(&ushell, cfg.wkspc_branch, cfg.secret, SUBMODULES)?;
+        crate::clone_research_workspace(&ushell, cfg.wkspc_branch, cfg.secret, SUBMODULES)?;
     }
 
     Ok(())
@@ -791,9 +791,9 @@ where
             ZEROSIM_KERNEL_SUBMODULE
         );
 
-        let git_hash = runner::research_workspace_git_hash(ushell)?;
+        let git_hash = crate::research_workspace_git_hash(ushell)?;
 
-        runner::build_kernel(
+        crate::build_kernel(
             &ushell,
             KernelSrc::Git {
                 repo_path: kernel_path.clone(),
@@ -803,7 +803,7 @@ where
                 base_config: KernelBaseConfigSource::Current,
                 extra_options: &config_set,
             },
-            Some(&runner::gen_local_version(commitish, &git_hash)),
+            Some(&crate::gen_local_version(commitish, &git_hash)),
             KernelPkgType::Rpm,
             /* cpupower */ true,
         )?;
@@ -880,7 +880,7 @@ fn build_host_benchmarks<A>(
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let ncores = runner::get_num_cores(&ushell)?;
+    let ncores = crate::get_num_cores(&ushell)?;
     let user_home = &get_user_home_dir(&ushell)?;
 
     // Build 0sim trace tool
@@ -1151,7 +1151,7 @@ where
     ushell.run(cmd!("chmod +x images/"))?;
     ushell.run(cmd!("sudo chown {}:qemu images/", cfg.login.username))?;
 
-    runner::service(&ushell, "libvirtd", ServiceAction::Start)?;
+    crate::service(&ushell, "libvirtd", ServiceAction::Start)?;
 
     let def_exists = ushell
         .run(cmd!("sudo virsh pool-list --all | grep -q default"))
@@ -1176,11 +1176,11 @@ where
     ZeroSim::tsc_offsetting(&ushell, false)?;
 
     // Make sure libvirtd is running.
-    runner::service(&ushell, "libvirtd", ServiceAction::Restart)?;
+    crate::service(&ushell, "libvirtd", ServiceAction::Restart)?;
 
     // Make sure NFS accepts UDP.
     ushell.run(cmd!(r"sed 's/\[nfsd\]/[nfsd]\nudp=y/' /etc/nfs.conf"))?;
-    runner::service(&ushell, "nfs-server", ServiceAction::Restart)?;
+    crate::service(&ushell, "nfs-server", ServiceAction::Restart)?;
 
     Ok(())
 }
@@ -1214,7 +1214,7 @@ where
     ushell.run(cmd!("mkdir -p {}", HOSTNAME_SHARED_RESULTS_DIR))?;
 
     ushell.run(cmd!("cp Vagrantfile.bk Vagrantfile").cwd(vagrant_path))?;
-    runner::gen_new_vagrantdomain(
+    crate::gen_new_vagrantdomain(
         &ushell,
         if cfg.centos7 {
             VAGRANT_CENTOS7_BOX
@@ -1442,7 +1442,7 @@ fn install_guest_kernel(
     let guest_config_base_name = std::path::Path::new(guest_config).file_name().unwrap();
 
     let kernel_info = download(ushell, Artifact::Linux, user_home, None)?;
-    runner::build_kernel(
+    crate::build_kernel(
         &ushell,
         KernelSrc::Tar {
             tarball_path: kernel_info.name.into(),
@@ -1538,7 +1538,7 @@ fn vm_setup_hadoop(
         ZEROSIM_HADOOP_PATH
     );
 
-    runner::setup_passphraseless_local_ssh(vushell)?;
+    crate::setup_passphraseless_local_ssh(vushell)?;
 
     // Add hadoop env vars to shell profile.
     let user_home = vushell.run(cmd!("echo $HOME"))?.stdout;
@@ -1555,8 +1555,8 @@ fn vm_setup_hadoop(
     ))?;
 
     // Download and untar hadoop and spark.
-    runner::hadoop::download_hadoop_tarball(&ushell, &hadoop_path)?;
-    runner::hadoop::download_spark_tarball(&ushell, &hadoop_path)?;
+    crate::hadoop::download_hadoop_tarball(&ushell, &hadoop_path)?;
+    crate::hadoop::download_spark_tarball(&ushell, &hadoop_path)?;
 
     // Copy config options into place. These already have settings set, so we don't need to do a
     // lot of adjusting on the fly.

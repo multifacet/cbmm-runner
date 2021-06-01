@@ -27,7 +27,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 #important
             }
 
-            fn timestamp(&self) -> &runner::output::Timestamp {
+            fn timestamp(&self) -> &crate::output::Timestamp {
                 #timestamp
             }
         }
