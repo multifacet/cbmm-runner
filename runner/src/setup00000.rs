@@ -1157,8 +1157,14 @@ where
     const TAR_XZ_NAME: &str = "xz_input.tar.xz";
     let user_home = &get_user_home_dir(&ushell)?;
 
+    let filename = PathBuf::from(spec_xz_input);
+    let filename = if let Some(filename) = filename.file_name().and_then(|f| f.to_str()) {
+        filename
+    } else {
+        failure::bail!("XZ Input is not a filename: {}", spec_xz_input);
+    };
+
     rsync_to_remote(&cfg.login, spec_xz_input, user_home)?;
-    let filename: &str = spec_xz_input.split("/").collect::<Vec<&str>>().last().unwrap();
 
     if filename != TAR_XZ_NAME {
         ushell.run(cmd!("mv {} {}", filename, TAR_XZ_NAME))?;
