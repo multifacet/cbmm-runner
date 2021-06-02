@@ -772,6 +772,13 @@ where
             "ls /sys/kernel/mm/asynczero || \
             sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/asynczero/asynczero.ko"
         ))?;
+        // We have a small bootstrapping problem... we start off without any prezeroed pages, so we
+        // never get to see what their benefit is, so we never prezero any pages, so ...
+        //
+        // Instead, we temporarily disable mm_econ at the beginning, while we warm up.
+        ushell.run(cmd!(
+            "echo 1 | sudo tee /sys/module/asynczero/parameters/mode"
+        ))?;
         ushell.run(cmd!(
             "echo 10000000 | sudo tee /sys/module/asynczero/parameters/count"
         ))?;
@@ -1046,6 +1053,24 @@ where
 
     // Generate the cb_wrapper command if necessary
     let cb_wrapper_cmd = if let Some(filename) = &cfg.mm_econ_benefit_file {
+        // Do some sanity checking first...
+        match cfg.workload {
+            Workload::TimeLoop { .. }
+            | Workload::LocalityMemAccess { .. }
+            | Workload::TimeMmapTouch { .. }
+            | Workload::Graph500 { .. } => unimplemented!(),
+
+            Workload::ThpUbmk { .. }
+            | Workload::ThpUbmkShm { .. }
+            | Workload::Memcached { .. }
+            | Workload::MongoDB { .. }
+            | Workload::Spec2017Mcf
+            | Workload::Spec2017Xalancbmk { .. }
+            | Workload::Spec2017Xz { .. }
+            | Workload::Canneal { .. }
+            | Workload::Mix { .. } => {}
+        }
+
         let filter_csv = fs::read_to_string(filename)?;
         let cb_wrapper_file = dir!(
             user_home,
@@ -1062,6 +1087,7 @@ where
     } else {
         None
     };
+    let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(|s| s.as_str());
 
     if cfg.mm_econ {
         ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
@@ -1116,6 +1142,9 @@ where
         ))?;
 
         if cfg.asynczero {
+            ushell.run(cmd!(
+                "echo 0 | sudo tee /sys/module/asynczero/parameters/mode"
+            ))?;
             ushell.run(cmd!(
                 "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
             ))?;
