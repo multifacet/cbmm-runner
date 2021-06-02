@@ -413,6 +413,7 @@ where
             pf_time: None,
             client_pin_core: 0,
             output_file: None,
+            cb_wrapper_cmd: None,
         }),
 
         YcsbBackend::KyotoCabinet => YcsbSystem::KyotoCabinet,

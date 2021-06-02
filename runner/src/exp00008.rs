@@ -418,6 +418,7 @@ where
                     size,
                     MemhogOptions::empty(),
                     /* eager */ None,
+                    /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?
             );

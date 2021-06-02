@@ -405,6 +405,7 @@ where
                     ),
                     ((size << 7) as f64).sqrt() as usize,
                     eager,
+                    /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?
                 .join()
@@ -435,6 +436,7 @@ where
                             ZEROSIM_NULLFS_SUBMODULE
                         ),
                         pintool: None,
+                        cb_wrapper_cmd: None,
                     }
                 )?
                 .wait_for_client()?
@@ -469,6 +471,7 @@ where
                     size,
                     MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
                     eager,
+                    /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?
                 .join()
@@ -497,6 +500,7 @@ where
                         ZEROSIM_NULLFS_SUBMODULE
                     ),
                     &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF,),
+                    /* cb_wrapper_cmd */ None,
                     freq,
                     size >> 20,
                     eager,
