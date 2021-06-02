@@ -594,7 +594,7 @@ pub fn run_memhog(
 
     shell.spawn(cmd!(
         "{} ; do \
-         LD_LIBRARY_PATH={} taskset -c {} {}/memhog -r1 {}k {} {} > /dev/null ; \
+         LD_LIBRARY_PATH={} taskset -c {} {} {}/memhog -r1 {}k {} {} > /dev/null ; \
          done; \
          echo memhog done ;",
         if let Some(r) = r {
@@ -825,7 +825,7 @@ pub fn start_redis(
     };
 
     let handle = shell.spawn(cmd!(
-        "{}{}redis-server {}",
+        "{}{} {} redis-server {}",
         pintool,
         taskset,
         cfg.cb_wrapper_cmd.unwrap_or(""),
@@ -919,7 +919,7 @@ pub fn run_metis_matrix_mult(
 
     shell.spawn(
         cmd!(
-            "taskset -c {} ./obj/matrix_mult2 -q -o -l {} ; echo matrix_mult2 done ;",
+            "taskset -c {} {} ./obj/matrix_mult2 -q -o -l {} ; echo matrix_mult2 done ;",
             tctx.next(),
             cb_wrapper_cmd.unwrap_or(""),
             dim
@@ -983,7 +983,14 @@ pub fn run_mix(
     )?;
 
     let matrix_dim = (((size_gb / 3) << 27) as f64).sqrt() as usize;
-    let _metis_handle = run_metis_matrix_mult(shell, metis_dir, matrix_dim, eager, tctx)?;
+    let _metis_handle = run_metis_matrix_mult(
+        shell,
+        metis_dir,
+        matrix_dim,
+        eager,
+        cb_wrapper_cmd.clone(),
+        tctx,
+    )?;
 
     let _memhog_handles = run_memhog(
         shell,
