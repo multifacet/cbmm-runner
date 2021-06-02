@@ -1105,7 +1105,6 @@ where
         None
     };
 
-    // Wait a bit for asynczero...
     if cfg.asynczero || cfg.hawkeye {
         // We wait longer for larger machines. Assuming that you can zero at about 6GBps...
         let wait_time = cfg.size as u64 / 6;
@@ -1471,6 +1470,7 @@ where
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE),
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE),
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF),
+                    cb_wrapper_cmd,
                     freq,
                     size,
                     eager,

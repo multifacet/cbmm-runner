@@ -491,6 +491,7 @@ where
                             ZEROSIM_NULLFS_SUBMODULE
                         ),
                         pintool: None,
+                        cb_wrapper_cmd: None,
                     }
                 )?
                 .wait_for_client()?
@@ -510,6 +511,7 @@ where
                     ),
                     ((size << 27) as f64).sqrt() as usize,
                     /* eager */ None,
+                    /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?
                 .join()

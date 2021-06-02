@@ -195,7 +195,7 @@ where
     pub damon: Option<Damon<'s>>,
 
     /// The subcommand that determines if memcached is called with cb_wrapper
-    pub cb_wrapper_cmd: Option<String>,
+    pub cb_wrapper_cmd: Option<&'s str>,
 
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
@@ -252,7 +252,7 @@ where
         "{}{}{} {}/memcached {} -m {} -d -u {} -f 1.11 -v",
         pintool,
         taskset,
-        cfg.cb_wrapper_cmd.as_ref().unwrap_or(&"".to_string()),
+        cfg.cb_wrapper_cmd.unwrap_or(""),
         cfg.memcached,
         if cfg.allow_oom { "-M" } else { "" },
         cfg.server_size_mb,
@@ -443,7 +443,7 @@ where
     pub client_pin_core: usize,
 
     /// The subcommand that determines if memcached is called with cb_wrapper
-    pub cb_wrapper_cmd: Option<String>,
+    pub cb_wrapper_cmd: Option<&'s str>,
 
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
@@ -495,7 +495,7 @@ where
         cmd!(
             "sudo {} {} ./mongod --fork --logpath {}/log --dbpath {} {}",
             taskset,
-            cfg.cb_wrapper_cmd.as_ref().unwrap_or(&"".to_string()),
+            cfg.cb_wrapper_cmd.unwrap_or(""),
             cfg.db_dir,
             cfg.db_dir,
             wired_tiger_cache_size,
@@ -585,6 +585,7 @@ pub fn run_memhog(
     size_kb: usize,
     opts: MemhogOptions,
     eager: Option<&str>,
+    cb_wrapper_cmd: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, SshError> {
     if let Some(swapnil_path) = eager {
@@ -603,6 +604,7 @@ pub fn run_memhog(
         },
         exp_dir,
         tctx.next(),
+        cb_wrapper_cmd.unwrap_or(""),
         exp_dir,
         size_kb,
         if opts.contains(MemhogOptions::PIN) {
@@ -760,6 +762,9 @@ pub struct RedisWorkloadConfig<'s> {
     /// scripts must be passed.
     pub eager: Option<&'s str>,
 
+    /// Indicates the command prefix to use the cb_wrapper.
+    pub cb_wrapper_cmd: Option<&'s str>,
+
     /// Indicates that we should run the given pintool on the workload.
     pub pintool: Option<Pintool<'s>>,
 }
@@ -823,6 +828,7 @@ pub fn start_redis(
         "{}{}redis-server {}",
         pintool,
         taskset,
+        cfg.cb_wrapper_cmd.unwrap_or(""),
         cfg.redis_conf
     ))?;
 
@@ -904,6 +910,7 @@ pub fn run_metis_matrix_mult(
     bmk_dir: &str,
     dim: usize,
     eager: Option<&str>,
+    cb_wrapper_cmd: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, SshError> {
     if let Some(swapnil_path) = eager {
@@ -914,6 +921,7 @@ pub fn run_metis_matrix_mult(
         cmd!(
             "taskset -c {} ./obj/matrix_mult2 -q -o -l {} ; echo matrix_mult2 done ;",
             tctx.next(),
+            cb_wrapper_cmd.unwrap_or(""),
             dim
         )
         .cwd(bmk_dir),
@@ -938,6 +946,7 @@ pub fn run_metis_matrix_mult(
 /// - `size_gb` is the total amount of memory of the mix workload in GB.
 /// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
 ///   the path to Swapnil's scripts must be passed.
+/// - `cb_wrapper_cmd` are the cb_wrapper command prefix (it is reused for all commands).
 pub fn run_mix(
     shell: &SshShell,
     exp_dir: &str,
@@ -945,6 +954,7 @@ pub fn run_mix(
     numactl_dir: &str,
     nullfs_dir: &str,
     redis_conf: &str,
+    cb_wrapper_cmd: Option<&str>,
     freq: usize,
     size_gb: usize,
     eager: Option<&str>,
@@ -964,6 +974,7 @@ pub fn run_mix(
             pf_time: None,
             output_file: None,
             eager,
+            cb_wrapper_cmd: cb_wrapper_cmd.clone(),
             client_pin_core: tctx.next(),
             server_pin_core: None,
             redis_conf,
@@ -981,6 +992,7 @@ pub fn run_mix(
         (size_gb << 20) / 3,
         MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
         eager,
+        cb_wrapper_cmd,
         tctx,
     )?;
 
@@ -1324,7 +1336,7 @@ pub fn run_thp_ubmk(
     size: usize,
     reps: usize,
     bmk_dir: &str,
-    cb_wrapper_cmd: Option<String>,
+    cb_wrapper_cmd: Option<&str>,
     // The output file as well as a list of perf counters to record. Most processors can only
     // support 4-5 hardware counters, but you can do more software counters. To see the type of a
     // counter, use `perf list`.
@@ -1354,7 +1366,7 @@ pub fn run_thp_ubmk(
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 size,
                 reps_str,
                 mmu_overhead_file
@@ -1370,7 +1382,7 @@ pub fn run_thp_ubmk(
                  sudo perf report --stdio > {} && \
                  echo DONE",
                 pin_core,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 size,
                 pin_core,
                 perf_file,
@@ -1382,7 +1394,7 @@ pub fn run_thp_ubmk(
             cmd!(
                 "sudo taskset -c {} {} ./ubmk {} {}",
                 pin_core,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 size,
                 reps_str
             )
@@ -1402,7 +1414,7 @@ pub fn run_thp_ubmk_shm(
     reps: usize,
     use_huge_pages: bool,
     bmk_dir: &str,
-    cb_wrapper_cmd: Option<String>,
+    cb_wrapper_cmd: Option<&str>,
     // The output file as well as a list of perf counters to record. Most processors can only
     // support 4-5 hardware counters, but you can do more software counters. To see the type of a
     // counter, use `perf list`.
@@ -1431,7 +1443,7 @@ pub fn run_thp_ubmk_shm(
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 use_huge_pages,
                 size,
                 reps_str,
@@ -1448,7 +1460,7 @@ pub fn run_thp_ubmk_shm(
                  sudo perf report --stdio > {} && \
                  echo DONE",
                 pin_core,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 use_huge_pages,
                 size,
                 pin_core,
@@ -1461,7 +1473,7 @@ pub fn run_thp_ubmk_shm(
             cmd!(
                 "sudo taskset -c {} {} ./ubmk-shm {} {} {}",
                 pin_core,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 use_huge_pages,
                 size,
                 reps_str
@@ -1484,7 +1496,7 @@ pub fn run_hacky_spec17(
     shell: &SshShell,
     spec_dir: &str,
     workload: Spec2017Workload,
-    cb_wrapper_cmd: Option<String>,
+    cb_wrapper_cmd: Option<&str>,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     runtime_file: &str,
@@ -1554,7 +1566,7 @@ pub fn run_hacky_spec17(
                 pin_cores,
                 counters.join(" -e "),
                 mmu_overhead_file,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 cmd,
             )
             .cwd(bmk_dir),
@@ -1568,7 +1580,7 @@ pub fn run_hacky_spec17(
                  sudo perf report --stdio > {}",
                 pin_cores,
                 pin_cores,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 cmd,
                 perf_file,
             )
@@ -1579,7 +1591,7 @@ pub fn run_hacky_spec17(
             cmd!(
                 "sudo taskset -c {} {} {}",
                 pin_cores,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 cmd,
             )
             .cwd(bmk_dir),
@@ -1660,7 +1672,7 @@ pub enum CannealWorkload {
 pub fn run_canneal(
     shell: &SshShell,
     workload: CannealWorkload,
-    cb_wrapper_cmd: Option<String>,
+    cb_wrapper_cmd: Option<&str>,
     mmu_overhead: Option<(&str, &[String])>,
     perf_file: Option<&str>,
     runtime_file: &str,
@@ -1720,7 +1732,7 @@ pub fn run_canneal(
                 tee {}",
                 pin_core,
                 counters.join(" -e "),
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 CANNEAL_CMD,
                 mmu_overhead_file
             )
@@ -1734,7 +1746,7 @@ pub fn run_canneal(
                 sudo perf report --stdio > {}",
                 pin_core,
                 pin_core,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 CANNEAL_CMD,
                 perf_file,
             )
@@ -1745,7 +1757,7 @@ pub fn run_canneal(
             cmd!(
                 "sudo taskset -c {} {} {}",
                 pin_core,
-                cb_wrapper_cmd.unwrap_or("".to_string()),
+                cb_wrapper_cmd.unwrap_or(""),
                 CANNEAL_CMD
             )
             .cwd(CANNEAL_PATH),
