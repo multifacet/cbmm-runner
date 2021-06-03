@@ -825,7 +825,7 @@ pub fn start_redis(
     };
 
     let handle = shell.spawn(cmd!(
-        "{}{} {} redis-server {}",
+        "{}{} {} /usr/bin/redis-server {}",
         pintool,
         taskset,
         cfg.cb_wrapper_cmd.unwrap_or(""),
