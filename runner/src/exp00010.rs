@@ -779,16 +779,10 @@ where
         ushell.run(cmd!(
             "echo 1 | sudo tee /sys/module/asynczero/parameters/mode"
         ))?;
-        ushell.run(cmd!(
-            "echo 10000000 | sudo tee /sys/module/asynczero/parameters/count"
-        ))?;
     }
     if cfg.hawkeye {
         ushell.run(cmd!(
             "sudo insmod HawkEye/kbuild/hawkeye_modules/async-zero/asynczero.ko"
-        ))?;
-        ushell.run(cmd!(
-            "echo 10000000 | sudo tee /sys/module/asynczero/parameters/count"
         ))?;
     }
 
@@ -1145,10 +1139,13 @@ where
             ushell.run(cmd!(
                 "echo 0 | sudo tee /sys/module/asynczero/parameters/mode"
             ))?;
+            // NOTE: here the count is in individual 4KB pages.
             ushell.run(cmd!(
                 "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
             ))?;
         } else if cfg.hawkeye {
+            // NOTE: here the count is in terms of compond pages, which could be of any
+            // power-of-two size.
             ushell.run(cmd!(
                 "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
             ))?;
