@@ -1065,6 +1065,7 @@ where
             | Workload::Mix { .. } => {}
         }
 
+        println!("Reading mm_econ benefit file: {}", filename);
         let filter_csv = fs::read_to_string(filename)?;
         let cb_wrapper_file = dir!(
             user_home,
