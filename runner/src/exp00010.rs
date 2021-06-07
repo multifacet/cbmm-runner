@@ -81,6 +81,9 @@ enum Workload {
     Canneal {
         workload: CannealWorkload,
     },
+    CloudsuiteWebServing {
+        load_scale: usize,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -267,6 +270,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              )
              (@arg RAND_NUM_INPUTS: --rand_num_inputs requires[RAND]
               "Have a random number of inputs per net in the canneal input file.")
+        )
+        (@subcommand cloudsuite =>
+            (about: "Run a Cloudsuite benchmark.")
+            (@subcommand web_serving =>
+                (about: "Run the Web Serving benchmark.")
+                (@arg LOAD_SCALE: +takes_value {validator::is::<usize>}
+                 "Use the given number of concurrent clients.")
+            )
         )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
@@ -522,6 +533,19 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             Workload::Canneal { workload }
         }
+
+        ("cloudsuite", Some(sub_m)) => match sub_m.subcommand() {
+            ("web_serving", Some(sub_m)) => {
+                let load_scale = sub_m
+                    .value_of("LOAD_SCALE")
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                Workload::CloudsuiteWebServing { load_scale }
+            }
+
+            _ => unreachable!(),
+        },
 
         _ => unreachable!(),
     };
@@ -921,9 +945,11 @@ where
         Workload::Spec2017Mcf { .. } => Some("mcf_s"),
         Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
         Workload::Canneal { .. } => Some("canneal"),
+        Workload::CloudsuiteWebServing { .. } => None,
     };
     let proc_name_grep = match cfg.workload {
         Workload::Mix { .. } => "'redis-server|matrix_mult2|memhog'",
+        Workload::CloudsuiteWebServing { .. } => unimplemented!(),
         _ => proc_name.unwrap(),
     };
 
@@ -1000,7 +1026,8 @@ where
             Workload::TimeLoop { .. }
             | Workload::LocalityMemAccess { .. }
             | Workload::TimeMmapTouch { .. }
-            | Workload::Graph500 { .. } => unimplemented!(),
+            | Workload::Graph500 { .. }
+            | Workload::CloudsuiteWebServing { .. } => unimplemented!(),
 
             Workload::ThpUbmk { .. }
             | Workload::ThpUbmkShm { .. }
@@ -1539,6 +1566,8 @@ where
                 tctx.next(),
             )?;
         }
+
+        Workload::CloudsuiteWebServing { .. } => unimplemented!(),
     }
 
     if cfg.pftrace.is_some() {
