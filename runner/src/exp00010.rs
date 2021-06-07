@@ -1527,47 +1527,71 @@ where
                 _ => unreachable!(),
             };
 
-            run_hacky_spec17(
-                &ushell,
-                &dir!(user_home, RESEARCH_WORKSPACE_PATH, SPEC_2017_DIR),
-                wkload,
-                cb_wrapper_cmd,
-                if cfg.mmu_overhead {
-                    Some((&mmu_overhead_file, &cfg.perf_counters))
-                } else {
-                    None
-                },
-                if cfg.perf_record {
-                    Some(&trace_file)
-                } else {
-                    None
-                },
-                &runtime_file,
-                [tctx.next(), tctx.next(), tctx.next(), tctx.next()],
-            )?;
+            time!(timers, "Workload", {
+                run_hacky_spec17(
+                    &ushell,
+                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, SPEC_2017_DIR),
+                    wkload,
+                    cb_wrapper_cmd,
+                    if cfg.mmu_overhead {
+                        Some((&mmu_overhead_file, &cfg.perf_counters))
+                    } else {
+                        None
+                    },
+                    if cfg.perf_record {
+                        Some(&trace_file)
+                    } else {
+                        None
+                    },
+                    &runtime_file,
+                    [tctx.next(), tctx.next(), tctx.next(), tctx.next()],
+                )?;
+            });
         }
 
         Workload::Canneal { workload } => {
-            run_canneal(
-                &ushell,
-                workload,
-                cb_wrapper_cmd,
-                if cfg.mmu_overhead {
-                    Some((&mmu_overhead_file, &cfg.perf_counters))
-                } else {
-                    None
-                },
-                if cfg.perf_record {
-                    Some(&trace_file)
-                } else {
-                    None
-                },
-                &runtime_file,
-                tctx.next(),
-            )?;
+            time!(timers, "Workload", {
+                run_canneal(
+                    &ushell,
+                    workload,
+                    cb_wrapper_cmd,
+                    if cfg.mmu_overhead {
+                        Some((&mmu_overhead_file, &cfg.perf_counters))
+                    } else {
+                        None
+                    },
+                    if cfg.perf_record {
+                        Some(&trace_file)
+                    } else {
+                        None
+                    },
+                    &runtime_file,
+                    tctx.next(),
+                )?;
+            });
         }
 
-        Workload::CloudsuiteWebServing { .. } => unimplemented!(),
+        Workload::CloudsuiteWebServing { load_scale } => {
+            time!(timers, "Workload", {
+                with_shell! { ushell =>
+                    // Start db, cache, webserver
+                    cmd!("docker run -dt --rm --net=host --name=mysql_server \
+                          cloudsuite/web-serving:db_server \
+                          $(hostname -I | awk '{{print $1}}')"),
+                    cmd!("docker run -dt --rm --net=host --name=memcache_server \
+                          cloudsuite/web-serving:memcached_server"),
+                    cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
+                          docker run -e \"HHVM=true\" -dt --rm --net=host \
+                          --name=web_server_local cloudsuite/web-serving:web_server \
+                          /etc/bootstrap.sh $WSIP $WSIP"),
+
+                    // Run workload
+                    cmd!("docker run --rm --net=host --name=faban_client \
+                          cloudsuite/web-serving:faban_client \
+                          $(hostname -I | awk '{{print $1}}') {}", load_scale),
+                }
+            });
+        }
     }
 
     if cfg.pftrace.is_some() {
