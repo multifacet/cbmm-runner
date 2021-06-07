@@ -430,6 +430,10 @@ where
     }
 
     with_shell! { ushell =>
+        // Add docker repo
+        cmd!("sudo yum-config-manager --add-repo \
+              https://download.docker.com/linux/centos/docker-ce.repo"),
+
         spurs_util::centos::yum_install(&[
             "vim",
             "git",
@@ -487,11 +491,20 @@ where
             "llvm-toolset-7-llvm-devel",
             "llvm-toolset-7-llvm-static",
             "llvm-toolset-7-clang-devel",
+            // for docker
+            "yum-utils",
+            "device-mapper-persistent-data",
+            "lvm2",
+            "docker",
         ]),
 
         // Add user to libvirt group after installing
         spurs_util::add_to_group("libvirt"),
     }
+
+    // Start docker daemon
+    crate::service(&ushell, "docker", crate::ServiceAction::Enable)?;
+    crate::service(&ushell, "docker", crate::ServiceAction::Start)?;
 
     // Set up maven
     let user_home = &get_user_home_dir(&ushell)?;
@@ -1052,6 +1065,9 @@ where
         cmd!("gcc -Wall -Werror -o cb_wrapper cb_wrapper.c")
             .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR)),
     )?;
+
+    // Cloudsuite - web-serving
+    ushell.run(cmd!("docker pull -a cloudsuite/web-serving"))?;
 
     Ok(())
 }
