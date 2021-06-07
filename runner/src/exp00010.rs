@@ -113,16 +113,11 @@ enum ThpHugeAddrProcess {
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
 struct Config {
     #[name]
-    exp: (usize, String, String),
+    exp: (usize, String),
 
+    #[name]
     workload: Workload,
 
-    #[name(self.n > 0)]
-    n: usize,
-    #[name(self.size > 0)]
-    size: usize,
-    #[name(self.pattern.is_some())]
-    pattern: Option<TimeMmapTouchPattern>,
     #[name(self.eager)]
     eager: bool,
 
@@ -363,21 +358,15 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         host: sub_m.value_of("HOSTNAME").unwrap(),
     };
 
-    let (workload, workload_name, n, size, pattern) = match sub_m.subcommand() {
+    let workload = match sub_m.subcommand() {
         ("time_loop", Some(sub_m)) => {
             let n = sub_m.value_of("N").unwrap().parse::<usize>().unwrap();
-            (Workload::TimeLoop { n }, "time_loop".into(), n, 0, None)
+            Workload::TimeLoop { n }
         }
 
         ("locality_mem_access", Some(sub_m)) => {
             let n = sub_m.value_of("N").unwrap().parse::<usize>().unwrap();
-            (
-                Workload::LocalityMemAccess { n },
-                "locality_mem_access".into(),
-                n,
-                0,
-                None,
-            )
+            Workload::LocalityMemAccess { n }
         }
 
         ("time_mmap_touch", Some(sub_m)) => {
@@ -389,13 +378,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 TimeMmapTouchPattern::Counter
             };
 
-            (
-                Workload::TimeMmapTouch { size, pattern },
-                "time_mmap_touch".into(),
-                0,
-                size,
-                Some(pattern),
-            )
+            Workload::TimeMmapTouch { size, pattern }
         }
 
         ("thp_ubmk", Some(sub_m)) => {
@@ -406,13 +389,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 .parse::<usize>()
                 .unwrap();
 
-            (
-                Workload::ThpUbmk { size, reps },
-                "thp_ubmk".into(),
-                reps,
-                size,
-                None,
-            )
+            Workload::ThpUbmk { size, reps }
         }
 
         ("thp_ubmk_shm", Some(sub_m)) => {
@@ -423,25 +400,13 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 .parse::<usize>()
                 .unwrap();
 
-            (
-                Workload::ThpUbmkShm { size, reps },
-                "thp_ubmk_shm".into(),
-                reps,
-                size,
-                None,
-            )
+            Workload::ThpUbmkShm { size, reps }
         }
 
         ("memcached", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
-            (
-                Workload::Memcached { size },
-                "memcached".into(),
-                0,
-                size,
-                None,
-            )
+            Workload::Memcached { size }
         }
 
         ("mongodb", Some(sub_m)) => {
@@ -476,36 +441,24 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 panic!("The sum of --read_prop and --update_prop must not be greater than 1.");
             }
 
-            (
-                Workload::MongoDB {
-                    op_count,
-                    read_prop,
-                    update_prop,
-                    tmpfs_size,
-                },
-                "mongodb".into(),
-                0,
+            Workload::MongoDB {
                 op_count,
-                None,
-            )
+                read_prop,
+                update_prop,
+                tmpfs_size,
+            }
         }
 
         ("mix", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
-            (Workload::Mix { size }, "mix".into(), 0, size, None)
+            Workload::Mix { size }
         }
 
         ("graph500", Some(sub_m)) => {
             let scale = sub_m.value_of("SCALE").unwrap().parse::<usize>().unwrap();
 
-            (
-                Workload::Graph500 { scale },
-                "graph500".into(),
-                0,
-                scale,
-                None,
-            )
+            Workload::Graph500 { scale }
         }
 
         ("hacky_spec17", Some(sub_m)) => {
@@ -536,9 +489,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 }
             }
 
-            let wk_name = format!("hacky_spec17_{}", sub_m.value_of("WHICH").unwrap());
-
-            (wk, wk_name, 0, 0, None)
+            wk
         }
 
         ("canneal", Some(sub_m)) => {
@@ -569,7 +520,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 CannealWorkload::Native
             };
 
-            (Workload::Canneal { workload }, "canneal".into(), 0, 0, None)
+            Workload::Canneal { workload }
         }
 
         _ => unreachable!(),
@@ -698,13 +649,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     );
 
     let cfg = Config {
-        exp: (10, "bare_metal".into(), workload_name),
+        exp: (10, "bare_metal".into()),
 
         workload,
 
-        n,
-        size,
-        pattern,
         eager,
 
         transparent_hugepage_enabled,
@@ -1126,10 +1074,8 @@ where
     };
 
     if cfg.asynczero || cfg.hawkeye {
-        // We wait longer for larger machines. Assuming that you can zero at about 6GBps...
-        let wait_time = cfg.size as u64 / 6;
-        println!("Waiting {}s for async zero daemon...", wait_time);
-        std::thread::sleep(std::time::Duration::from_secs(wait_time));
+        // Wait a bit for zeroing daemons to warm up a bit.
+        std::thread::sleep(std::time::Duration::from_secs(10));
 
         ushell.run(cmd!(
             "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
