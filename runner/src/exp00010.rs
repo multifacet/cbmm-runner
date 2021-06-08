@@ -1575,18 +1575,18 @@ where
             time!(timers, "Workload", {
                 with_shell! { ushell =>
                     // Start db, cache, webserver
-                    cmd!("docker run -dt --rm --net=host --name=mysql_server \
+                    cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
                           cloudsuite/web-serving:db_server \
                           $(hostname -I | awk '{{print $1}}')"),
-                    cmd!("docker run -dt --rm --net=host --name=memcache_server \
+                    cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
                           cloudsuite/web-serving:memcached_server"),
                     cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
-                          docker run -e \"HHVM=true\" -dt --rm --net=host \
+                          docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
                           --name=web_server_local cloudsuite/web-serving:web_server \
                           /etc/bootstrap.sh $WSIP $WSIP"),
 
                     // Run workload
-                    cmd!("docker run --rm --net=host --name=faban_client \
+                    cmd!("docker run --pid=\"host\" --rm --net=host --name=faban_client \
                           cloudsuite/web-serving:faban_client \
                           $(hostname -I | awk '{{print $1}}') {}", load_scale),
                 }
