@@ -47,7 +47,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         host: sub_m.value_of("HOSTNAME").unwrap(),
     };
 
-    let (git_repo, commitish, kernel_config, _secret) = setup_kernel::parse_cli_options(sub_m);
+    let (git_repo, commitish, kernel_config, _secret, compiler) =
+        setup_kernel::parse_cli_options(sub_m);
 
     // Connect to the remote.
     let ushell = connect_and_setup_host_only(&login)?;
@@ -84,6 +85,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         },
         Some(&crate::gen_local_version(commitish, git_hash)),
         KernelPkgType::Rpm,
+        compiler,
         /* cpupower */ true,
     )?;
 

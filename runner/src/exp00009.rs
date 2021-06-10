@@ -286,6 +286,7 @@ where
                 },
                 None,
                 KernelPkgType::Rpm,
+                None,
                 /* cpupower */ false,
             )
             .expect("Kernel Build FAILED");

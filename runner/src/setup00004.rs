@@ -78,6 +78,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         },
         Some(&crate::gen_local_version("ohp", git_hash)),
         KernelPkgType::Rpm,
+        None,
         /* cpupower */ true,
     )?;
 

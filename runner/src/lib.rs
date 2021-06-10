@@ -642,6 +642,7 @@ pub fn build_kernel(
     config: KernelConfig<'_>,
     kernel_local_version: Option<&str>,
     pkg_type: KernelPkgType,
+    compiler: Option<&str>,
     cpupower: bool,
 ) -> Result<(), failure::Error> {
     // Check out or unpack the source code, returning its absolute path.
@@ -677,6 +678,13 @@ pub fn build_kernel(
                     .trim_end_matches(".tgz"),
             )?
         }
+    };
+
+    // Compiler path, if any.
+    let compiler = if let Some(compiler) = compiler {
+        format!("CC={}", compiler)
+    } else {
+        "CC=/usr/bin/gcc".into()
     };
 
     // kbuild path.
@@ -748,8 +756,9 @@ pub fn build_kernel(
     // Sometimes there is an error the first time. If so, retrying usually works.
     let res = ushell.run(
         cmd!(
-            "yes '' | make -j {} CC=/usr/bin/gcc {} {}",
+            "yes '' | make -j {} {} {} {}",
             nprocess,
+            compiler,
             make_target,
             if let Some(kernel_local_version) = kernel_local_version {
                 let kernel_local_version = kernel_local_version.replace("/", "-");
@@ -763,8 +772,9 @@ pub fn build_kernel(
     if let Err(..) = res {
         ushell.run(
             cmd!(
-                "make -j {}  CC=/usr/bin/gcc {} {}",
+                "make -j {} {} {} {}",
                 nprocess,
+                compiler,
                 make_target,
                 if let Some(kernel_local_version) = kernel_local_version {
                     let kernel_local_version = kernel_local_version.replace("/", "-");
@@ -780,7 +790,7 @@ pub fn build_kernel(
     // Build and install `cpupower` and `libcpupower`, if needed.
     if cpupower {
         ushell.run(
-            cmd!("make -j {} && sudo make install", nprocess)
+            cmd!("make -j {} {} && sudo make install", nprocess, compiler)
                 .cwd(&dir!(source_path, "tools/power/cpupower/")),
         )?;
     }

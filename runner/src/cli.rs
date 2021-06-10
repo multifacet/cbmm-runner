@@ -76,12 +76,24 @@ pub mod setup_kernel {
                      -CONFIG_PAGE_TABLE_ISOLATION",
                 ),
         )
+        .arg(
+            Arg::with_name("COMPILER")
+                .long("compiler")
+                .takes_value(true)
+                .help("The path to the compiler to use."),
+        )
     }
 
     /// Parse and return the values added by `add_kernel_cli_options`.
     pub fn parse_cli_options<'a>(
         sub_m: &'a ArgMatches<'a>,
-    ) -> (String, &'a str, Vec<(&'a str, bool)>, Option<&'a str>) {
+    ) -> (
+        String,
+        &'a str,
+        Vec<(&'a str, bool)>,
+        Option<&'a str>,
+        Option<&'a str>,
+    ) {
         let secret = sub_m.value_of("SECRET");
         let git_repo = {
             let https = sub_m.value_of("HTTPS");
@@ -109,7 +121,9 @@ pub mod setup_kernel {
             })
             .unwrap_or_else(|| vec![]);
 
-        (git_repo, commitish, kernel_config, secret)
+        let compiler = sub_m.value_of("COMPILER");
+
+        (git_repo, commitish, kernel_config, secret, compiler)
     }
 
     fn validate_config_option(opt: String) -> Result<(), String> {

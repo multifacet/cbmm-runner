@@ -815,6 +815,7 @@ where
             },
             Some(&crate::gen_local_version(commitish, &git_hash)),
             KernelPkgType::Rpm,
+            None,
             /* cpupower */ true,
         )?;
 
@@ -1510,6 +1511,7 @@ fn install_guest_kernel(
         },
         None,
         KernelPkgType::Rpm,
+        None,
         /* cpupower */ false,
     )?;
 
