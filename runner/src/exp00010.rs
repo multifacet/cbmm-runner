@@ -935,7 +935,6 @@ where
         Workload::TimeLoop { .. } => Some("time_loop"),
         Workload::LocalityMemAccess { .. } => Some("locality_mem_access"),
         Workload::TimeMmapTouch { .. } => Some("time_mmap_touch"),
-        Workload::Mix { .. } => None,
         Workload::ThpUbmk { .. } => Some("ubmk"),
         Workload::ThpUbmkShm { .. } => Some("ubmk-shm"),
         Workload::Memcached { .. } => Some("memcached"),
@@ -945,15 +944,24 @@ where
         Workload::Spec2017Mcf { .. } => Some("mcf_s"),
         Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
         Workload::Canneal { .. } => Some("canneal"),
+
+        Workload::Mix { .. } => None,
         Workload::CloudsuiteWebServing { .. } => None,
     };
     let proc_name_grep = match cfg.workload {
         Workload::Mix { .. } => "'redis-server|matrix_mult2|memhog'",
-        Workload::CloudsuiteWebServing { .. } => unimplemented!(),
+        Workload::CloudsuiteWebServing { .. } => "'memcached|mysqld|hhvm|hh_single_compile|nginx'",
         _ => proc_name.unwrap(),
     };
 
     if cfg.smaps_periodic {
+        match cfg.workload {
+            Workload::Mix { .. } | Workload::CloudsuiteWebServing { .. } => {
+                panic!("Doesn't make sense to get smaps of multi-process workload!")
+            }
+            _ => {}
+        }
+
         bgctx.spawn(BackgroundTask {
             name: "smaps",
             period: PERIOD,
