@@ -20,12 +20,12 @@ use crate::{
     paths::*,
     time,
     workloads::{
-        run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
-        run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop,
-        run_time_mmap_touch, run_ycsb_workload, CannealWorkload, Damon, LocalityMemAccessConfig,
-        LocalityMemAccessMode, MemcachedWorkloadConfig, MongoDBWorkloadConfig, Pintool,
-        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig,
-        YcsbSystem, YcsbWorkload,
+        run_canneal, run_cloudsuite_web_serving, run_graph500, run_hacky_spec17,
+        run_locality_mem_access, run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm,
+        run_time_loop, run_time_mmap_touch, run_ycsb_workload, CannealWorkload, Damon,
+        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
+        MongoDBWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx, TimeMmapTouchConfig,
+        TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -1581,23 +1581,7 @@ where
 
         Workload::CloudsuiteWebServing { load_scale } => {
             time!(timers, "Workload", {
-                with_shell! { ushell =>
-                    // Start db, cache, webserver
-                    cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
-                          cloudsuite/web-serving:db_server \
-                          $(hostname -I | awk '{{print $1}}')"),
-                    cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
-                          cloudsuite/web-serving:memcached_server"),
-                    cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
-                          docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
-                          --name=web_server_local cloudsuite/web-serving:web_server \
-                          /etc/bootstrap.sh $WSIP $WSIP"),
-
-                    // Run workload
-                    cmd!("docker run --pid=\"host\" --rm --net=host --name=faban_client \
-                          cloudsuite/web-serving:faban_client \
-                          $(hostname -I | awk '{{print $1}}') {}", load_scale),
-                }
+                run_cloudsuite_web_serving(&ushell, load_scale, &runtime_file)?;
             });
         }
     }

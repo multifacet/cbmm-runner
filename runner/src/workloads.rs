@@ -1808,3 +1808,36 @@ fn canneal_input_file_exists(
 
     Ok(size == cur_file_size)
 }
+
+pub fn run_cloudsuite_web_serving(
+    shell: &SshShell,
+    load_scale: usize,
+    output_file: &str,
+) -> Result<(), failure::Error> {
+    // Start db, cache, webserver.
+    with_shell! { shell =>
+        cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
+              cloudsuite/web-serving:db_server \
+              $(hostname -I | awk '{{print $1}}')"),
+        cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
+              cloudsuite/web-serving:memcached_server"),
+        cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
+              docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
+              --name=web_server_local cloudsuite/web-serving:web_server \
+              /etc/bootstrap.sh $WSIP $WSIP"),
+    }
+
+    // TODO: set CBMM benefits, turn on perf, etc...
+
+    // Run workload
+    shell.run(cmd!(
+        "docker run --pid=\"host\" --rm --net=host --name=faban_client \
+         cloudsuite/web-serving:faban_client \
+         $(hostname -I | awk '{{print $1}}') {} \
+         | tee {}",
+        load_scale,
+        output_file
+    ))?;
+
+    Ok(())
+}
