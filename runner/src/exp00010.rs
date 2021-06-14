@@ -598,8 +598,20 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         ("never".into(), "never".into(), 0)
     } else if sub_m.is_present("THP_HUGE_ADDR_RANGES") {
         ("never".into(), "never".into(), 0)
+    } else if hawkeye {
+        // Default values
+        ("always".into(), "madvise".into(), 1)
     } else {
         ("always".into(), "always".into(), 1)
+    };
+
+    let (
+        transparent_hugepage_khugepaged_alloc_sleep_ms,
+        transparent_hugepage_khugepaged_scan_sleep_ms,
+    ) = if hawkeye {
+        (60000, 10000)
+    } else {
+        (1000, 1000)
     };
 
     let transparent_hugepage_huge_addr = sub_m
@@ -682,8 +694,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         transparent_hugepage_enabled,
         transparent_hugepage_defrag,
         transparent_hugepage_khugepaged_defrag,
-        transparent_hugepage_khugepaged_alloc_sleep_ms: 1000,
-        transparent_hugepage_khugepaged_scan_sleep_ms: 1000,
+        transparent_hugepage_khugepaged_alloc_sleep_ms,
+        transparent_hugepage_khugepaged_scan_sleep_ms,
         transparent_hugepage_huge_addr,
 
         mmstats,
@@ -1116,22 +1128,24 @@ where
         ushell.run(cmd!(
             "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
         ))?;
-
-        if cfg.asynczero {
-            ushell.run(cmd!(
-                "echo 0 | sudo tee /sys/module/asynczero/parameters/mode"
-            ))?;
-            // NOTE: here the count is in individual 4KB pages.
-            ushell.run(cmd!(
-                "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
-            ))?;
-        } else if cfg.hawkeye {
-            // NOTE: here the count is in terms of compond pages, which could be of any
-            // power-of-two size.
-            ushell.run(cmd!(
-                "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
-            ))?;
-        }
+    }
+    if cfg.asynczero {
+        ushell.run(cmd!(
+            "echo 0 | sudo tee /sys/module/asynczero/parameters/mode"
+        ))?;
+        // NOTE: here the count is in individual 4KB pages.
+        ushell.run(cmd!(
+            "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
+        ))?;
+    }
+    if cfg.hawkeye {
+        // Just use the default parameters of the module...
+        //
+        // NOTE: here the count is in terms of compond pages, which could be of any
+        // power-of-two size.
+        //ushell.run(cmd!(
+        //    "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
+        //))?;
     }
 
     // Turn on hawkeye bloat removal thread and profiler if needed.
@@ -1142,6 +1156,12 @@ where
                  debloat_comm={}",
                 proc_name
             ))?;
+            // 120s sleep between debloating, according to Ashish Panwar.
+            ushell.run(cmd!(
+                "echo 120 | sudo tee /sys/module/remove/parameters/sleep"
+            ))?;
+
+            // Use default interval of 10s -- Ashish Panwar.
             ushell.run(cmd!(
                 "./x86-MMU-Profiler/global_profile -d -p {} {}",
                 proc_name,
@@ -1152,6 +1172,9 @@ where
                     _ => unimplemented!(),
                 }
             ))?;
+
+            // promotion_metric: default 0 = HawkEye-PMU; 2 = HawkEye-G.
+            // scan_sleep_millisecs: 1000 for Fig 8 (HawkEye paper) experiments.
         } else {
             panic!("HawkEye with nameless processes...");
         }
