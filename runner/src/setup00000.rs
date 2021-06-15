@@ -938,18 +938,16 @@ where
         ),
     }
 
-    ushell.run(cmd!("make clean cg CLASS=E").cwd(&dir!(
+    let nas_dir = dir!(
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_BENCHMARKS_DIR,
         "NPB3.4",
         "NPB3.4-OMP"
-    )))?;
-    ushell.run(cmd!("make clean cg CLASS=F").cwd(&dir!(
-        RESEARCH_WORKSPACE_PATH,
-        ZEROSIM_BENCHMARKS_DIR,
-        "NPB3.4",
-        "NPB3.4-OMP"
-    )))?;
+    );
+
+    ushell.run(cmd!("make clean cg CLASS=D").cwd(&nas_dir))?;
+    ushell.run(cmd!("make clean cg CLASS=E").cwd(&nas_dir))?;
+    ushell.run(cmd!("make clean cg CLASS=F").cwd(&nas_dir))?;
 
     // memhog
     ushell.run(

@@ -513,9 +513,21 @@ where
 }
 
 /// NAS Parallel Benchmark workload size classes. See online documentation.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum NasClass {
-    E,
-    F,
+    D, // ~16GB
+    E, // ~256GB
+    F, // ~4TB
+}
+
+impl std::fmt::Display for NasClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NasClass::D => write!(f, "D"),
+            NasClass::E => write!(f, "E"),
+            NasClass::F => write!(f, "F"),
+        }
+    }
 }
 
 /// Start the NAS CG workload. It must already be compiled. This workload takes a really long time,
@@ -535,11 +547,6 @@ pub fn spawn_nas_cg(
     eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, failure::Error> {
-    let class = match class {
-        NasClass::E => "E",
-        NasClass::F => "F",
-    };
-
     if let Some(swapnil_path) = eager {
         setup_apriori_paging_process(shell, swapnil_path, &format!("cg.{}.x", class))?;
     }
