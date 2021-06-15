@@ -527,7 +527,7 @@ pub enum NasClass {
 ///   `/dev/null` is used.
 /// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
 ///   the path to Swapnil's scripts must be passed.
-pub fn run_nas_cg(
+pub fn spawn_nas_cg(
     shell: &SshShell,
     zerosim_bmk_path: &str,
     class: NasClass,

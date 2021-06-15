@@ -13,7 +13,7 @@ use crate::{
     paths::{setup00000::*, *},
     time,
     workloads::{
-        run_nas_cg, run_time_mmap_touch, NasClass, TasksetCtx, TimeMmapTouchConfig,
+        run_time_mmap_touch, spawn_nas_cg, NasClass, TasksetCtx, TimeMmapTouchConfig,
         TimeMmapTouchPattern,
     },
 };
@@ -254,7 +254,7 @@ where
     )?;
 
     time!(timers, "Background stats collection", {
-        let _ = run_nas_cg(
+        let _ = spawn_nas_cg(
             &vshell,
             zerosim_bmk_path,
             NasClass::F,

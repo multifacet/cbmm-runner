@@ -14,7 +14,7 @@ use crate::{
     paths::{setup00000::*, setup00001::*, *},
     time,
     workloads::{
-        run_memcached_gen_data, run_memhog, run_nas_cg, MemcachedWorkloadConfig, MemhogOptions,
+        run_memcached_gen_data, run_memhog, spawn_nas_cg, MemcachedWorkloadConfig, MemhogOptions,
         NasClass, TasksetCtx,
     },
 };
@@ -390,7 +390,7 @@ where
 
         Workload::Cg => {
             time!(timers, "Workload", {
-                let _ = run_nas_cg(
+                let _ = spawn_nas_cg(
                     &vshell,
                     zerosim_bmk_path,
                     NasClass::F,
