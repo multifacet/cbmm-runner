@@ -817,91 +817,39 @@ where
     let mut timers = vec![];
 
     let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
+    let results_dir = &dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
     let mmstats_file = cfg.gen_file_name("mmstats");
     let meminfo_file = cfg.gen_file_name("meminfo");
     let smaps_file = cfg.gen_file_name("smaps");
-    let mmap_tracker_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("mmap")
-    );
+    let mmap_tracker_file = dir!(results_dir, cfg.gen_file_name("mmap"));
     let damon_output_path = cfg.gen_file_name("damon");
-    let damon_output_path = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        damon_output_path
-    );
-    let damon_path = dir!(
-        user_home,
-        RESEARCH_WORKSPACE_PATH,
-        ZEROSIM_BENCHMARKS_DIR,
-        DAMON_PATH
-    );
+    let damon_output_path = dir!(results_dir, damon_output_path);
+    let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
+    let damon_path = dir!(bmks_dir, DAMON_PATH);
     let pin_path = dir!(
         user_home,
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
         "pin"
     );
-    let trace_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("trace")
-    );
-    let mmu_overhead_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("mmu")
-    );
-    let ycsb_result_file = &dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("ycsb")
-    );
-    let badger_trap_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("bt")
-    );
-    let pftrace_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("pftrace")
-    );
-    let pftrace_rejected_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("rejected")
-    );
-    let mmap_filter_csv_name = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("mmap-filters.csv")
-    );
-    let runtime_file = dir!(
-        user_home,
-        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-        cfg.gen_file_name("runtime")
-    );
+    let trace_file = dir!(results_dir, cfg.gen_file_name("trace"));
+    let mmu_overhead_file = dir!(results_dir, cfg.gen_file_name("mmu"));
+    let ycsb_result_file = &dir!(results_dir, cfg.gen_file_name("ycsb"));
+    let badger_trap_file = dir!(results_dir, cfg.gen_file_name("bt"));
+    let pftrace_file = dir!(results_dir, cfg.gen_file_name("pftrace"));
+    let pftrace_rejected_file = dir!(results_dir, cfg.gen_file_name("rejected"));
+    let mmap_filter_csv_name = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
+    let runtime_file = dir!(results_dir, cfg.gen_file_name("runtime"));
 
     let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
         "echo '{}' > {}",
         escape_for_bash(&params),
-        dir!(
-            user_home,
-            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-            params_file
-        )
+        dir!(results_dir, params_file)
     ))?;
 
-    let swapnil_path = dir!(
-        user_home,
-        crate::paths::RESEARCH_WORKSPACE_PATH,
-        crate::paths::ZEROSIM_BENCHMARKS_DIR,
-        crate::paths::ZEROSIM_SWAPNIL_PATH
-    );
+    let swapnil_path = dir!(bmks_dir, ZEROSIM_SWAPNIL_PATH);
     let eager = if cfg.eager {
         Some(swapnil_path.as_str())
     } else {
@@ -929,17 +877,9 @@ where
             period: PERIOD,
             cmd: format!(
                 "cat /proc/meminfo | tee -a {}",
-                dir!(
-                    user_home,
-                    setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                    &meminfo_file
-                ),
+                dir!(results_dir, &meminfo_file),
             ),
-            ensure_started: dir!(
-                user_home,
-                setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                &meminfo_file
-            ),
+            ensure_started: dir!(results_dir, &meminfo_file),
         })?;
     }
 
@@ -981,14 +921,12 @@ where
                 "((sudo cat /proc/`pgrep -x {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
                 proc_name_grep,
                 dir!(
-                    user_home,
-                    setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                    results_dir,
                     &smaps_file
                 ),
             ),
             ensure_started: dir!(
-                user_home,
-                setup00000::HOSTNAME_SHARED_RESULTS_DIR,
+                results_dir,
                 &smaps_file
             ),
         })?;
@@ -1062,12 +1000,7 @@ where
 
         println!("Reading mm_econ benefit file: {}", filename);
         let filter_csv = fs::read_to_string(filename)?;
-        let cb_wrapper_file = dir!(
-            user_home,
-            RESEARCH_WORKSPACE_PATH,
-            ZEROSIM_BENCHMARKS_DIR,
-            "cb_wrapper"
-        );
+        let cb_wrapper_file = dir!(bmks_dir, "cb_wrapper");
 
         // Be sure to save the contents of the mmap_filter in the results
         // so we can reference them later
@@ -1190,11 +1123,7 @@ where
                     &ushell,
                     zerosim_exp_path,
                     n,
-                    &dir!(
-                        user_home,
-                        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                        output_file
-                    ),
+                    &dir!(results_dir, output_file),
                     eager,
                     &mut tctx,
                 )?
@@ -1213,11 +1142,7 @@ where
                         locality: LocalityMemAccessMode::Local,
                         n: n,
                         threads: None,
-                        output_file: &dir!(
-                            user_home,
-                            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                            local_file
-                        ),
+                        output_file: &dir!(results_dir, local_file),
                         eager,
                     },
                 )?;
@@ -1228,11 +1153,7 @@ where
                         locality: LocalityMemAccessMode::Random,
                         n: n,
                         threads: None,
-                        output_file: &dir!(
-                            user_home,
-                            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                            nonlocal_file
-                        ),
+                        output_file: &dir!(results_dir, nonlocal_file),
                         eager,
                     },
                 )?;
@@ -1251,11 +1172,7 @@ where
                         pattern: pattern,
                         prefault: false,
                         pf_time: None,
-                        output_file: Some(&dir!(
-                            user_home,
-                            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                            output_file
-                        )),
+                        output_file: Some(&dir!(results_dir, output_file)),
                         eager,
                         pin_core: tctx.next(),
                     }
@@ -1336,11 +1253,7 @@ where
                         freq: Some(freq),
                         allow_oom: true,
                         pf_time: None,
-                        output_file: Some(&dir!(
-                            user_home.as_str(),
-                            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                            output_file
-                        )),
+                        output_file: Some(&dir!(results_dir, output_file)),
                         eager,
                         server_pin_core: Some(tctx.next()),
                         client_pin_core: {
@@ -1413,7 +1326,6 @@ where
             update_prop,
             tmpfs_size,
         } => {
-            let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
             let ycsb_path = &dir!(bmks_dir, "YCSB");
             let mongodb_config = MongoDBWorkloadConfig {
                 bmks_dir,
@@ -1521,11 +1433,7 @@ where
                         ZEROSIM_GRAPH500_SUBMODULE
                     ),
                     scale,
-                    &dir!(
-                        user_home.as_str(),
-                        setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-                        output_file
-                    ),
+                    &dir!(results_dir, output_file),
                     if cfg.damon {
                         Some(Damon {
                             damon_path: &damon_path,
@@ -1626,11 +1534,7 @@ where
     }
 
     if cfg.mmstats {
-        let mmstats_file = dir!(
-            user_home,
-            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-            &mmstats_file
-        );
+        let mmstats_file = dir!(results_dir, &mmstats_file);
 
         ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
@@ -1701,11 +1605,7 @@ where
     ushell.run(cmd!(
         "echo -e '{}' > {}",
         crate::timings_str(timers.as_slice()),
-        dir!(
-            user_home,
-            setup00000::HOSTNAME_SHARED_RESULTS_DIR,
-            time_file
-        )
+        dir!(results_dir, time_file)
     ))?;
 
     crate::gen_standard_host_output(&sim_file, &ushell)?;
