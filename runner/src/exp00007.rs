@@ -450,6 +450,8 @@ where
                     zerosim_bmk_path,
                     NasClass::F,
                     Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
+                    None,
+                    None,
                     eager,
                     &mut tctx,
                 )?;

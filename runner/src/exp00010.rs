@@ -1508,6 +1508,8 @@ where
                     &bmks_dir,
                     class,
                     Some(&dir!(results_dir, output_file)),
+                    cb_wrapper_cmd,
+                    mmu_overhead,
                     eager,
                     &mut tctx,
                 )?

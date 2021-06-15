@@ -534,6 +534,11 @@ pub fn spawn_nas_cg(
     zerosim_bmk_path: &str,
     class: NasClass,
     output_file: Option<&str>,
+    cb_wrapper_cmd: Option<&str>,
+    // The output file as well as a list of perf counters to record. Most processors can only
+    // support 4-5 hardware counters, but you can do more software counters. To see the type of a
+    // counter, use `perf list`.
+    mmu_perf: Option<(&str, &[String])>,
     eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, failure::Error> {
@@ -541,15 +546,36 @@ pub fn spawn_nas_cg(
         setup_apriori_paging_process(shell, swapnil_path, &format!("cg.{}.x", class))?;
     }
 
-    let handle = shell.spawn(
-        cmd!(
-            "taskset -c {} ./bin/cg.{}.x > {}",
-            tctx.next(),
-            class,
-            output_file.unwrap_or("/dev/null")
-        )
-        .cwd(&format!("{}/NPB3.4/NPB3.4-OMP", zerosim_bmk_path)),
-    )?;
+    let handle = if let Some((mmu_overhead_file, counters)) = &mmu_perf {
+        shell.spawn(
+            cmd!(
+                "taskset -c {} \
+                perf stat \
+                -e {} \
+                -D 65000 \
+                -- {} \
+                ./bin/cg.{}.x > {} \
+                2> {}",
+                tctx.next(),
+                counters.join(" -e "),
+                cb_wrapper_cmd.unwrap_or(""),
+                class,
+                output_file.unwrap_or("/dev/null"),
+                mmu_overhead_file
+            )
+            .cwd(&format!("{}/NPB3.4/NPB3.4-OMP", zerosim_bmk_path)),
+        )?
+    } else {
+        shell.spawn(
+            cmd!(
+                "taskset -c {} ./bin/cg.{}.x > {}",
+                tctx.next(),
+                class,
+                output_file.unwrap_or("/dev/null")
+            )
+            .cwd(&format!("{}/NPB3.4/NPB3.4-OMP", zerosim_bmk_path)),
+        )?
+    };
 
     // Don't let the workload get OOM killed.
     oomkiller_blacklist_by_name(shell, &format!("cg.{}.x", class))?;
