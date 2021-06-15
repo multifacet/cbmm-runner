@@ -274,6 +274,15 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              (@arg RAND_NUM_INPUTS: --rand_num_inputs requires[RAND]
               "Have a random number of inputs per net in the canneal input file.")
         )
+        (@subcommand nascg =>
+            (about: "Run NAS Parallel Benchmark CG")
+            (@group CLASS =>
+                (@attributes +required)
+                (@arg D: --d "Run class D")
+                (@arg E: --e "Run class E")
+                (@arg F: --f "Run class F")
+            )
+        )
         (@subcommand cloudsuite =>
             (about: "Run a Cloudsuite benchmark.")
             (@subcommand web_serving =>
@@ -535,6 +544,20 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             };
 
             Workload::Canneal { workload }
+        }
+
+        ("nascg", Some(sub_m)) => {
+            let class = if sub_m.is_present("D") {
+                NasClass::D
+            } else if sub_m.is_present("E") {
+                NasClass::E
+            } else if sub_m.is_present("F") {
+                NasClass::F
+            } else {
+                unreachable!()
+            };
+
+            Workload::NasCG { class }
         }
 
         ("cloudsuite", Some(sub_m)) => match sub_m.subcommand() {
