@@ -1870,11 +1870,15 @@ pub fn run_cloudsuite_web_serving(
             benefits_file
         ))?;
         shell.run(cmd!(
-            "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+            "for p in $(pgrep hhvm) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
             benefits_file
         ))?;
         shell.run(cmd!(
-            "for p in $(pgrep php) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+            "for p in $(pgrep hh_single_compile) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+            benefits_file
+        ))?;
+        shell.run(cmd!(
+            "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
             benefits_file
         ))?;
     }
