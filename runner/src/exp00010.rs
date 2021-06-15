@@ -864,7 +864,7 @@ where
     let badger_trap_file = dir!(results_dir, cfg.gen_file_name("bt"));
     let pftrace_file = dir!(results_dir, cfg.gen_file_name("pftrace"));
     let pftrace_rejected_file = dir!(results_dir, cfg.gen_file_name("rejected"));
-    let mmap_filter_csv_name = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
+    let mmap_filter_csv_file = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
     let runtime_file = dir!(results_dir, cfg.gen_file_name("runtime"));
 
     let params = serde_json::to_string(&cfg)?;
@@ -1014,16 +1014,15 @@ where
         ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
     }
 
-    // Generate the cb_wrapper command if necessary
-    let cb_wrapper_cmd = if let Some(filename) = &cfg.mm_econ_benefit_file {
+    // If a benefits file was passed, save it with the other output and generate a cb_wrapper
+    // command for running the workload.
+    if let Some(filename) = &cfg.mm_econ_benefit_file {
         // Do some sanity checking first...
         match cfg.workload {
             Workload::TimeLoop { .. }
             | Workload::LocalityMemAccess { .. }
             | Workload::TimeMmapTouch { .. }
-            | Workload::Graph500 { .. }
-            | Workload::CloudsuiteWebServing { .. }
-            | Workload::NasCG { .. } => unimplemented!(),
+            | Workload::Graph500 { .. } => unimplemented!(),
 
             Workload::ThpUbmk { .. }
             | Workload::ThpUbmkShm { .. }
@@ -1033,22 +1032,24 @@ where
             | Workload::Spec2017Xalancbmk { .. }
             | Workload::Spec2017Xz { .. }
             | Workload::Canneal { .. }
-            | Workload::Mix { .. } => {}
+            | Workload::Mix { .. }
+            | Workload::NasCG { .. }
+            | Workload::CloudsuiteWebServing { .. } => {}
         }
 
         println!("Reading mm_econ benefit file: {}", filename);
         let filter_csv = fs::read_to_string(filename)?;
-        let cb_wrapper_file = dir!(bmks_dir, "cb_wrapper");
 
         // Be sure to save the contents of the mmap_filter in the results
         // so we can reference them later
-        ushell.run(cmd!("echo -n '{}' > {}", filter_csv, mmap_filter_csv_name))?;
+        ushell.run(cmd!("echo -n '{}' > {}", filter_csv, mmap_filter_csv_file))?;
+    }
 
-        Some(format!("{} {}", cb_wrapper_file, mmap_filter_csv_name))
-    } else {
-        None
-    };
-    let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(|s| s.as_str());
+    let cb_wrapper_cmd = cfg
+        .mm_econ_benefit_file
+        .as_ref()
+        .map(|_| format!("{} {}", dir!(bmks_dir, "cb_wrapper"), mmap_filter_csv_file));
+    let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(String::as_str);
 
     if cfg.mm_econ {
         ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
@@ -1543,7 +1544,13 @@ where
 
         Workload::CloudsuiteWebServing { load_scale } => {
             time!(timers, "Workload", {
-                run_cloudsuite_web_serving(&ushell, load_scale, &runtime_file)?;
+                // TODO: what does mmu_overhead measurement mean for multi-process workloads?
+                run_cloudsuite_web_serving(
+                    &ushell,
+                    load_scale,
+                    cb_wrapper_cmd.map(|_| mmap_filter_csv_file.as_str()),
+                    &runtime_file,
+                )?;
             });
         }
     }

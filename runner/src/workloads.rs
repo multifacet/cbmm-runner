@@ -1835,6 +1835,7 @@ fn canneal_input_file_exists(
 pub fn run_cloudsuite_web_serving(
     shell: &SshShell,
     load_scale: usize,
+    benefit_file: Option<&str>,
     output_file: &str,
 ) -> Result<(), failure::Error> {
     // Start db, cache, webserver.
@@ -1850,7 +1851,33 @@ pub fn run_cloudsuite_web_serving(
               /etc/bootstrap.sh $WSIP $WSIP"),
     }
 
-    // TODO: set CBMM benefits, turn on perf, etc...
+    // Run the client to ensure that the servers have started.
+    shell.run(cmd!(
+        "docker run --pid=\"host\" --rm --net=host --name=faban_client \
+         cloudsuite/web-serving:faban_client \
+         $(hostname -I | awk '{{print $1}}') 1",
+    ))?;
+
+    // TODO: would make sense to have different benefits file for different processes :/
+    // Set CBMM benefits.
+    if let Some(benefits_file) = benefit_file {
+        shell.run(cmd!(
+            "cat {} | sudo tee /proc/`pgrep mysqld`/mmap_filters",
+            benefits_file
+        ))?;
+        shell.run(cmd!(
+            "cat {} | sudo tee /proc/`pgrep memcached`/mmap_filters",
+            benefits_file
+        ))?;
+        shell.run(cmd!(
+            "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+            benefits_file
+        ))?;
+        shell.run(cmd!(
+            "for p in $(pgrep php) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+            benefits_file
+        ))?;
+    }
 
     // Run workload
     shell.run(cmd!(
