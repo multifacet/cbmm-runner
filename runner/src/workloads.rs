@@ -199,7 +199,7 @@ where
 
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
-    pub mmu_perf: Option<String>,
+    pub mmu_perf: Option<(&'s str, &'s [String])>,
 
     /// A callback executed after the memcached server starts but before the workload starts.
     pub server_start_cb: F,
@@ -280,23 +280,13 @@ where
     }
 
     // Start `perf` if needed.
-    Ok(if let Some(output_path) = &cfg.mmu_perf {
-        let pagewalk_pc = crate::cpu::page_walk_perf_counter_suffix(&shell)?;
+    Ok(if let Some((output_path, counters)) = &cfg.mmu_perf {
         let handle = shell.spawn(cmd!(
             "perf stat \
-            -e dtlb_load_misses.{} \
-            -e dtlb_store_misses.{} \
-            -e dtlb_load_misses.miss_causes_a_walk \
-            -e dtlb_store_misses.miss_causes_a_walk \
-            -e cpu_clk_unhalted.thread_any \
-            -e inst_retired.any \
-            -e faults \
-            -e migrations \
-            -e cs \
+            -e {} \
             -p `pgrep memcached` 2>&1 | \
             tee {}",
-            pagewalk_pc,
-            pagewalk_pc,
+            counters.join(" -e "),
             output_path
         ))?;
 
@@ -447,7 +437,7 @@ where
 
     /// Indicates that we should run the workload under `perf` to capture MMU overhead stats.
     /// The string is the path to the output.
-    pub mmu_perf: Option<(String, &'s [String])>,
+    pub mmu_perf: Option<(&'s str, &'s [String])>,
 
     /// A callback executed after the mongodb server starts but before the workload starts.
     pub server_start_cb: F,

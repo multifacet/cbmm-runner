@@ -858,6 +858,11 @@ where
     } else {
         None
     };
+    let mmu_overhead = if cfg.mmu_overhead {
+        Some((mmu_overhead_file.as_str(), cfg.perf_counters.as_slice()))
+    } else {
+        None
+    };
 
     let cores = crate::get_num_cores(&ushell)?;
     let mut tctx = TasksetCtx::new(cores);
@@ -1200,11 +1205,7 @@ where
                     reps,
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
                     cb_wrapper_cmd,
-                    if cfg.mmu_overhead {
-                        Some((&mmu_overhead_file, &cfg.perf_counters))
-                    } else {
-                        None
-                    },
+                    mmu_overhead,
                     if cfg.perf_record {
                         Some(&trace_file)
                     } else {
@@ -1227,11 +1228,7 @@ where
                     cfg.transparent_hugepage_enabled == "always",
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, THP_UBMK_DIR),
                     cb_wrapper_cmd,
-                    if cfg.mmu_overhead {
-                        Some((&mmu_overhead_file, &cfg.perf_counters))
-                    } else {
-                        None
-                    },
+                    mmu_overhead,
                     if cfg.perf_record {
                         Some(&trace_file)
                     } else {
@@ -1289,11 +1286,7 @@ where
                             None
                         },
                         cb_wrapper_cmd,
-                        mmu_perf: if cfg.mmu_overhead {
-                            Some(mmu_overhead_file)
-                        } else {
-                            None
-                        },
+                        mmu_perf: mmu_overhead,
                         server_start_cb: |shell| {
                             // Set `huge_addr` if needed.
                             if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
@@ -1348,11 +1341,7 @@ where
                     tctx.next()
                 },
                 cb_wrapper_cmd,
-                mmu_perf: if cfg.mmu_overhead {
-                    Some((mmu_overhead_file, &cfg.perf_counters))
-                } else {
-                    None
-                },
+                mmu_perf: mmu_overhead,
                 server_start_cb: |shell| {
                     // Set `huge_addr` if needed.
                     if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
@@ -1482,11 +1471,7 @@ where
                     &dir!(user_home, RESEARCH_WORKSPACE_PATH, SPEC_2017_DIR),
                     wkload,
                     cb_wrapper_cmd,
-                    if cfg.mmu_overhead {
-                        Some((&mmu_overhead_file, &cfg.perf_counters))
-                    } else {
-                        None
-                    },
+                    mmu_overhead,
                     if cfg.perf_record {
                         Some(&trace_file)
                     } else {
@@ -1504,11 +1489,7 @@ where
                     &ushell,
                     workload,
                     cb_wrapper_cmd,
-                    if cfg.mmu_overhead {
-                        Some((&mmu_overhead_file, &cfg.perf_counters))
-                    } else {
-                        None
-                    },
+                    mmu_overhead,
                     if cfg.perf_record {
                         Some(&trace_file)
                     } else {
