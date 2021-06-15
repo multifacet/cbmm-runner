@@ -1297,6 +1297,7 @@ pub fn run_graph500(
     output_file: &str,
     damon: Option<Damon>,
     pintool: Option<Pintool<'_>>,
+    mmu_overhead: Option<(&str, &[String])>,
 ) -> Result<(), failure::Error> {
     let damon = if let Some(damon) = damon {
         format!(
@@ -1319,6 +1320,15 @@ pub fn run_graph500(
         None => "".into(),
     };
 
+    let (mmu_perf, mmu_output) = if let Some((mmu_output, counters)) = mmu_overhead {
+        (
+            format!("perf stat -e {} -D 5000 -- ", counters.join(" -e ")),
+            format!(" 2> {}", mmu_output),
+        )
+    } else {
+        ("".into(), "".into())
+    };
+
     // Graph500 consists of 3 phases. The first phase generates the graph. It is not considered
     // part of the benchmark, but it takes a looong time. For memory tracing, we want to fast
     // forward past this part so as not to waste time and bloat the trace. To do this, the -ff flag
@@ -1338,12 +1348,14 @@ pub fn run_graph500(
 
     // Run the workload, possibly under instrumentation, but don't block.
     let handle = shell.spawn(cmd!(
-        "{}{}{}/omp-csr/omp-csr -s {} | tee {}",
+        "{}{}{}{}/omp-csr/omp-csr -s {} {} | tee {}",
+        mmu_perf,
         damon,
         pintool,
         graph500_path,
         scale,
-        output_file
+        mmu_output,
+        output_file,
     ))?;
 
     // Wait for the graph generation phase to complete. Then, inform any tooling and let the
