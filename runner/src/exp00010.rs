@@ -22,10 +22,10 @@ use crate::{
     workloads::{
         run_canneal, run_cloudsuite_web_serving, run_graph500, run_hacky_spec17,
         run_locality_mem_access, run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm,
-        run_time_loop, run_time_mmap_touch, run_ycsb_workload, CannealWorkload, Damon,
-        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
-        MongoDBWorkloadConfig, Pintool, Spec2017Workload, TasksetCtx, TimeMmapTouchConfig,
-        TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
+        run_time_loop, run_time_mmap_touch, run_ycsb_workload, spawn_nas_cg, CannealWorkload,
+        Damon, LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
+        MongoDBWorkloadConfig, NasClass, Pintool, Spec2017Workload, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -83,6 +83,9 @@ enum Workload {
     },
     CloudsuiteWebServing {
         load_scale: usize,
+    },
+    NasCG {
+        class: NasClass,
     },
 }
 
@@ -883,6 +886,11 @@ where
         })?;
     }
 
+    let nas_proc_name = if let Workload::NasCG { class } = cfg.workload {
+        Some(format!("cg.{}.x", class))
+    } else {
+        None
+    };
     let proc_name = match cfg.workload {
         Workload::TimeLoop { .. } => Some("time_loop"),
         Workload::LocalityMemAccess { .. } => Some("locality_mem_access"),
@@ -896,6 +904,7 @@ where
         Workload::Spec2017Mcf { .. } => Some("mcf_s"),
         Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
         Workload::Canneal { .. } => Some("canneal"),
+        Workload::NasCG { .. } => nas_proc_name.as_ref().map(String::as_str),
 
         Workload::Mix { .. } => None,
         Workload::CloudsuiteWebServing { .. } => None,
@@ -985,7 +994,8 @@ where
             | Workload::LocalityMemAccess { .. }
             | Workload::TimeMmapTouch { .. }
             | Workload::Graph500 { .. }
-            | Workload::CloudsuiteWebServing { .. } => unimplemented!(),
+            | Workload::CloudsuiteWebServing { .. }
+            | Workload::NasCG { .. } => unimplemented!(),
 
             Workload::ThpUbmk { .. }
             | Workload::ThpUbmkShm { .. }
@@ -1507,6 +1517,21 @@ where
                     &runtime_file,
                     tctx.next(),
                 )?;
+            });
+        }
+
+        Workload::NasCG { class } => {
+            time!(timers, "Workload", {
+                spawn_nas_cg(
+                    &ushell,
+                    &bmks_dir,
+                    class,
+                    Some(&dir!(results_dir, output_file)),
+                    eager,
+                    &mut tctx,
+                )?
+                .join()
+                .1?;
             });
         }
 
