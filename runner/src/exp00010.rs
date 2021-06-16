@@ -844,6 +844,7 @@ where
 
     let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
     let results_dir = &dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
+    let output_file = &dir!(results_dir, output_file);
     let mmstats_file = cfg.gen_file_name("mmstats");
     let meminfo_file = cfg.gen_file_name("meminfo");
     let smaps_file = cfg.gen_file_name("smaps");
@@ -1158,14 +1159,7 @@ where
             time!(
                 timers,
                 "Workload",
-                run_time_loop(
-                    &ushell,
-                    zerosim_exp_path,
-                    n,
-                    &dir!(results_dir, output_file),
-                    eager,
-                    &mut tctx,
-                )?
+                run_time_loop(&ushell, zerosim_exp_path, n, output_file, eager, &mut tctx,)?
             );
         }
 
@@ -1211,7 +1205,7 @@ where
                         pattern: pattern,
                         prefault: false,
                         pf_time: None,
-                        output_file: Some(&dir!(results_dir, output_file)),
+                        output_file: Some(output_file),
                         eager,
                         pin_core: tctx.next(),
                     }
@@ -1284,7 +1278,7 @@ where
                         freq: Some(freq),
                         allow_oom: true,
                         pf_time: None,
-                        output_file: Some(&dir!(results_dir, output_file)),
+                        output_file: Some(output_file),
                         eager,
                         server_pin_core: Some(tctx.next()),
                         client_pin_core: {
@@ -1456,7 +1450,7 @@ where
                         ZEROSIM_GRAPH500_SUBMODULE
                     ),
                     scale,
-                    &dir!(results_dir, output_file),
+                    output_file,
                     if cfg.damon {
                         Some(Damon {
                             damon_path: &damon_path,
@@ -1532,7 +1526,7 @@ where
                     &ushell,
                     &bmks_dir,
                     class,
-                    Some(&dir!(results_dir, output_file)),
+                    Some(output_file),
                     cb_wrapper_cmd,
                     mmu_overhead,
                     eager,
