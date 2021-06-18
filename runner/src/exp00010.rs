@@ -5,7 +5,7 @@
 //! If `--thp_huge_addr` is used, then `setup00002` with an instrumented kernel is needed. If
 //! `--hawkeye` is used, then `setup00004` is needed to install hawkeye and related tools.
 
-use std::fs;
+use std::{collections::HashMap, fs};
 
 use clap::clap_app;
 
@@ -738,8 +738,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     run_inner(&login, &cfg)
 }
 
-pub struct InitialSetupState {
-    pub ushell: SshShell,
+pub struct InitialSetupState<'s> {
     pub user_home: String,
     pub zerosim_exp_path: String,
     pub results_dir: String,
@@ -747,27 +746,28 @@ pub struct InitialSetupState {
     pub time_file: String,
     pub sim_file: String,
     pub mmstats_file: String,
-    pub meminfo_file: String,
-    pub smaps_file: String,
-    pub mmap_tracker_file: String,
     pub damon_output_path: String,
     pub trace_file: String,
-    pub mmu_overhead_file: String,
     pub ycsb_result_file: String,
     pub badger_trap_file: String,
     pub pftrace_file: String,
     pub pftrace_rejected_file: String,
-    pub mmap_filter_csv_file: String,
     pub runtime_file: String,
     pub bmks_dir: String,
     pub damon_path: String,
     pub pin_path: String,
     pub swapnil_path: String,
+    pub mmap_filter_csv_files: HashMap<String, String>,
+    pub mmu_overhead: Option<(String, Vec<String>)>,
+    pub cores: usize,
+    pub tctx: TasksetCtx,
+    pub bgctx: BackgroundContext<'s>,
+    pub instrumented_proc: Option<String>,
 }
 
-pub fn initial_setup<A, F1, P>(
-    login: &Login<A>,
-    output: &P,
+pub fn initial_setup<'s, P, F1, F2, F3, F4, F5>(
+    ushell: &'s SshShell,
+    output: &'s P,
     asynczero: bool,
     hawkeye: bool,
     enable_aslr: bool,
@@ -776,20 +776,27 @@ pub fn initial_setup<A, F1, P>(
     transparent_hugepage_khugepaged_defrag: usize,
     transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
     transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+    mmstats: bool,
+    meminfo_periodic: bool,
+    smaps_periodic: bool,
+    mmap_tracker: bool,
+    badger_trap: bool,
+    mm_econ: bool,
     // Returns false if there was an exception and this should be skipped...
     transparent_hugepage_excpetion_hack: F1,
-) -> Result<InitialSetupState, failure::Error>
+    compute_mmap_filter_csv_files: F2,
+    compute_mmu_overhead: F3,
+    compute_instrumented_proc: F4,
+    set_huge_addr: F5,
+) -> Result<InitialSetupState<'s>, failure::Error>
 where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-    F1: FnOnce(&SshShell) -> Result<bool, failure::Error>,
     P: Parametrize,
+    F1: FnOnce(&SshShell) -> Result<bool, failure::Error>,
+    F2: FnOnce(&str) -> HashMap<String, String>,
+    F3: FnOnce(&SshShell, &str) -> Result<Option<(String, Vec<String>)>, failure::Error>,
+    F4: FnOnce() -> Option<String>,
+    F5: FnOnce(&SshShell, &Option<String>) -> Result<(), failure::Error>,
 {
-    // Reboot
-    initial_reboot_no_vagrant(&login)?;
-
-    // Connect
-    let ushell = connect_and_setup_host_only(&login)?;
-
     let user_home = get_user_home_dir(&ushell)?;
     let zerosim_exp_path = dir!(
         &user_home,
@@ -861,7 +868,6 @@ where
     let pftrace_file = dir!(&results_dir, output.gen_file_name("pftrace"));
     let pftrace_rejected_file = dir!(&results_dir, output.gen_file_name("rejected"));
     let runtime_file = dir!(&results_dir, output.gen_file_name("runtime"));
-    let mmap_filter_csv_file = dir!(&results_dir, output.gen_file_name("mmap-filters.csv"));
 
     let bmks_dir = dir!(&user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
     let damon_path = dir!(&bmks_dir, DAMON_PATH);
@@ -879,8 +885,85 @@ where
         dir!(&results_dir, params_file)
     ))?;
 
+    let mmap_filter_csv_files = compute_mmap_filter_csv_files(&results_dir);
+    let mmu_overhead = compute_mmu_overhead(&ushell, &mmu_overhead_file)?;
+
+    let cores = crate::get_num_cores(&ushell)?;
+    let tctx = TasksetCtx::new(cores);
+
+    if mmstats {
+        // Print the current numbers, 'cause why not?
+        ushell.run(cmd!("tail /proc/mm_*"))?;
+
+        // Writing to any of the params will reset the plot.
+        ushell.run(cmd!(
+            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+        ))?;
+    }
+
+    // Maybe collect meminfo
+    let mut bgctx = BackgroundContext::new(&ushell);
+    if meminfo_periodic {
+        bgctx.spawn(BackgroundTask {
+            name: "meminfo",
+            period: PERIOD,
+            cmd: format!("cat /proc/meminfo | tee -a {}", &meminfo_file),
+            ensure_started: meminfo_file,
+        })?;
+    }
+
+    let instrumented_proc = compute_instrumented_proc();
+
+    if smaps_periodic {
+        bgctx.spawn(BackgroundTask {
+            name: "smaps",
+            period: PERIOD,
+            cmd: format!(
+                "((sudo cat /proc/`pgrep -x {}  | sort -n \
+                    | head -n1`/smaps) || echo none) | tee -a {}",
+                instrumented_proc.as_ref().unwrap(),
+                &smaps_file
+            ),
+            ensure_started: smaps_file,
+        })?;
+    }
+
+    if mmap_tracker {
+        // This is needed for BPF to compile, but we don't want it enabled all
+        // of the time because it interferes with gcc and g++
+        let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
+
+        ushell.spawn(cmd!(
+            "{}; \
+            sudo {}/bmks/mmap_tracker.py -c {} | tee {}",
+            enable_bpf_cmd,
+            &dir!(&user_home, RESEARCH_WORKSPACE_PATH),
+            instrumented_proc.as_ref().unwrap(),
+            mmap_tracker_file
+        ))?;
+        // Wait some time for the BPF validator to do its job
+        println!("Waiting 10s for BPF validator...");
+        ushell.run(cmd!("sleep 10"))?;
+    }
+
+    // Set `huge_addr` if needed.
+    set_huge_addr(ushell, &instrumented_proc)?;
+
+    // Turn on BadgerTrap if needed
+    if badger_trap {
+        ushell.run(cmd!(
+            "{}/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
+            &user_home,
+            instrumented_proc.as_ref().unwrap()
+        ))?;
+    }
+
+    // Turn on mm_econ if needed.
+    if mm_econ {
+        ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
+    }
+
     Ok(InitialSetupState {
-        ushell,
         user_home,
         zerosim_exp_path,
         results_dir,
@@ -888,22 +971,23 @@ where
         time_file,
         sim_file,
         mmstats_file,
-        meminfo_file,
-        smaps_file,
-        mmap_tracker_file,
         damon_output_path,
         trace_file,
-        mmu_overhead_file,
         ycsb_result_file,
         badger_trap_file,
         pftrace_file,
         pftrace_rejected_file,
-        mmap_filter_csv_file,
+        mmap_filter_csv_files,
         runtime_file,
         bmks_dir,
         damon_path,
         pin_path,
         swapnil_path,
+        mmu_overhead,
+        cores,
+        tctx,
+        bgctx,
+        instrumented_proc,
     })
 }
 
@@ -911,8 +995,13 @@ fn run_inner<A>(login: &Login<A>, cfg: &Config) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
+    // Reboot
+    initial_reboot_no_vagrant(&login)?;
+
+    // Connect
+    let ushell = connect_and_setup_host_only(&login)?;
+
     let InitialSetupState {
-        ushell,
         ref user_home,
         ref zerosim_exp_path,
         ref results_dir,
@@ -920,24 +1009,25 @@ where
         ref time_file,
         ref sim_file,
         ref mmstats_file,
-        meminfo_file,
-        smaps_file,
-        ref mmap_tracker_file,
         ref damon_output_path,
         ref trace_file,
-        ref mmu_overhead_file,
         ref ycsb_result_file,
         ref badger_trap_file,
         ref pftrace_file,
         ref pftrace_rejected_file,
-        ref mmap_filter_csv_file,
+        ref mmap_filter_csv_files,
         ref runtime_file,
         ref bmks_dir,
         ref damon_path,
         ref pin_path,
         ref swapnil_path,
+        mmu_overhead,
+        mut tctx,
+        bgctx,
+        instrumented_proc: proc_name,
+        ..
     } = initial_setup(
-        login,
+        &ushell,
         cfg,
         cfg.asynczero,
         cfg.hawkeye,
@@ -947,6 +1037,12 @@ where
         cfg.transparent_hugepage_khugepaged_defrag,
         cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
         cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+        cfg.mmstats,
+        cfg.meminfo_periodic,
+        cfg.smaps_periodic,
+        cfg.mmap_tracker,
+        cfg.badger_trap,
+        cfg.mm_econ,
         |shell| {
             if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
                 crate::turn_on_thp(
@@ -973,116 +1069,69 @@ where
                 Ok(true)
             }
         },
+        |results_dir| {
+            let dontcare = "foo".to_owned();
+            let fname = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
+            vec![(dontcare, fname)].into_iter().collect()
+        },
+        |_shell, mmu_overhead_file| {
+            Ok(if cfg.mmu_overhead {
+                Some((mmu_overhead_file.to_owned(), cfg.perf_counters.clone()))
+            } else {
+                None
+            })
+        },
+        || {
+            let nas_proc_name = if let Workload::NasCG { class } = cfg.workload {
+                Some(format!("cg.{}.x", class))
+            } else {
+                None
+            };
+            Some(
+                match cfg.workload {
+                    Workload::TimeLoop { .. } => "time_loop",
+                    Workload::LocalityMemAccess { .. } => "locality_mem_access",
+                    Workload::TimeMmapTouch { .. } => "time_mmap_touch",
+                    Workload::ThpUbmk { .. } => "ubmk",
+                    Workload::ThpUbmkShm { .. } => "ubmk-shm",
+                    Workload::Memcached { .. } => "memcached",
+                    Workload::MongoDB { .. } => "mongod",
+                    Workload::Graph500 { .. } => "graph500",
+                    Workload::Spec2017Xz { .. } => "xz_s",
+                    Workload::Spec2017Mcf { .. } => "mcf_s",
+                    Workload::Spec2017Xalancbmk { .. } => "xalancbmk_s",
+                    Workload::Canneal { .. } => "canneal",
+                    Workload::NasCG { .. } => nas_proc_name.as_ref().map(String::as_str).unwrap(),
+                }
+                .to_owned(),
+            )
+        },
+        |shell, proc_name| {
+            if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
+                turn_on_huge_addr(
+                    &ushell,
+                    huge_addr.clone(),
+                    ThpHugeAddrProcess::from_name(proc_name.as_ref().unwrap()),
+                )?;
+            }
+
+            Ok(())
+        },
     )?;
 
-    let mmu_overhead = if cfg.mmu_overhead {
-        Some((mmu_overhead_file.as_str(), cfg.perf_counters.as_slice()))
+    let proc_name = proc_name.as_ref().unwrap();
+    let mmu_overhead = if let Some((ref file, ref counters)) = mmu_overhead {
+        Some((file.as_str(), counters.as_slice()))
     } else {
         None
     };
-
-    let cores = crate::get_num_cores(&ushell)?;
-    let mut tctx = TasksetCtx::new(cores);
-
-    if cfg.mmstats {
-        // Print the current numbers, 'cause why not?
-        ushell.run(cmd!("tail /proc/mm_*"))?;
-
-        // Writing to any of the params will reset the plot.
-        ushell.run(cmd!(
-            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
-        ))?;
-    }
-
-    // Maybe collect meminfo
-    let mut bgctx = BackgroundContext::new(&ushell);
-    if cfg.meminfo_periodic {
-        bgctx.spawn(BackgroundTask {
-            name: "meminfo",
-            period: PERIOD,
-            cmd: format!("cat /proc/meminfo | tee -a {}", &meminfo_file),
-            ensure_started: meminfo_file,
-        })?;
-    }
-
-    let nas_proc_name = if let Workload::NasCG { class } = cfg.workload {
-        Some(format!("cg.{}.x", class))
-    } else {
-        None
-    };
-    let proc_name = match cfg.workload {
-        Workload::TimeLoop { .. } => Some("time_loop"),
-        Workload::LocalityMemAccess { .. } => Some("locality_mem_access"),
-        Workload::TimeMmapTouch { .. } => Some("time_mmap_touch"),
-        Workload::ThpUbmk { .. } => Some("ubmk"),
-        Workload::ThpUbmkShm { .. } => Some("ubmk-shm"),
-        Workload::Memcached { .. } => Some("memcached"),
-        Workload::MongoDB { .. } => Some("mongod"),
-        Workload::Graph500 { .. } => Some("graph500"),
-        Workload::Spec2017Xz { .. } => Some("xz_s"),
-        Workload::Spec2017Mcf { .. } => Some("mcf_s"),
-        Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
-        Workload::Canneal { .. } => Some("canneal"),
-        Workload::NasCG { .. } => nas_proc_name.as_ref().map(String::as_str),
-    }
-    .unwrap();
-
-    if cfg.smaps_periodic {
-        bgctx.spawn(BackgroundTask {
-            name: "smaps",
-            period: PERIOD,
-            cmd: format!(
-                "((sudo cat /proc/`pgrep -x {}  | sort -n \
-                    | head -n1`/smaps) || echo none) | tee -a {}",
-                proc_name, &smaps_file
-            ),
-            ensure_started: smaps_file,
-        })?;
-    }
-
-    if cfg.mmap_tracker {
-        // This is needed for BPF to compile, but we don't want it enabled all
-        // of the time because it interferes with gcc and g++
-        let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
-
-        ushell.spawn(cmd!(
-            "{}; \
-            sudo {}/bmks/mmap_tracker.py -c {} | tee {}",
-            enable_bpf_cmd,
-            &dir!(user_home, RESEARCH_WORKSPACE_PATH),
-            proc_name,
-            mmap_tracker_file
-        ))?;
-        // Wait some time for the BPF validator to do its job
-        println!("Waiting 10s for BPF validator...");
-        ushell.run(cmd!("sleep 10"))?;
-    }
-
-    // Set `huge_addr` if needed.
-    if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
-        turn_on_huge_addr(
-            &ushell,
-            huge_addr.clone(),
-            ThpHugeAddrProcess::from_name(proc_name),
-        )?;
-    }
-
-    // Turn on BadgerTrap if needed
-    if cfg.badger_trap {
-        ushell.run(cmd!(
-            "{}/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
-            user_home,
-            proc_name
-        ))?;
-    }
-
-    // Turn on mm_econ if needed.
-    if cfg.mm_econ {
-        ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
-    }
 
     // If a benefits file was passed, save it with the other output and generate a cb_wrapper
     // command for running the workload.
+    let mmap_filter_csv_file = mmap_filter_csv_files
+        .into_iter()
+        .next()
+        .map(|(_, file)| file);
     if let Some(filename) = &cfg.mm_econ_benefit_file {
         // Do some sanity checking first...
         match cfg.workload {
@@ -1107,13 +1156,20 @@ where
 
         // Be sure to save the contents of the mmap_filter in the results
         // so we can reference them later
-        ushell.run(cmd!("echo -n '{}' > {}", filter_csv, mmap_filter_csv_file))?;
+        ushell.run(cmd!(
+            "echo -n '{}' > {}",
+            filter_csv,
+            mmap_filter_csv_file.unwrap()
+        ))?;
     }
 
-    let cb_wrapper_cmd = cfg
-        .mm_econ_benefit_file
-        .as_ref()
-        .map(|_| format!("{} {}", dir!(bmks_dir, "cb_wrapper"), mmap_filter_csv_file));
+    let cb_wrapper_cmd = cfg.mm_econ_benefit_file.as_ref().map(|_| {
+        format!(
+            "{} {}",
+            dir!(bmks_dir, "cb_wrapper"),
+            mmap_filter_csv_file.unwrap()
+        )
+    });
     let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(String::as_str);
 
     if cfg.mm_econ {
@@ -1148,11 +1204,9 @@ where
             Workload::Memcached { .. } | Workload::MongoDB { .. }
         ) {
         Some(ushell.spawn(cmd!(
-            "while ! [ `pgrep -x {}` ] ; do echo 'Waiting for process {}' ; done ; \
-             echo `pgrep -x {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-            proc_name,
-            proc_name,
-            proc_name,
+            "while ! [ `pgrep -x {pname}` ] ; do echo 'Waiting for process {pname}' ; done ; \
+             echo `pgrep -x {pname}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+            pname = proc_name
         ))?)
     } else {
         None
