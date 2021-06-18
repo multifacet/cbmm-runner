@@ -731,13 +731,35 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 }
 
 pub struct InitialSetupState {
-    ushell: SshShell,
-    user_home: String,
-    zerosim_exp_path: String,
+    pub ushell: SshShell,
+    pub user_home: String,
+    pub zerosim_exp_path: String,
+    pub results_dir: String,
+    pub output_file: String,
+    pub params_file: String,
+    pub time_file: String,
+    pub sim_file: String,
+    pub mmstats_file: String,
+    pub meminfo_file: String,
+    pub smaps_file: String,
+    pub mmap_tracker_file: String,
+    pub damon_output_path: String,
+    pub trace_file: String,
+    pub mmu_overhead_file: String,
+    pub ycsb_result_file: String,
+    pub badger_trap_file: String,
+    pub pftrace_file: String,
+    pub pftrace_rejected_file: String,
+    pub mmap_filter_csv_file: String,
+    pub runtime_file: String,
+    pub bmks_dir: String,
+    pub damon_path: String,
+    pub pin_path: String,
 }
 
-pub fn initial_setup<A, F1>(
+pub fn initial_setup<A, F1, P>(
     login: &Login<A>,
+    output: &P,
     asynczero: bool,
     hawkeye: bool,
     enable_aslr: bool,
@@ -752,6 +774,7 @@ pub fn initial_setup<A, F1>(
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
     F1: FnOnce(&SshShell) -> Result<bool, failure::Error>,
+    P: Parametrize,
 {
     // Reboot
     initial_reboot_no_vagrant(&login)?;
@@ -813,10 +836,65 @@ where
     // Turn of NUMA balancing
     crate::set_auto_numa(&ushell, false /* off */)?;
 
+    // Generate a bunch of output paths.
+    let results_dir = dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
+
+    let (output_file, params_file, time_file, sim_file) = output.gen_standard_names();
+    let output_file = dir!(results_dir, output_file);
+    let mmstats_file = dir!(results_dir, output.gen_file_name("mmstats"));
+    let meminfo_file = dir!(results_dir, output.gen_file_name("meminfo"));
+    let smaps_file = dir!(results_dir, output.gen_file_name("smaps"));
+    let mmap_tracker_file = dir!(results_dir, output.gen_file_name("mmap"));
+    let damon_output_path = dir!(results_dir, output.gen_file_name("damon"));
+    let trace_file = dir!(results_dir, output.gen_file_name("trace"));
+    let mmu_overhead_file = dir!(results_dir, output.gen_file_name("mmu"));
+    let ycsb_result_file = dir!(results_dir, output.gen_file_name("ycsb"));
+    let badger_trap_file = dir!(results_dir, output.gen_file_name("bt"));
+    let pftrace_file = dir!(results_dir, output.gen_file_name("pftrace"));
+    let pftrace_rejected_file = dir!(results_dir, output.gen_file_name("rejected"));
+    let mmap_filter_csv_file = dir!(results_dir, output.gen_file_name("mmap-filters.csv"));
+    let runtime_file = dir!(results_dir, output.gen_file_name("runtime"));
+
+    let bmks_dir = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
+    let damon_path = dir!(bmks_dir, DAMON_PATH);
+    let pin_path = dir!(
+        user_home,
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
+        "pin"
+    );
+
+    ushell.run(cmd!(
+        "echo '{}' > {}",
+        escape_for_bash(&serde_json::to_string(&output)?),
+        dir!(results_dir, params_file)
+    ))?;
+
     Ok(InitialSetupState {
         ushell,
         user_home,
         zerosim_exp_path,
+        results_dir,
+        output_file,
+        params_file,
+        time_file,
+        sim_file,
+        mmstats_file,
+        meminfo_file,
+        smaps_file,
+        mmap_tracker_file,
+        damon_output_path,
+        trace_file,
+        mmu_overhead_file,
+        ycsb_result_file,
+        badger_trap_file,
+        pftrace_file,
+        pftrace_rejected_file,
+        mmap_filter_csv_file,
+        runtime_file,
+        bmks_dir,
+        damon_path,
+        pin_path,
     })
 }
 
@@ -826,10 +904,32 @@ where
 {
     let InitialSetupState {
         ushell,
-        user_home,
-        zerosim_exp_path,
+        ref user_home,
+        ref zerosim_exp_path,
+        ref results_dir,
+        ref output_file,
+        ref params_file,
+        ref time_file,
+        ref sim_file,
+        ref mmstats_file,
+        ref meminfo_file,
+        ref smaps_file,
+        ref mmap_tracker_file,
+        ref damon_output_path,
+        ref trace_file,
+        ref mmu_overhead_file,
+        ref ycsb_result_file,
+        ref badger_trap_file,
+        ref pftrace_file,
+        ref pftrace_rejected_file,
+        ref mmap_filter_csv_file,
+        ref runtime_file,
+        ref bmks_dir,
+        ref damon_path,
+        ref pin_path,
     } = initial_setup(
         login,
+        cfg,
         cfg.asynczero,
         cfg.hawkeye,
         cfg.enable_aslr,
@@ -865,40 +965,6 @@ where
             }
         },
     )?;
-    let (user_home, zerosim_exp_path) = (&user_home, &zerosim_exp_path);
-
-    let results_dir = &dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
-
-    let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
-    let output_file = &dir!(results_dir, output_file);
-    let mmstats_file = &dir!(results_dir, cfg.gen_file_name("mmstats"));
-    let meminfo_file = &dir!(results_dir, cfg.gen_file_name("meminfo"));
-    let smaps_file = &dir!(results_dir, cfg.gen_file_name("smaps"));
-    let mmap_tracker_file = dir!(results_dir, cfg.gen_file_name("mmap"));
-    let damon_output_path = dir!(results_dir, cfg.gen_file_name("damon"));
-    let trace_file = dir!(results_dir, cfg.gen_file_name("trace"));
-    let mmu_overhead_file = dir!(results_dir, cfg.gen_file_name("mmu"));
-    let ycsb_result_file = &dir!(results_dir, cfg.gen_file_name("ycsb"));
-    let badger_trap_file = dir!(results_dir, cfg.gen_file_name("bt"));
-    let pftrace_file = dir!(results_dir, cfg.gen_file_name("pftrace"));
-    let pftrace_rejected_file = dir!(results_dir, cfg.gen_file_name("rejected"));
-    let mmap_filter_csv_file = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
-    let runtime_file = dir!(results_dir, cfg.gen_file_name("runtime"));
-
-    let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
-    let damon_path = dir!(bmks_dir, DAMON_PATH);
-    let pin_path = dir!(
-        user_home,
-        RESEARCH_WORKSPACE_PATH,
-        ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
-        "pin"
-    );
-
-    ushell.run(cmd!(
-        "echo '{}' > {}",
-        escape_for_bash(&serde_json::to_string(&cfg)?),
-        dir!(results_dir, params_file)
-    ))?;
 
     let swapnil_path = dir!(bmks_dir, ZEROSIM_SWAPNIL_PATH);
     let eager = if cfg.eager {
