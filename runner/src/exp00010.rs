@@ -765,7 +765,7 @@ pub struct InitialSetupState<'s> {
     pub instrumented_proc: Option<String>,
 }
 
-pub fn initial_setup<'s, P, F1, F2, F3, F4, F5>(
+pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6>(
     ushell: &'s SshShell,
     output: &'s P,
     asynczero: bool,
@@ -782,12 +782,16 @@ pub fn initial_setup<'s, P, F1, F2, F3, F4, F5>(
     mmap_tracker: bool,
     badger_trap: bool,
     mm_econ: bool,
+    pftrace: Option<usize>,
+    kbadgerd: bool,
+    kbadgerd_sleep_interval: Option<usize>,
     // Returns false if there was an exception and this should be skipped...
     transparent_hugepage_excpetion_hack: F1,
     compute_mmap_filter_csv_files: F2,
     compute_mmu_overhead: F3,
     compute_instrumented_proc: F4,
     set_huge_addr: F5,
+    save_mmap_filter_benefits: F6,
 ) -> Result<InitialSetupState<'s>, failure::Error>
 where
     P: Parametrize,
@@ -796,6 +800,7 @@ where
     F3: FnOnce(&SshShell, &str) -> Result<Option<(String, Vec<String>)>, failure::Error>,
     F4: FnOnce() -> Option<String>,
     F5: FnOnce(&SshShell, &Option<String>) -> Result<(), failure::Error>,
+    F6: FnOnce(&SshShell, &HashMap<String, String>) -> Result<(), failure::Error>,
 {
     let user_home = get_user_home_dir(&ushell)?;
     let zerosim_exp_path = dir!(
@@ -963,6 +968,36 @@ where
         ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
     }
 
+    // Save mmap filters with other workload output.
+    save_mmap_filter_benefits(ushell, &mmap_filter_csv_files)?;
+
+    if mm_econ {
+        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
+
+    if let Some(threshold) = pftrace {
+        ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
+        ushell.run(cmd!(
+            "echo {} | sudo tee /proc/pftrace_threshold",
+            threshold
+        ))?;
+    }
+
+    // Turn on kbadgerd if needed.
+    if kbadgerd {
+        ushell.run(cmd!(
+            "ls /sys/kernel/mm/kbadgerd || \
+            sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux \
+                | head -n1 | cut -d / -f1)/kbuild/mm/kbadgerd/kbadgerd.ko"
+        ))?;
+    }
+    if let Some(sleep_interval) = kbadgerd_sleep_interval {
+        ushell.run(cmd!(
+            "echo {} | sudo tee /sys/kernel/mm/kbadgerd/sleep_interval",
+            sleep_interval
+        ))?;
+    }
+
     Ok(InitialSetupState {
         user_home,
         zerosim_exp_path,
@@ -1043,6 +1078,10 @@ where
         cfg.mmap_tracker,
         cfg.badger_trap,
         cfg.mm_econ,
+        cfg.pftrace,
+        cfg.kbadgerd,
+        cfg.kbadgerd_sleep_interval,
+        // THP exception hack
         |shell| {
             if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
                 crate::turn_on_thp(
@@ -1069,11 +1108,13 @@ where
                 Ok(true)
             }
         },
+        // Compute mmap_filters_csv_files
         |results_dir| {
             let dontcare = "foo".to_owned();
             let fname = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
             vec![(dontcare, fname)].into_iter().collect()
         },
+        // Compute mmu_overhead
         |_shell, mmu_overhead_file| {
             Ok(if cfg.mmu_overhead {
                 Some((mmu_overhead_file.to_owned(), cfg.perf_counters.clone()))
@@ -1081,6 +1122,7 @@ where
                 None
             })
         },
+        // Compute instrumented proc name
         || {
             let nas_proc_name = if let Workload::NasCG { class } = cfg.workload {
                 Some(format!("cg.{}.x", class))
@@ -1106,13 +1148,51 @@ where
                 .to_owned(),
             )
         },
+        // Set THP huge_addr
         |shell, proc_name| {
             if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
                 turn_on_huge_addr(
-                    &ushell,
+                    shell,
                     huge_addr.clone(),
                     ThpHugeAddrProcess::from_name(proc_name.as_ref().unwrap()),
                 )?;
+            }
+
+            Ok(())
+        },
+        // Save all benefit files with the other output for the workload.
+        |shell, mmap_filter_csv_files| {
+            // If a benefits file was passed, save it with the other output and generate a cb_wrapper
+            // command for running the workload.
+            if let Some(filename) = &cfg.mm_econ_benefit_file {
+                // Do some sanity checking first...
+                match cfg.workload {
+                    Workload::TimeLoop { .. }
+                    | Workload::LocalityMemAccess { .. }
+                    | Workload::TimeMmapTouch { .. }
+                    | Workload::Graph500 { .. } => unimplemented!(),
+
+                    Workload::ThpUbmk { .. }
+                    | Workload::ThpUbmkShm { .. }
+                    | Workload::Memcached { .. }
+                    | Workload::MongoDB { .. }
+                    | Workload::Spec2017Mcf
+                    | Workload::Spec2017Xalancbmk { .. }
+                    | Workload::Spec2017Xz { .. }
+                    | Workload::Canneal { .. }
+                    | Workload::NasCG { .. } => {}
+                }
+
+                println!("Reading mm_econ benefit file: {}", filename);
+                let filter_csv = fs::read_to_string(filename)?;
+
+                // Be sure to save the contents of the mmap_filter in the results
+                // so we can reference them later
+                shell.run(cmd!(
+                    "echo -n '{}' > {}",
+                    filter_csv,
+                    mmap_filter_csv_files.iter().next().unwrap().1
+                ))?;
             }
 
             Ok(())
@@ -1126,77 +1206,14 @@ where
         None
     };
 
-    // If a benefits file was passed, save it with the other output and generate a cb_wrapper
-    // command for running the workload.
-    let mmap_filter_csv_file = mmap_filter_csv_files
-        .into_iter()
-        .next()
-        .map(|(_, file)| file);
-    if let Some(filename) = &cfg.mm_econ_benefit_file {
-        // Do some sanity checking first...
-        match cfg.workload {
-            Workload::TimeLoop { .. }
-            | Workload::LocalityMemAccess { .. }
-            | Workload::TimeMmapTouch { .. }
-            | Workload::Graph500 { .. } => unimplemented!(),
-
-            Workload::ThpUbmk { .. }
-            | Workload::ThpUbmkShm { .. }
-            | Workload::Memcached { .. }
-            | Workload::MongoDB { .. }
-            | Workload::Spec2017Mcf
-            | Workload::Spec2017Xalancbmk { .. }
-            | Workload::Spec2017Xz { .. }
-            | Workload::Canneal { .. }
-            | Workload::NasCG { .. } => {}
-        }
-
-        println!("Reading mm_econ benefit file: {}", filename);
-        let filter_csv = fs::read_to_string(filename)?;
-
-        // Be sure to save the contents of the mmap_filter in the results
-        // so we can reference them later
-        ushell.run(cmd!(
-            "echo -n '{}' > {}",
-            filter_csv,
-            mmap_filter_csv_file.unwrap()
-        ))?;
-    }
-
     let cb_wrapper_cmd = cfg.mm_econ_benefit_file.as_ref().map(|_| {
         format!(
             "{} {}",
             dir!(bmks_dir, "cb_wrapper"),
-            mmap_filter_csv_file.unwrap()
+            mmap_filter_csv_files.into_iter().next().unwrap().1
         )
     });
     let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(String::as_str);
-
-    if cfg.mm_econ {
-        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
-    }
-
-    if let Some(threshold) = cfg.pftrace {
-        ushell.run(cmd!("echo 1 | sudo tee /proc/pftrace_enable"))?;
-        ushell.run(cmd!(
-            "echo {} | sudo tee /proc/pftrace_threshold",
-            threshold
-        ))?;
-    }
-
-    // Turn on kbadgerd if needed.
-    if cfg.kbadgerd {
-        ushell.run(cmd!(
-            "ls /sys/kernel/mm/kbadgerd || \
-            sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/kbadgerd/kbadgerd.ko"
-        ))?;
-    }
-    if let Some(sleep_interval) = cfg.kbadgerd_sleep_interval {
-        ushell.run(cmd!(
-            "echo {} | sudo tee /sys/kernel/mm/kbadgerd/sleep_interval",
-            sleep_interval
-        ))?;
-    }
 
     let _kbadgerd_thread = if cfg.kbadgerd
         && !matches!(
