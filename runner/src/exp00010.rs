@@ -20,12 +20,12 @@ use crate::{
     paths::*,
     time,
     workloads::{
-        run_canneal, run_cloudsuite_web_serving, run_graph500, run_hacky_spec17,
-        run_locality_mem_access, run_memcached_gen_data, run_mix, run_thp_ubmk, run_thp_ubmk_shm,
-        run_time_loop, run_time_mmap_touch, run_ycsb_workload, spawn_nas_cg, CannealWorkload,
-        Damon, LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
-        MongoDBWorkloadConfig, NasClass, Pintool, Spec2017Workload, TasksetCtx,
-        TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
+        run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
+        run_memcached_gen_data, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch,
+        run_ycsb_workload, spawn_nas_cg, CannealWorkload, Damon, LocalityMemAccessConfig,
+        LocalityMemAccessMode, MemcachedWorkloadConfig, MongoDBWorkloadConfig, NasClass, Pintool,
+        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig,
+        YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -65,9 +65,6 @@ enum Workload {
         update_prop: f32,
         tmpfs_size: Option<usize>,
     },
-    Mix {
-        size: usize,
-    },
     Graph500 {
         scale: usize,
     },
@@ -80,9 +77,6 @@ enum Workload {
     },
     Canneal {
         workload: CannealWorkload,
-    },
-    CloudsuiteWebServing {
-        load_scale: usize,
     },
     NasCG {
         class: NasClass,
@@ -234,11 +228,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg TMPFS_SIZE: --tmpfs_size + takes_value {validator::is::<usize>}
              "Place the MongoDB database in a tmpfs of the specified size in GB.")
         )
-        (@subcommand mix =>
-            (about: "Run the `mix` workload.")
-            (@arg SIZE: +required +takes_value {validator::is::<usize>}
-             "The number of GBs of the workload (e.g. 500)")
-        )
         (@subcommand graph500 =>
             (about: "Run the graph500 workload (all kernels).")
             (@arg SCALE: +required +takes_value {validator::is::<usize>}
@@ -283,14 +272,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
                 (@arg F: --f "Run class F")
             )
         )
-        (@subcommand cloudsuite =>
-            (about: "Run a Cloudsuite benchmark.")
-            (@subcommand web_serving =>
-                (about: "Run the Web Serving benchmark.")
-                (@arg LOAD_SCALE: +takes_value {validator::is::<usize>}
-                 "Use the given number of concurrent clients.")
-            )
-        )
         (@arg EAGER: --eager
          "(optional) Use eager paging; requires a kernel that has eager paging.")
         (@arg MMSTATS: --memstats
@@ -304,7 +285,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (@arg DISABLE_THP: --disable_thp
              "Disable THP completely.")
             (@arg THP_HUGE_ADDR: --thp_huge_addr +takes_value {is_huge_page_addr_hex}
-             "Set the THP huge_addr setting to the given value and otherwise disable THP.")
+             "Set the THP huge_addr setting to the given value and disable THP for other memory.")
             (@arg THP_HUGE_ADDR_RANGES: --thp_huge_addr_ranges
              {is_huge_page_addr_hex} +takes_value ...
              "Make all pages in the given range(s) huge. Pass values as space-separated integers \
@@ -335,14 +316,25 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MM_ECON: --mm_econ
          "Enable mm_econ.")
         (@arg MM_ECON_BENEFIT_FILE: --mm_econ_benefit_file +takes_value
-         requires[MM_ECON]
-         "Import a list of conditions for a memory mapping and the benefit of that mapping being \
-         huge. The list taken from the csv file specified in this argument. The file should have the format\n\
-         SECTION,MISSES,CONSTRAINTS\n\
-         where SECTION can be code, data, heap, or mmap,\n\
-         CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
-         QUANTITY can be section_off, addr, len, prot, flags, fd, or off\n\
-         COMP can be >, <, or =.")
+         requires[MM_ECON] conflicts_with[MM_ECON_BENEFIT_PER_PROC]
+         "Set a benefits file for the workload process if there is an obvious choice. The file \
+          should contain a list of mmap filters in the form of a CSV file. The file should have the \
+          format:\n\
+          SECTION,MISSES,CONSTRAINTS\n\
+          where SECTION can be code, data, heap, or mmap,\n\
+          CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
+          QUANTITY can be section_off, addr, len, prot, flags, fd, or off\n\
+          COMP can be >, <, or =.")
+        (@arg MM_ECON_BENEFIT_PER_PROC: --mm_econ_benefit_per_proc +takes_value
+         requires[MM_ECON] conflicts_with[MM_ECON_BENEFIT_FILE]
+         "Set a benefits file for the given processes. The argument is a list of \
+          `process_name:file,process_name:file,...`. Each file should contain a list of mmap filters \
+          in the form of a CSV file. The file should have the format:\n\
+          SECTION,MISSES,CONSTRAINTS\n\
+          where SECTION can be code, data, heap, or mmap,\n\
+          CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
+          QUANTITY can be section_off, addr, len, prot, flags, fd, or off\n\
+          COMP can be >, <, or =.")
         (@arg ENABLE_ASLR: --enable_aslr
          "Enable ASLR.")
         (@arg PFTRACE: --pftrace
@@ -472,12 +464,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             }
         }
 
-        ("mix", Some(sub_m)) => {
-            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
-
-            Workload::Mix { size }
-        }
-
         ("graph500", Some(sub_m)) => {
             let scale = sub_m.value_of("SCALE").unwrap().parse::<usize>().unwrap();
 
@@ -560,19 +546,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             Workload::NasCG { class }
         }
 
-        ("cloudsuite", Some(sub_m)) => match sub_m.subcommand() {
-            ("web_serving", Some(sub_m)) => {
-                let load_scale = sub_m
-                    .value_of("LOAD_SCALE")
-                    .unwrap()
-                    .parse::<usize>()
-                    .unwrap();
-                Workload::CloudsuiteWebServing { load_scale }
-            }
-
-            _ => unreachable!(),
-        },
-
         _ => unreachable!(),
     };
 
@@ -591,9 +564,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .value_of("KBADGERD_SLEEP_INTERVAL")
         .map(|s| s.parse::<usize>().unwrap());
     let mm_econ = sub_m.is_present("MM_ECON");
-    let mm_econ_benefit_file = sub_m
-        .is_present("MM_ECON_BENEFIT_FILE")
-        .then(|| String::from(sub_m.value_of("MM_ECON_BENEFIT_FILE").unwrap()));
+    let mm_econ_benefit_file = sub_m.value_of("MM_ECON_BENEFIT_FILE").map(|s| s.to_owned());
     let enable_aslr = sub_m.is_present("ENABLE_ASLR");
     let pftrace = sub_m.is_present("PFTRACE").then(|| {
         sub_m
@@ -759,7 +730,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     run_inner(&login, &cfg)
 }
 
-fn run_inner<A>(login: &Login<A>, cfg: &Config) -> Result<(), failure::Error>
+pub fn initial_setup<A>(
+    login: &Login<A>,
+    asynczero: bool,
+    hawkeye: bool,
+    enable_aslr: bool,
+) -> Result<(SshShell, String, String), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
@@ -769,15 +745,15 @@ where
     // Connect
     let ushell = connect_and_setup_host_only(&login)?;
 
-    let user_home = &get_user_home_dir(&ushell)?;
-    let zerosim_exp_path = &dir!(
+    let user_home = get_user_home_dir(&ushell)?;
+    let zerosim_exp_path = dir!(
         user_home,
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
 
     // Start asynczeroing daemon and throttle it up a bit.
-    if cfg.asynczero {
+    if asynczero {
         ushell.run(cmd!(
             "ls /sys/kernel/mm/asynczero || \
             sudo insmod $(ls -t1 kernel-*/kbuild/vmlinux | head -n1 | cut -d / -f1)/kbuild/mm/asynczero/asynczero.ko"
@@ -790,14 +766,14 @@ where
             "echo 1 | sudo tee /sys/module/asynczero/parameters/mode"
         ))?;
     }
-    if cfg.hawkeye {
+    if hawkeye {
         ushell.run(cmd!(
             "sudo insmod HawkEye/kbuild/hawkeye_modules/async-zero/asynczero.ko"
         ))?;
     }
 
     // Turn of ASLR
-    if cfg.enable_aslr {
+    if enable_aslr {
         // ASLR is enabled by default on startup, so this probably isn't
         // necessary, but it's good to be explicit.
         crate::enable_aslr(&ushell)?;
@@ -807,6 +783,20 @@ where
 
     // Allow `perf` as any user
     crate::perf_for_all(&ushell)?;
+
+    // Turn of NUMA balancing
+    crate::set_auto_numa(&ushell, false /* off */)?;
+
+    Ok((ushell, user_home, zerosim_exp_path))
+}
+
+fn run_inner<A>(login: &Login<A>, cfg: &Config) -> Result<(), failure::Error>
+where
+    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+{
+    let (ushell, user_home, zerosim_exp_path) =
+        initial_setup(login, cfg.asynczero, cfg.hawkeye, cfg.enable_aslr)?;
+    let (user_home, zerosim_exp_path) = (&user_home, &zerosim_exp_path);
 
     // Turn on/off compaction and force it to happen if needed
     if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
@@ -836,29 +826,15 @@ where
         )?;
     }
 
-    // Turn of NUMA balancing
-    crate::set_auto_numa(&ushell, false /* off */)?;
-
-    // Collect timers on VM
-    let mut timers = vec![];
+    let results_dir = &dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
 
     let (output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
-    let results_dir = &dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
     let output_file = &dir!(results_dir, output_file);
-    let mmstats_file = cfg.gen_file_name("mmstats");
-    let meminfo_file = cfg.gen_file_name("meminfo");
-    let smaps_file = cfg.gen_file_name("smaps");
+    let mmstats_file = &dir!(results_dir, cfg.gen_file_name("mmstats"));
+    let meminfo_file = &dir!(results_dir, cfg.gen_file_name("meminfo"));
+    let smaps_file = &dir!(results_dir, cfg.gen_file_name("smaps"));
     let mmap_tracker_file = dir!(results_dir, cfg.gen_file_name("mmap"));
-    let damon_output_path = cfg.gen_file_name("damon");
-    let damon_output_path = dir!(results_dir, damon_output_path);
-    let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
-    let damon_path = dir!(bmks_dir, DAMON_PATH);
-    let pin_path = dir!(
-        user_home,
-        RESEARCH_WORKSPACE_PATH,
-        ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
-        "pin"
-    );
+    let damon_output_path = dir!(results_dir, cfg.gen_file_name("damon"));
     let trace_file = dir!(results_dir, cfg.gen_file_name("trace"));
     let mmu_overhead_file = dir!(results_dir, cfg.gen_file_name("mmu"));
     let ycsb_result_file = &dir!(results_dir, cfg.gen_file_name("ycsb"));
@@ -868,11 +844,18 @@ where
     let mmap_filter_csv_file = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
     let runtime_file = dir!(results_dir, cfg.gen_file_name("runtime"));
 
-    let params = serde_json::to_string(&cfg)?;
+    let bmks_dir = &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
+    let damon_path = dir!(bmks_dir, DAMON_PATH);
+    let pin_path = dir!(
+        user_home,
+        RESEARCH_WORKSPACE_PATH,
+        ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
+        "pin"
+    );
 
     ushell.run(cmd!(
         "echo '{}' > {}",
-        escape_for_bash(&params),
+        escape_for_bash(&serde_json::to_string(&cfg)?),
         dir!(results_dir, params_file)
     ))?;
 
@@ -907,11 +890,8 @@ where
         bgctx.spawn(BackgroundTask {
             name: "meminfo",
             period: PERIOD,
-            cmd: format!(
-                "cat /proc/meminfo | tee -a {}",
-                dir!(results_dir, &meminfo_file),
-            ),
-            ensure_started: dir!(results_dir, &meminfo_file),
+            cmd: format!("cat /proc/meminfo | tee -a {}", meminfo_file),
+            ensure_started: *meminfo_file,
         })?;
     }
 
@@ -934,39 +914,19 @@ where
         Workload::Spec2017Xalancbmk { .. } => Some("xalancbmk_s"),
         Workload::Canneal { .. } => Some("canneal"),
         Workload::NasCG { .. } => nas_proc_name.as_ref().map(String::as_str),
-
-        Workload::Mix { .. } => None,
-        Workload::CloudsuiteWebServing { .. } => None,
-    };
-    let proc_name_grep = match cfg.workload {
-        Workload::Mix { .. } => "'redis-server|matrix_mult2|memhog'",
-        Workload::CloudsuiteWebServing { .. } => "'memcached|mysqld|hhvm|hh_single_compile|nginx'",
-        _ => proc_name.unwrap(),
-    };
+    }
+    .unwrap();
 
     if cfg.smaps_periodic {
-        match cfg.workload {
-            Workload::Mix { .. } | Workload::CloudsuiteWebServing { .. } => {
-                panic!("Doesn't make sense to get smaps of multi-process workload!")
-            }
-            _ => {}
-        }
-
         bgctx.spawn(BackgroundTask {
             name: "smaps",
             period: PERIOD,
             cmd: format!(
                 "((sudo cat /proc/`pgrep -x {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
-                proc_name_grep,
-                dir!(
-                    results_dir,
-                    &smaps_file
-                ),
+                proc_name,
+                smaps_file
             ),
-            ensure_started: dir!(
-                results_dir,
-                &smaps_file
-            ),
+            ensure_started: *smaps_file
         })?;
     }
 
@@ -980,7 +940,7 @@ where
             sudo {}/bmks/mmap_tracker.py -c {} | tee {}",
             enable_bpf_cmd,
             &dir!(user_home, RESEARCH_WORKSPACE_PATH),
-            proc_name.unwrap(),
+            proc_name,
             mmap_tracker_file
         ))?;
         // Wait some time for the BPF validator to do its job
@@ -992,7 +952,6 @@ where
     if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
         // We need to truncate the name to 15 characters because Linux will truncate current->comm
         // to 15 characters. In order for them to match we truncate it here...
-        let proc_name = proc_name.unwrap();
         let proc_name_trunc = proc_name.get(..15).unwrap_or(proc_name);
         turn_on_huge_addr(
             &ushell,
@@ -1006,7 +965,7 @@ where
         ushell.run(cmd!(
             "{}/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
             user_home,
-            proc_name.unwrap()
+            proc_name
         ))?;
     }
 
@@ -1033,9 +992,7 @@ where
             | Workload::Spec2017Xalancbmk { .. }
             | Workload::Spec2017Xz { .. }
             | Workload::Canneal { .. }
-            | Workload::Mix { .. }
-            | Workload::NasCG { .. }
-            | Workload::CloudsuiteWebServing { .. } => {}
+            | Workload::NasCG { .. } => {}
         }
 
         println!("Reading mm_econ benefit file: {}", filename);
@@ -1086,9 +1043,9 @@ where
         Some(ushell.spawn(cmd!(
             "while ! [ `pgrep -x {}` ] ; do echo 'Waiting for process {}' ; done ; \
              echo `pgrep -x {}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-            proc_name_grep,
-            proc_name_grep,
-            proc_name_grep,
+            proc_name,
+            proc_name,
+            proc_name,
         ))?)
     } else {
         None
@@ -1123,35 +1080,34 @@ where
 
     // Turn on hawkeye bloat removal thread and profiler if needed.
     if cfg.hawkeye {
-        if let Some(proc_name) = proc_name {
-            ushell.run(cmd!(
-                "sudo insmod HawkEye/kbuild/hawkeye_modules/bloat_recovery/remove.ko \
+        ushell.run(cmd!(
+            "sudo insmod HawkEye/kbuild/hawkeye_modules/bloat_recovery/remove.ko \
                  debloat_comm={}",
-                proc_name
-            ))?;
-            // 120s sleep between debloating, according to Ashish Panwar.
-            ushell.run(cmd!(
-                "echo 120 | sudo tee /sys/module/remove/parameters/sleep"
-            ))?;
+            proc_name
+        ))?;
+        // 120s sleep between debloating, according to Ashish Panwar.
+        ushell.run(cmd!(
+            "echo 120 | sudo tee /sys/module/remove/parameters/sleep"
+        ))?;
 
-            // Use default interval of 10s -- Ashish Panwar.
-            ushell.run(cmd!(
-                "./x86-MMU-Profiler/global_profile -d -p {} {}",
-                proc_name,
-                match cpu_family_model(&ushell)? {
-                    Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
-                    Processor::Intel(IntelX86Model::HaswellConsumer) => "-f haswell",
+        // Use default interval of 10s -- Ashish Panwar.
+        ushell.run(cmd!(
+            "./x86-MMU-Profiler/global_profile -d -p {} {}",
+            proc_name,
+            match cpu_family_model(&ushell)? {
+                Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
+                Processor::Intel(IntelX86Model::HaswellConsumer) => "-f haswell",
 
-                    _ => unimplemented!(),
-                }
-            ))?;
+                _ => unimplemented!(),
+            }
+        ))?;
 
-            // promotion_metric: default 0 = HawkEye-PMU; 2 = HawkEye-G.
-            // scan_sleep_millisecs: 1000 for Fig 8 (HawkEye paper) experiments.
-        } else {
-            panic!("HawkEye with nameless processes...");
-        }
+        // promotion_metric: default 0 = HawkEye-PMU; 2 = HawkEye-G.
+        // scan_sleep_millisecs: 1000 for Fig 8 (HawkEye paper) experiments.
     }
+
+    // Collect timers on VM
+    let mut timers = vec![];
 
     // Run the workload.
     match cfg.workload {
@@ -1419,27 +1375,6 @@ where
             );
         }
 
-        Workload::Mix { size } => {
-            let freq = get_cpu_freq(&ushell)?;
-
-            time!(timers, "Workload", {
-                run_mix(
-                    &ushell,
-                    zerosim_exp_path,
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE),
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE),
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE),
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-                    cb_wrapper_cmd,
-                    freq,
-                    size,
-                    eager,
-                    &mut tctx,
-                    &runtime_file,
-                )?
-            });
-        }
-
         Workload::Graph500 { scale } => {
             time!(timers, "Workload", {
                 run_graph500(
@@ -1536,18 +1471,6 @@ where
                 .1?;
             });
         }
-
-        Workload::CloudsuiteWebServing { load_scale } => {
-            time!(timers, "Workload", {
-                // TODO: what does mmu_overhead measurement mean for multi-process workloads?
-                run_cloudsuite_web_serving(
-                    &ushell,
-                    load_scale,
-                    cb_wrapper_cmd.map(|_| mmap_filter_csv_file.as_str()),
-                    &runtime_file,
-                )?;
-            });
-        }
     }
 
     if cfg.pftrace.is_some() {
@@ -1567,8 +1490,6 @@ where
     }
 
     if cfg.mmstats {
-        let mmstats_file = dir!(results_dir, &mmstats_file);
-
         ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
         ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
@@ -1602,7 +1523,7 @@ where
     // Extract relevant data from dmesg for BadgerTrap, if needed.
     if cfg.badger_trap {
         // We need to ensure the relevant process has terminated.
-        ushell.run(cmd!("pkill -9 {} || echo 'already dead'", proc_name_grep))?;
+        ushell.run(cmd!("pkill -9 {} || echo 'already dead'", proc_name))?;
 
         // We wait until the results have been written...
         while ushell
