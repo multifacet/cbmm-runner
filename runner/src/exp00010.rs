@@ -84,7 +84,7 @@ enum Workload {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-enum ThpHugeAddrMode {
+pub enum ThpHugeAddrMode {
     Equal {
         addr: u64,
     },
@@ -101,13 +101,21 @@ enum ThpHugeAddrMode {
     },
 }
 
-#[derive(Clone, Debug)]
-enum ThpHugeAddrProcess {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ThpHugeAddrProcess {
     /// Use for processes that have already started.
     Pid(usize),
 
     /// Use for processes that have not started yet.
     Command(String),
+}
+
+impl ThpHugeAddrProcess {
+    pub fn from_name<S: AsRef<str>>(name: S) -> Self {
+        // We need to truncate the name to 15 characters because Linux will truncate current->comm
+        // to 15 characters. In order for them to match we truncate it here...
+        ThpHugeAddrProcess::Command(name.as_ref().get(..15).unwrap_or(name.as_ref()).to_owned())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
@@ -736,7 +744,6 @@ pub struct InitialSetupState {
     pub zerosim_exp_path: String,
     pub results_dir: String,
     pub output_file: String,
-    pub params_file: String,
     pub time_file: String,
     pub sim_file: String,
     pub mmstats_file: String,
@@ -755,6 +762,7 @@ pub struct InitialSetupState {
     pub bmks_dir: String,
     pub damon_path: String,
     pub pin_path: String,
+    pub swapnil_path: String,
 }
 
 pub fn initial_setup<A, F1, P>(
@@ -784,7 +792,7 @@ where
 
     let user_home = get_user_home_dir(&ushell)?;
     let zerosim_exp_path = dir!(
-        user_home,
+        &user_home,
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_EXPERIMENTS_SUBMODULE
     );
@@ -837,37 +845,38 @@ where
     crate::set_auto_numa(&ushell, false /* off */)?;
 
     // Generate a bunch of output paths.
-    let results_dir = dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
+    let results_dir = dir!(&user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
 
     let (output_file, params_file, time_file, sim_file) = output.gen_standard_names();
-    let output_file = dir!(results_dir, output_file);
-    let mmstats_file = dir!(results_dir, output.gen_file_name("mmstats"));
-    let meminfo_file = dir!(results_dir, output.gen_file_name("meminfo"));
-    let smaps_file = dir!(results_dir, output.gen_file_name("smaps"));
-    let mmap_tracker_file = dir!(results_dir, output.gen_file_name("mmap"));
-    let damon_output_path = dir!(results_dir, output.gen_file_name("damon"));
-    let trace_file = dir!(results_dir, output.gen_file_name("trace"));
-    let mmu_overhead_file = dir!(results_dir, output.gen_file_name("mmu"));
-    let ycsb_result_file = dir!(results_dir, output.gen_file_name("ycsb"));
-    let badger_trap_file = dir!(results_dir, output.gen_file_name("bt"));
-    let pftrace_file = dir!(results_dir, output.gen_file_name("pftrace"));
-    let pftrace_rejected_file = dir!(results_dir, output.gen_file_name("rejected"));
-    let mmap_filter_csv_file = dir!(results_dir, output.gen_file_name("mmap-filters.csv"));
-    let runtime_file = dir!(results_dir, output.gen_file_name("runtime"));
+    let output_file = dir!(&results_dir, output_file);
+    let mmstats_file = dir!(&results_dir, output.gen_file_name("mmstats"));
+    let meminfo_file = dir!(&results_dir, output.gen_file_name("meminfo"));
+    let smaps_file = dir!(&results_dir, output.gen_file_name("smaps"));
+    let mmap_tracker_file = dir!(&results_dir, output.gen_file_name("mmap"));
+    let damon_output_path = dir!(&results_dir, output.gen_file_name("damon"));
+    let trace_file = dir!(&results_dir, output.gen_file_name("trace"));
+    let mmu_overhead_file = dir!(&results_dir, output.gen_file_name("mmu"));
+    let ycsb_result_file = dir!(&results_dir, output.gen_file_name("ycsb"));
+    let badger_trap_file = dir!(&results_dir, output.gen_file_name("bt"));
+    let pftrace_file = dir!(&results_dir, output.gen_file_name("pftrace"));
+    let pftrace_rejected_file = dir!(&results_dir, output.gen_file_name("rejected"));
+    let runtime_file = dir!(&results_dir, output.gen_file_name("runtime"));
+    let mmap_filter_csv_file = dir!(&results_dir, output.gen_file_name("mmap-filters.csv"));
 
-    let bmks_dir = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
-    let damon_path = dir!(bmks_dir, DAMON_PATH);
+    let bmks_dir = dir!(&user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
+    let damon_path = dir!(&bmks_dir, DAMON_PATH);
     let pin_path = dir!(
-        user_home,
+        &user_home,
         RESEARCH_WORKSPACE_PATH,
         ZEROSIM_MEMBUFFER_EXTRACT_SUBMODULE,
         "pin"
     );
+    let swapnil_path = dir!(&bmks_dir, ZEROSIM_SWAPNIL_PATH);
 
     ushell.run(cmd!(
         "echo '{}' > {}",
         escape_for_bash(&serde_json::to_string(&output)?),
-        dir!(results_dir, params_file)
+        dir!(&results_dir, params_file)
     ))?;
 
     Ok(InitialSetupState {
@@ -876,7 +885,6 @@ where
         zerosim_exp_path,
         results_dir,
         output_file,
-        params_file,
         time_file,
         sim_file,
         mmstats_file,
@@ -895,6 +903,7 @@ where
         bmks_dir,
         damon_path,
         pin_path,
+        swapnil_path,
     })
 }
 
@@ -908,12 +917,11 @@ where
         ref zerosim_exp_path,
         ref results_dir,
         ref output_file,
-        ref params_file,
         ref time_file,
         ref sim_file,
         ref mmstats_file,
-        ref meminfo_file,
-        ref smaps_file,
+        meminfo_file,
+        smaps_file,
         ref mmap_tracker_file,
         ref damon_output_path,
         ref trace_file,
@@ -927,6 +935,7 @@ where
         ref bmks_dir,
         ref damon_path,
         ref pin_path,
+        ref swapnil_path,
     } = initial_setup(
         login,
         cfg,
@@ -966,12 +975,6 @@ where
         },
     )?;
 
-    let swapnil_path = dir!(bmks_dir, ZEROSIM_SWAPNIL_PATH);
-    let eager = if cfg.eager {
-        Some(swapnil_path.as_str())
-    } else {
-        None
-    };
     let mmu_overhead = if cfg.mmu_overhead {
         Some((mmu_overhead_file.as_str(), cfg.perf_counters.as_slice()))
     } else {
@@ -997,8 +1000,8 @@ where
         bgctx.spawn(BackgroundTask {
             name: "meminfo",
             period: PERIOD,
-            cmd: format!("cat /proc/meminfo | tee -a {}", meminfo_file),
-            ensure_started: *meminfo_file,
+            cmd: format!("cat /proc/meminfo | tee -a {}", &meminfo_file),
+            ensure_started: meminfo_file,
         })?;
     }
 
@@ -1029,11 +1032,11 @@ where
             name: "smaps",
             period: PERIOD,
             cmd: format!(
-                "((sudo cat /proc/`pgrep -x {}  | sort -n | head -n1`/smaps) || echo none) | tee -a {}",
-                proc_name,
-                smaps_file
+                "((sudo cat /proc/`pgrep -x {}  | sort -n \
+                    | head -n1`/smaps) || echo none) | tee -a {}",
+                proc_name, &smaps_file
             ),
-            ensure_started: *smaps_file
+            ensure_started: smaps_file,
         })?;
     }
 
@@ -1057,13 +1060,10 @@ where
 
     // Set `huge_addr` if needed.
     if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
-        // We need to truncate the name to 15 characters because Linux will truncate current->comm
-        // to 15 characters. In order for them to match we truncate it here...
-        let proc_name_trunc = proc_name.get(..15).unwrap_or(proc_name);
         turn_on_huge_addr(
             &ushell,
             huge_addr.clone(),
-            ThpHugeAddrProcess::Command(proc_name_trunc.into()),
+            ThpHugeAddrProcess::from_name(proc_name),
         )?;
     }
 
@@ -1222,7 +1222,14 @@ where
             time!(
                 timers,
                 "Workload",
-                run_time_loop(&ushell, zerosim_exp_path, n, output_file, eager, &mut tctx,)?
+                run_time_loop(
+                    &ushell,
+                    zerosim_exp_path,
+                    n,
+                    output_file,
+                    cfg.eager.then(|| swapnil_path.as_str()),
+                    &mut tctx,
+                )?
             );
         }
 
@@ -1239,7 +1246,7 @@ where
                         n: n,
                         threads: None,
                         output_file: &dir!(results_dir, local_file),
-                        eager,
+                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                     },
                 )?;
                 run_locality_mem_access(
@@ -1250,7 +1257,7 @@ where
                         n: n,
                         threads: None,
                         output_file: &dir!(results_dir, nonlocal_file),
-                        eager,
+                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                     },
                 )?;
             });
@@ -1269,7 +1276,7 @@ where
                         prefault: false,
                         pf_time: None,
                         output_file: Some(output_file),
-                        eager,
+                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                         pin_core: tctx.next(),
                     }
                 )?
@@ -1342,7 +1349,7 @@ where
                         allow_oom: true,
                         pf_time: None,
                         output_file: Some(output_file),
-                        eager,
+                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                         server_pin_core: Some(tctx.next()),
                         client_pin_core: {
                             tctx.skip();
@@ -1571,7 +1578,7 @@ where
                     Some(output_file),
                     cb_wrapper_cmd,
                     mmu_overhead,
-                    eager,
+                    cfg.eager.then(|| swapnil_path.as_str()),
                     &mut tctx,
                 )?
                 .join()
@@ -1680,7 +1687,7 @@ where
     Ok(())
 }
 
-fn turn_on_huge_addr(
+pub fn turn_on_huge_addr(
     shell: &SshShell,
     huge_addr: ThpHugeAddrMode,
     process: ThpHugeAddrProcess,
