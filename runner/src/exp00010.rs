@@ -730,14 +730,28 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     run_inner(&login, &cfg)
 }
 
-pub fn initial_setup<A>(
+pub struct InitialSetupState {
+    ushell: SshShell,
+    user_home: String,
+    zerosim_exp_path: String,
+}
+
+pub fn initial_setup<A, F1>(
     login: &Login<A>,
     asynczero: bool,
     hawkeye: bool,
     enable_aslr: bool,
-) -> Result<(SshShell, String, String), failure::Error>
+    transparent_hugepage_enabled: &str,
+    transparent_hugepage_defrag: &str,
+    transparent_hugepage_khugepaged_defrag: usize,
+    transparent_hugepage_khugepaged_alloc_sleep_ms: usize,
+    transparent_hugepage_khugepaged_scan_sleep_ms: usize,
+    // Returns false if there was an exception and this should be skipped...
+    transparent_hugepage_excpetion_hack: F1,
+) -> Result<InitialSetupState, failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
+    F1: FnOnce(&SshShell) -> Result<bool, failure::Error>,
 {
     // Reboot
     initial_reboot_no_vagrant(&login)?;
@@ -784,47 +798,74 @@ where
     // Allow `perf` as any user
     crate::perf_for_all(&ushell)?;
 
+    // Turn on/off compaction and force it to happen if needed
+    if transparent_hugepage_excpetion_hack(&ushell)? {
+        crate::turn_on_thp(
+            &ushell,
+            transparent_hugepage_enabled,
+            transparent_hugepage_defrag,
+            transparent_hugepage_khugepaged_defrag,
+            transparent_hugepage_khugepaged_alloc_sleep_ms,
+            transparent_hugepage_khugepaged_scan_sleep_ms,
+        )?;
+    }
+
     // Turn of NUMA balancing
     crate::set_auto_numa(&ushell, false /* off */)?;
 
-    Ok((ushell, user_home, zerosim_exp_path))
+    Ok(InitialSetupState {
+        ushell,
+        user_home,
+        zerosim_exp_path,
+    })
 }
 
 fn run_inner<A>(login: &Login<A>, cfg: &Config) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
-    let (ushell, user_home, zerosim_exp_path) =
-        initial_setup(login, cfg.asynczero, cfg.hawkeye, cfg.enable_aslr)?;
+    let InitialSetupState {
+        ushell,
+        user_home,
+        zerosim_exp_path,
+    } = initial_setup(
+        login,
+        cfg.asynczero,
+        cfg.hawkeye,
+        cfg.enable_aslr,
+        &cfg.transparent_hugepage_enabled,
+        &cfg.transparent_hugepage_defrag,
+        cfg.transparent_hugepage_khugepaged_defrag,
+        cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+        cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+        |shell| {
+            if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
+                crate::turn_on_thp(
+                    shell,
+                    /* enabled */ "never",
+                    /* defrag */ "never",
+                    cfg.transparent_hugepage_khugepaged_defrag,
+                    cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
+                    cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
+                )?;
+
+                // Reserve a huge page and use it for a hugetlbfs.
+                shell.run(cmd!("sudo sysctl vm.nr_hugepages=4"))?;
+                shell.run(cmd!("sudo mkdir -p /mnt/huge"))?;
+                shell.run(cmd!(
+                    "sudo mount -t hugetlbfs -o \
+                     uid=`id -u`,gid=`id -g`,pagesize=2M,size=8M \
+                     none /mnt/huge"
+                ))?;
+
+                Ok(false)
+            } else {
+                // Run normal thp init...
+                Ok(true)
+            }
+        },
+    )?;
     let (user_home, zerosim_exp_path) = (&user_home, &zerosim_exp_path);
-
-    // Turn on/off compaction and force it to happen if needed
-    if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
-        crate::turn_on_thp(
-            &ushell,
-            /* enabled */ "never",
-            /* defrag */ "never",
-            cfg.transparent_hugepage_khugepaged_defrag,
-            cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
-            cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
-        )?;
-
-        // Reserve a huge page and use it for a hugetlbfs.
-        ushell.run(cmd!("sudo sysctl vm.nr_hugepages=4"))?;
-        ushell.run(cmd!("sudo mkdir -p /mnt/huge"))?;
-        ushell.run(cmd!(
-            "sudo mount -t hugetlbfs -o uid=`id -u`,gid=`id -g`,pagesize=2M,size=8M none /mnt/huge"
-        ))?;
-    } else {
-        crate::turn_on_thp(
-            &ushell,
-            &cfg.transparent_hugepage_enabled,
-            &cfg.transparent_hugepage_defrag,
-            cfg.transparent_hugepage_khugepaged_defrag,
-            cfg.transparent_hugepage_khugepaged_alloc_sleep_ms,
-            cfg.transparent_hugepage_khugepaged_scan_sleep_ms,
-        )?;
-    }
 
     let results_dir = &dir!(user_home, setup00000::HOSTNAME_SHARED_RESULTS_DIR);
 
