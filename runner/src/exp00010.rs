@@ -738,6 +738,63 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     run_inner(&login, &cfg)
 }
 
+pub fn turn_on_huge_addr(
+    shell: &SshShell,
+    huge_addr: ThpHugeAddrMode,
+    process: ThpHugeAddrProcess,
+) -> Result<(), failure::Error> {
+    let mode = match huge_addr {
+        ThpHugeAddrMode::Equal { .. } => 0,
+        ThpHugeAddrMode::Less { .. } => 1,
+        ThpHugeAddrMode::Greater { .. } => 2,
+        ThpHugeAddrMode::Ranges { .. } => 3,
+    };
+
+    shell.run(cmd!(
+        "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
+        mode
+    ))?;
+
+    match huge_addr {
+        ThpHugeAddrMode::Equal { addr }
+        | ThpHugeAddrMode::Less { addr }
+        | ThpHugeAddrMode::Greater { addr } => {
+            shell.run(cmd!(
+                "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+                addr
+            ))?;
+        }
+        ThpHugeAddrMode::Ranges { ranges } => {
+            let addrs = ranges
+                .into_iter()
+                .map(|(start, end)| format!("{} {}", start, end))
+                .collect::<Vec<_>>()
+                .join(";");
+            shell.run(cmd!(
+                "echo \"{}\" | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
+                addrs
+            ))?;
+        }
+    }
+
+    match process {
+        ThpHugeAddrProcess::Pid(pid) => {
+            shell.run(cmd!(
+                "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_pid",
+                pid
+            ))?;
+        }
+        ThpHugeAddrProcess::Command(name) => {
+            shell.run(cmd!(
+                "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
+                name
+            ))?;
+        }
+    }
+
+    Ok(())
+}
+
 pub struct InitialSetupState<'s> {
     pub user_home: String,
     pub zerosim_exp_path: String,
@@ -1760,63 +1817,6 @@ where
         "RESULTS: {}",
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, glob)
     );
-
-    Ok(())
-}
-
-pub fn turn_on_huge_addr(
-    shell: &SshShell,
-    huge_addr: ThpHugeAddrMode,
-    process: ThpHugeAddrProcess,
-) -> Result<(), failure::Error> {
-    let mode = match huge_addr {
-        ThpHugeAddrMode::Equal { .. } => 0,
-        ThpHugeAddrMode::Less { .. } => 1,
-        ThpHugeAddrMode::Greater { .. } => 2,
-        ThpHugeAddrMode::Ranges { .. } => 3,
-    };
-
-    shell.run(cmd!(
-        "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_mode",
-        mode
-    ))?;
-
-    match huge_addr {
-        ThpHugeAddrMode::Equal { addr }
-        | ThpHugeAddrMode::Less { addr }
-        | ThpHugeAddrMode::Greater { addr } => {
-            shell.run(cmd!(
-                "echo 0x{:x} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
-                addr
-            ))?;
-        }
-        ThpHugeAddrMode::Ranges { ranges } => {
-            let addrs = ranges
-                .into_iter()
-                .map(|(start, end)| format!("{} {}", start, end))
-                .collect::<Vec<_>>()
-                .join(";");
-            shell.run(cmd!(
-                "echo \"{}\" | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr",
-                addrs
-            ))?;
-        }
-    }
-
-    match process {
-        ThpHugeAddrProcess::Pid(pid) => {
-            shell.run(cmd!(
-                "echo {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_pid",
-                pid
-            ))?;
-        }
-        ThpHugeAddrProcess::Command(name) => {
-            shell.run(cmd!(
-                "echo -n {} | sudo tee /sys/kernel/mm/transparent_hugepage/huge_addr_comm",
-                name
-            ))?;
-        }
-    }
 
     Ok(())
 }
