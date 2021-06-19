@@ -763,6 +763,7 @@ pub struct InitialSetupState<'s> {
     pub tctx: TasksetCtx,
     pub bgctx: BackgroundContext<'s>,
     pub instrumented_proc: Option<String>,
+    pub kbadgerd_thread: Option<spurs::SshSpawnHandle>,
 }
 
 pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6>(
@@ -792,6 +793,7 @@ pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6>(
     compute_instrumented_proc: F4,
     set_huge_addr: F5,
     save_mmap_filter_benefits: F6,
+    kbadgerd_early_start_exceptions: bool,
 ) -> Result<InitialSetupState<'s>, failure::Error>
 where
     P: Parametrize,
@@ -998,6 +1000,72 @@ where
         ))?;
     }
 
+    let kbadgerd_thread = if kbadgerd && !kbadgerd_early_start_exceptions {
+        Some(ushell.spawn(cmd!(
+            "while ! [ `pgrep -x {pname}` ] ; do echo 'Waiting for process {pname}' ; done ; \
+             echo `pgrep -x {pname}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+            pname = instrumented_proc.as_ref().unwrap()
+        ))?)
+    } else {
+        None
+    };
+
+    if asynczero || hawkeye {
+        // Wait a bit for zeroing daemons to warm up a bit.
+        println!("sleeping a bit to give asynczero warmup time...");
+        std::thread::sleep(std::time::Duration::from_secs(10));
+
+        ushell.run(cmd!(
+            "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
+        ))?;
+    }
+    if asynczero {
+        ushell.run(cmd!(
+            "echo 0 | sudo tee /sys/module/asynczero/parameters/mode"
+        ))?;
+        // NOTE: here the count is in individual 4KB pages.
+        ushell.run(cmd!(
+            "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
+        ))?;
+    }
+    if hawkeye {
+        // Just use the default parameters of the module...
+        //
+        // NOTE: here the count is in terms of compond pages, which could be of any
+        // power-of-two size.
+        //ushell.run(cmd!(
+        //    "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
+        //))?;
+    }
+
+    // Turn on hawkeye bloat removal thread and profiler if needed.
+    if hawkeye {
+        ushell.run(cmd!(
+            "sudo insmod HawkEye/kbuild/hawkeye_modules/bloat_recovery/remove.ko \
+                 debloat_comm={}",
+            instrumented_proc.as_ref().unwrap(),
+        ))?;
+        // 120s sleep between debloating, according to Ashish Panwar.
+        ushell.run(cmd!(
+            "echo 120 | sudo tee /sys/module/remove/parameters/sleep"
+        ))?;
+
+        // Use default interval of 10s -- Ashish Panwar.
+        ushell.run(cmd!(
+            "./x86-MMU-Profiler/global_profile -d -p {} {}",
+            instrumented_proc.as_ref().unwrap(),
+            match cpu_family_model(ushell)? {
+                Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
+                Processor::Intel(IntelX86Model::HaswellConsumer) => "-f haswell",
+
+                _ => unimplemented!(),
+            }
+        ))?;
+
+        // promotion_metric: default 0 = HawkEye-PMU; 2 = HawkEye-G.
+        // scan_sleep_millisecs: 1000 for Fig 8 (HawkEye paper) experiments.
+    }
+
     Ok(InitialSetupState {
         user_home,
         zerosim_exp_path,
@@ -1023,6 +1091,7 @@ where
         tctx,
         bgctx,
         instrumented_proc,
+        kbadgerd_thread,
     })
 }
 
@@ -1060,6 +1129,7 @@ where
         mut tctx,
         bgctx,
         instrumented_proc: proc_name,
+        kbadgerd_thread: _kbadgerd_thread,
         ..
     } = initial_setup(
         &ushell,
@@ -1197,6 +1267,11 @@ where
 
             Ok(())
         },
+        // Exceptions for early-starting kbadgerd.
+        matches!(
+            cfg.workload,
+            Workload::Memcached { .. } | Workload::MongoDB { .. }
+        ),
     )?;
 
     let proc_name = proc_name.as_ref().unwrap();
@@ -1214,75 +1289,6 @@ where
         )
     });
     let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(String::as_str);
-
-    let _kbadgerd_thread = if cfg.kbadgerd
-        && !matches!(
-            cfg.workload,
-            Workload::Memcached { .. } | Workload::MongoDB { .. }
-        ) {
-        Some(ushell.spawn(cmd!(
-            "while ! [ `pgrep -x {pname}` ] ; do echo 'Waiting for process {pname}' ; done ; \
-             echo `pgrep -x {pname}` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-            pname = proc_name
-        ))?)
-    } else {
-        None
-    };
-
-    if cfg.asynczero || cfg.hawkeye {
-        // Wait a bit for zeroing daemons to warm up a bit.
-        std::thread::sleep(std::time::Duration::from_secs(10));
-
-        ushell.run(cmd!(
-            "sudo cat /sys/module/asynczero/parameters/pages_zeroed"
-        ))?;
-    }
-    if cfg.asynczero {
-        ushell.run(cmd!(
-            "echo 0 | sudo tee /sys/module/asynczero/parameters/mode"
-        ))?;
-        // NOTE: here the count is in individual 4KB pages.
-        ushell.run(cmd!(
-            "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
-        ))?;
-    }
-    if cfg.hawkeye {
-        // Just use the default parameters of the module...
-        //
-        // NOTE: here the count is in terms of compond pages, which could be of any
-        // power-of-two size.
-        //ushell.run(cmd!(
-        //    "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
-        //))?;
-    }
-
-    // Turn on hawkeye bloat removal thread and profiler if needed.
-    if cfg.hawkeye {
-        ushell.run(cmd!(
-            "sudo insmod HawkEye/kbuild/hawkeye_modules/bloat_recovery/remove.ko \
-                 debloat_comm={}",
-            proc_name
-        ))?;
-        // 120s sleep between debloating, according to Ashish Panwar.
-        ushell.run(cmd!(
-            "echo 120 | sudo tee /sys/module/remove/parameters/sleep"
-        ))?;
-
-        // Use default interval of 10s -- Ashish Panwar.
-        ushell.run(cmd!(
-            "./x86-MMU-Profiler/global_profile -d -p {} {}",
-            proc_name,
-            match cpu_family_model(&ushell)? {
-                Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
-                Processor::Intel(IntelX86Model::HaswellConsumer) => "-f haswell",
-
-                _ => unimplemented!(),
-            }
-        ))?;
-
-        // promotion_metric: default 0 = HawkEye-PMU; 2 = HawkEye-G.
-        // scan_sleep_millisecs: 1000 for Fig 8 (HawkEye paper) experiments.
-    }
 
     // Collect timers on VM
     let mut timers = vec![];
