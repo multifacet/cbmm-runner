@@ -5,7 +5,7 @@
 //! If `--thp_huge_addr` is used, then `setup00002` with an instrumented kernel is needed. If
 //! `--hawkeye` is used, then `setup00004` is needed to install hawkeye and related tools.
 
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, time::Duration};
 
 use clap::clap_app;
 
@@ -1152,6 +1152,125 @@ where
     })
 }
 
+pub fn teardown(
+    ushell: &SshShell,
+    timers: &mut Vec<(&str, Duration)>,
+    bgctx: BackgroundContext,
+    instrumented_proc: Option<&str>,
+    pftrace: Option<usize>,
+    mm_econ: bool,
+    mmstats: bool,
+    meminfo_periodic: bool,
+    smaps_periodic: bool,
+    damon: bool,
+    badger_trap: bool,
+    kbadgerd: bool,
+    results_dir: &str,
+    pftrace_rejected_file: &str,
+    pftrace_file: &str,
+    mmstats_file: &str,
+    badger_trap_file: &str,
+    time_file: &str,
+    sim_file: &str,
+    damon_off_exception: bool,
+) -> Result<(), failure::Error> {
+    if pftrace.is_some() {
+        ushell.run(cmd!("echo 0 | sudo tee /proc/pftrace_enable"))?;
+        ushell.run(cmd!(
+            "cat /proc/pftrace_rejected | tee {}",
+            pftrace_rejected_file
+        ))?;
+        ushell.run(cmd!("cat /proc/pftrace_discarded_from_interrupt"))?;
+        ushell.run(cmd!("cat /proc/pftrace_discarded_from_error"))?;
+        ushell.run(cmd!("sync"))?;
+        ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
+    }
+
+    if mm_econ {
+        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
+
+    if mmstats {
+        ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
+        ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
+        ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
+
+        if mm_econ {
+            ushell.run(cmd!(
+                "cat /sys/kernel/mm/mm_econ/stats | tee -a {}",
+                mmstats_file
+            ))?;
+        }
+    }
+
+    if meminfo_periodic || smaps_periodic {
+        time!(
+            timers,
+            "Waiting for data collectioned threads to halt",
+            bgctx.notify_and_join_all()?
+        );
+    }
+
+    // Tell damon to write data, if needed. (Graph500 waits for damon to finish, so we don't need
+    // to do it again).
+    if damon && !damon_off_exception {
+        time!(timers, "Waiting for DAMON to flush data buffers", {
+            ushell.run(cmd!(
+                "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
+            ))?;
+        })
+    }
+
+    // Extract relevant data from dmesg for BadgerTrap, if needed.
+    if badger_trap {
+        // We need to ensure the relevant process has terminated.
+        ushell.run(cmd!(
+            "pkill -9 {} || echo 'already dead'",
+            instrumented_proc.unwrap()
+        ))?;
+
+        // We wait until the results have been written...
+        while ushell
+            .run(cmd!("dmesg | grep -q 'BadgerTrap: END Statistics'"))
+            .is_err()
+        {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+
+        ushell.run(cmd!(
+            "dmesg | grep 'BadgerTrap:' | tee {}",
+            badger_trap_file
+        ))?;
+    }
+
+    // Extract relevant data from dmesg for kbadgerd, if needed.
+    if kbadgerd {
+        ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
+        // We wait until the results have been written...
+        while ushell
+            .run(cmd!("dmesg | grep -q 'kbadgerd: END Results'"))
+            .is_err()
+        {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+        ushell.run(cmd!("dmesg | grep 'kbadgerd:' | tee {}", badger_trap_file))?;
+    }
+
+    ushell.run(cmd!("date"))?;
+
+    ushell.run(cmd!("free -h"))?;
+
+    ushell.run(cmd!(
+        "echo -e '{}' > {}",
+        crate::timings_str(timers.as_slice()),
+        dir!(results_dir, time_file)
+    ))?;
+
+    crate::gen_standard_host_output(sim_file, ushell)?;
+
+    Ok(())
+}
+
 fn run_inner<A>(login: &Login<A>, cfg: &Config) -> Result<(), failure::Error>
 where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
@@ -1184,10 +1303,10 @@ where
         ref swapnil_path,
         mmu_overhead,
         mut tctx,
+        cores: _,
         bgctx,
         instrumented_proc: proc_name,
         kbadgerd_thread: _kbadgerd_thread,
-        ..
     } = initial_setup(
         &ushell,
         cfg,
@@ -1721,96 +1840,28 @@ where
         }
     }
 
-    if cfg.pftrace.is_some() {
-        ushell.run(cmd!("echo 0 | sudo tee /proc/pftrace_enable"))?;
-        ushell.run(cmd!(
-            "cat /proc/pftrace_rejected | tee {}",
-            pftrace_rejected_file
-        ))?;
-        ushell.run(cmd!("cat /proc/pftrace_discarded_from_interrupt"))?;
-        ushell.run(cmd!("cat /proc/pftrace_discarded_from_error"))?;
-        ushell.run(cmd!("sync"))?;
-        ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
-    }
-
-    if cfg.mm_econ {
-        ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
-    }
-
-    if cfg.mmstats {
-        ushell.run(cmd!("tail /proc/mm_* | tee {}", mmstats_file))?;
-        ushell.run(cmd!("cat /proc/meminfo | tee -a {}", mmstats_file))?;
-        ushell.run(cmd!("cat /proc/vmstat | tee -a {}", mmstats_file))?;
-
-        if cfg.mm_econ {
-            ushell.run(cmd!(
-                "cat /sys/kernel/mm/mm_econ/stats | tee -a {}",
-                mmstats_file
-            ))?;
-        }
-    }
-
-    if cfg.meminfo_periodic || cfg.smaps_periodic {
-        time!(
-            timers,
-            "Waiting for data collectioned threads to halt",
-            bgctx.notify_and_join_all()?
-        );
-    }
-
-    // Tell damon to write data, if needed. (Graph500 waits for damon to finish, so we don't need
-    // to do it again).
-    if cfg.damon && !matches!(cfg.workload, Workload::Graph500 { .. }) {
-        time!(timers, "Waiting for DAMON to flush data buffers", {
-            ushell.run(cmd!(
-                "echo off | sudo tee /sys/kernel/debug/damon/monitor_on"
-            ))?;
-        })
-    }
-
-    // Extract relevant data from dmesg for BadgerTrap, if needed.
-    if cfg.badger_trap {
-        // We need to ensure the relevant process has terminated.
-        ushell.run(cmd!("pkill -9 {} || echo 'already dead'", proc_name))?;
-
-        // We wait until the results have been written...
-        while ushell
-            .run(cmd!("dmesg | grep -q 'BadgerTrap: END Statistics'"))
-            .is_err()
-        {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-        }
-
-        ushell.run(cmd!(
-            "dmesg | grep 'BadgerTrap:' | tee {}",
-            badger_trap_file
-        ))?;
-    }
-
-    // Extract relevant data from dmesg for kbadgerd, if needed.
-    if cfg.kbadgerd {
-        ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
-        // We wait until the results have been written...
-        while ushell
-            .run(cmd!("dmesg | grep -q 'kbadgerd: END Results'"))
-            .is_err()
-        {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-        }
-        ushell.run(cmd!("dmesg | grep 'kbadgerd:' | tee {}", badger_trap_file))?;
-    }
-
-    ushell.run(cmd!("date"))?;
-
-    ushell.run(cmd!("free -h"))?;
-
-    ushell.run(cmd!(
-        "echo -e '{}' > {}",
-        crate::timings_str(timers.as_slice()),
-        dir!(results_dir, time_file)
-    ))?;
-
-    crate::gen_standard_host_output(&sim_file, &ushell)?;
+    teardown(
+        &ushell,
+        &mut timers,
+        bgctx,
+        Some(proc_name.as_str()),
+        cfg.pftrace,
+        cfg.mm_econ,
+        cfg.mmstats,
+        cfg.meminfo_periodic,
+        cfg.smaps_periodic,
+        cfg.damon,
+        cfg.badger_trap,
+        cfg.kbadgerd,
+        results_dir,
+        pftrace_rejected_file,
+        pftrace_file,
+        mmstats_file,
+        badger_trap_file,
+        time_file,
+        sim_file,
+        matches!(cfg.workload, Workload::Graph500 { .. }),
+    )?;
 
     let glob = cfg.gen_file_name("");
     println!(
