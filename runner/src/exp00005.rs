@@ -219,7 +219,6 @@ where
                     prefault: false,
                     pf_time: None,
                     output_file: None,
-                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -261,7 +260,6 @@ where
             Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
             None,
             None,
-            /* eager */ None,
             &mut tctx,
         )?;
 

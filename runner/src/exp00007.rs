@@ -299,17 +299,25 @@ where
         );
     }
 
+    let proc_names = {
+        match cfg.workload {
+            Workload::Memcached => vec!["memcached"],
+            Workload::Cg => vec!["cg.F.x"],
+            Workload::Memhog => vec!["memhog"],
+            Workload::Mix => vec!["redis-server", "matrix_mult2", "memhog"],
+            Workload::Redis => vec!["redis-server"],
+            Workload::MatrixMult2 => vec!["matrix_mult2"],
+        }
+    };
     let swapnil_path = dir!(
         "/home/vagrant/",
         crate::paths::RESEARCH_WORKSPACE_PATH,
         crate::paths::ZEROSIM_BENCHMARKS_DIR,
         crate::paths::ZEROSIM_SWAPNIL_PATH
     );
-    let eager = if cfg.eager {
-        Some(swapnil_path.as_str())
-    } else {
-        None
-    };
+    if cfg.eager {
+        crate::workloads::setup_apriori_paging_processes(&vshell, &swapnil_path, &proc_names)?;
+    }
 
     // We want to use rdtsc as the time source, so find the cpu freq:
     let freq = get_cpu_freq(&ushell)?;
@@ -378,7 +386,6 @@ where
                         allow_oom: true,
                         pf_time: None,
                         output_file: None,
-                        eager,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
@@ -404,7 +411,6 @@ where
                         ZEROSIM_METIS_SUBMODULE
                     ),
                     ((size << 7) as f64).sqrt() as usize,
-                    eager,
                     /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?
@@ -426,7 +432,6 @@ where
                         freq: Some(freq),
                         pf_time: None,
                         output_file: None,
-                        eager,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
@@ -452,7 +457,6 @@ where
                     Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
                     None,
                     None,
-                    eager,
                     &mut tctx,
                 )?;
 
@@ -472,7 +476,6 @@ where
                     Some(MEMHOG_R),
                     size,
                     MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
-                    eager,
                     /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?
@@ -505,7 +508,6 @@ where
                     /* cb_wrapper_cmd */ None,
                     freq,
                     size >> 20,
-                    eager,
                     &mut tctx,
                     &runtime_file,
                 )?

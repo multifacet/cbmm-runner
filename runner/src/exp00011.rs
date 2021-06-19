@@ -385,7 +385,6 @@ where
             freq: None,
             pf_time: None,
             output_file: None,
-            eager: None,
             client_pin_core: 0,
             cb_wrapper_cmd: None,
             mmu_perf: None,
@@ -408,7 +407,6 @@ where
 
             // Ignored:
             wk_size_gb: 0,
-            eager: None,
             freq: None,
             pf_time: None,
             client_pin_core: 0,

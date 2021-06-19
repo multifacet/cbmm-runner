@@ -239,7 +239,6 @@ where
                     prefault: false,
                     pf_time: None,
                     output_file: None,
-                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -257,7 +256,6 @@ where
                     zerosim_exp_path,
                     cfg.n,
                     &dir!(VAGRANT_RESULTS_DIR, output_file),
-                    /* eager */ None,
                     &mut tctx,
                 )?
             );
@@ -276,7 +274,6 @@ where
                         n: cfg.n,
                         threads: None,
                         output_file: &dir!(VAGRANT_RESULTS_DIR, local_file),
-                        eager: None,
                     },
                 )?;
                 run_locality_mem_access(
@@ -287,7 +284,6 @@ where
                         n: cfg.n,
                         threads: None,
                         output_file: &dir!(VAGRANT_RESULTS_DIR, nonlocal_file),
-                        eager: None,
                     },
                 )?;
             });
@@ -306,7 +302,6 @@ where
                         n: cfg.n,
                         threads: Some(threads),
                         output_file: &dir!(VAGRANT_RESULTS_DIR, local_file),
-                        eager: None,
                     },
                 )?;
                 run_locality_mem_access(
@@ -317,7 +312,6 @@ where
                         n: cfg.n,
                         threads: Some(threads),
                         output_file: &dir!(VAGRANT_RESULTS_DIR, nonlocal_file),
-                        eager: None,
                     },
                 )?;
             });

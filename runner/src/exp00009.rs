@@ -252,7 +252,6 @@ where
                     prefault: false,
                     pf_time: None,
                     output_file: None,
-                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -307,7 +306,6 @@ where
                     prefault: cfg.prefault,
                     pf_time: None,
                     output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -332,7 +330,6 @@ where
                     allow_oom: true,
                     pf_time: None,
                     output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                    eager: None,
                     client_pin_core: tctx.next(),
                     server_pin_core: None,
                     pintool: None,

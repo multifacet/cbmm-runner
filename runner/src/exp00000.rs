@@ -386,7 +386,6 @@ where
                     prefault: false,
                     pf_time: None,
                     output_file: None,
-                    eager: None,
                     pin_core: tctx.next(),
                 }
             )?
@@ -411,7 +410,6 @@ where
                         prefault: cfg.prefault,
                         pf_time: None,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                        eager: None,
                         pin_core: tctx.next(),
                     }
                 )?
@@ -438,7 +436,6 @@ where
                         allow_oom: true,
                         pf_time: None,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                        eager: None,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: if cfg.memtrace {
@@ -481,7 +478,6 @@ where
                         freq: Some(freq),
                         pf_time: None,
                         output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                        eager: None,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
@@ -510,7 +506,6 @@ where
                         ZEROSIM_METIS_SUBMODULE
                     ),
                     ((size << 27) as f64).sqrt() as usize,
-                    /* eager */ None,
                     /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?

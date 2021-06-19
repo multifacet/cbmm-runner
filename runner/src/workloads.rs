@@ -20,14 +20,25 @@ pub const DEFAULT_DAMON_AGGR_INTERVAL: usize = 100 * 1000; // msecs
 /// For example, to cause `ls` to be eagerly paged:
 ///
 /// ```rust,ignore
-/// setup_apriori_paging_process(&shell, "ls")?;
+/// setup_apriori_paging_processes(&shell, &["ls"])?;
 /// ```
-pub fn setup_apriori_paging_process(
+pub fn setup_apriori_paging_processes<S: AsRef<str>>(
     shell: &SshShell,
     swapnil_path: &str,
-    prog: &str,
+    progs: &[S],
 ) -> Result<(), SshError> {
-    shell.run(cmd!("{}/{} {}", swapnil_path, EAGER_PAGING_SCRIPT, prog))?;
+    let mut progs_str = String::new();
+    for p in progs {
+        progs_str.push_str(p.as_ref());
+        progs_str.push_str(" ");
+    }
+
+    shell.run(cmd!(
+        "{}/{} {}",
+        swapnil_path,
+        EAGER_PAGING_SCRIPT,
+        progs_str
+    ))?;
     Ok(())
 }
 
@@ -114,8 +125,6 @@ pub struct TimeMmapTouchConfig<'s> {
     pub prefault: bool,
     /// Specifies the page fault time if TSC offsetting is to try to account for it.
     pub pf_time: Option<u64>,
-    /// Indicates whether the workload should be run with eager paging (only in VM).
-    pub eager: Option<&'s str>,
 }
 
 /// Run the `time_mmap_touch` workload on the remote `shell`. Requires `sudo`.
@@ -127,10 +136,6 @@ pub fn run_time_mmap_touch(
         TimeMmapTouchPattern::Counter => "-c",
         TimeMmapTouchPattern::Zeros => "-z",
     };
-
-    if let Some(swapnil_path) = cfg.eager {
-        setup_apriori_paging_process(shell, swapnil_path, "time_mmap_touch")?;
-    }
 
     shell.run(
         cmd!(
@@ -185,8 +190,6 @@ where
     pub freq: Option<usize>,
     /// Specifies the page fault time if TSC offsetting is to try to account for it.
     pub pf_time: Option<u64>,
-    /// Indicates whether the workload should be run with eager paging.
-    pub eager: Option<&'s str>,
 
     /// Indicates that we should run the given pintool on the workload.
     pub pintool: Option<Pintool<'s>>,
@@ -212,9 +215,6 @@ where
 /// behaviors. memcached uses a large amount of the memory you give it for bookkeeping, rather
 /// than user data, so OOM will almost certainly happen. memcached will also evict the LRU data in
 /// this case.
-///
-/// `eager` indicates whether the workload should be run with eager paging (only in VM); if so, the
-/// path to Swapnil's scripts must be passed.
 pub fn start_memcached<F>(
     shell: &SshShell,
     cfg: &MemcachedWorkloadConfig<'_, F>,
@@ -222,10 +222,6 @@ pub fn start_memcached<F>(
 where
     F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
-    if let Some(swapnil_path) = cfg.eager {
-        setup_apriori_paging_process(shell, swapnil_path, "memcached")?;
-    }
-
     // We need to update the system vma limit because malloc may cause it to be hit for
     // large-memory systems.
     shell.run(cmd!("sudo sysctl -w vm.max_map_count={}", 1_000_000_000))?;
@@ -527,8 +523,6 @@ impl std::fmt::Display for NasClass {
 /// - `zerosim_bmk_path` is the path to the `bmks` directory of `0sim-workspace`.
 /// - `output_file` is the file to which the workload will write its output. If `None`, then
 ///   `/dev/null` is used.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
-///   the path to Swapnil's scripts must be passed.
 pub fn spawn_nas_cg(
     shell: &SshShell,
     zerosim_bmk_path: &str,
@@ -539,13 +533,8 @@ pub fn spawn_nas_cg(
     // support 4-5 hardware counters, but you can do more software counters. To see the type of a
     // counter, use `perf list`.
     mmu_perf: Option<(&str, &[String])>,
-    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, failure::Error> {
-    if let Some(swapnil_path) = eager {
-        setup_apriori_paging_process(shell, swapnil_path, &format!("cg.{}.x", class))?;
-    }
-
     let handle = if let Some((mmu_overhead_file, counters)) = &mmu_perf {
         shell.spawn(
             cmd!(
@@ -599,22 +588,15 @@ bitflags! {
 /// - `r` is the number of times to call `memhog`, not the value of `-r`. `-r` is always passed a
 ///   value of `1`. If `None`, then run indefinitely.
 /// - `size_kb` is the number of kilobytes to mmap and touch.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
-///   the path to Swapnil's scripts must be passed.
 pub fn run_memhog(
     shell: &SshShell,
     exp_dir: &str,
     r: Option<usize>,
     size_kb: usize,
     opts: MemhogOptions,
-    eager: Option<&str>,
     cb_wrapper_cmd: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, SshError> {
-    if let Some(swapnil_path) = eager {
-        setup_apriori_paging_process(shell, swapnil_path, "memhog")?;
-    }
-
     shell.spawn(cmd!(
         "{} ; do \
          LD_LIBRARY_PATH={} taskset -c {} {} {}/memhog -r1 {}k {} {} > /dev/null ; \
@@ -648,20 +630,13 @@ pub fn run_memhog(
 /// - `exp_dir` is the path of the 0sim-experiments submodule.
 /// - `n` is the number of times to loop.
 /// - `output_file` is the location to put the output.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
-///   the path to Swapnil's scripts must be passed.
 pub fn run_time_loop(
     shell: &SshShell,
     exp_dir: &str,
     n: usize,
     output_file: &str,
-    eager: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<(), failure::Error> {
-    if let Some(swapnil_path) = eager {
-        setup_apriori_paging_process(shell, swapnil_path, "time_loop")?;
-    }
-
     shell.run(
         cmd!(
             "sudo taskset -c {} ./target/release/time_loop {} > {}",
@@ -700,17 +675,12 @@ pub struct LocalityMemAccessConfig<'s> {
 
     /// The location to write the output for the workload.
     pub output_file: &'s str,
-
-    /// Turn on eager paging. The path to Swapnil's scripts must be passed.
-    pub eager: Option<&'s str>,
 }
 
 /// Run the `locality_mem_access` workload on the remote of the given number of iterations.
 ///
 /// If `threads` is `None`, a single-threaded workload is run. Otherwise, a multithreaded workload
 /// is run. The workload does its own CPU affinity assignments.
-///
-/// `eager` should only be used in a VM.
 pub fn run_locality_mem_access(
     shell: &SshShell,
     cfg: &LocalityMemAccessConfig<'_>,
@@ -719,10 +689,6 @@ pub fn run_locality_mem_access(
         LocalityMemAccessMode::Local => "-l",
         LocalityMemAccessMode::Random => "-n",
     };
-
-    if let Some(swapnil_path) = cfg.eager {
-        setup_apriori_paging_process(shell, swapnil_path, "locality_mem_access")?;
-    }
 
     shell.run(
         cmd!(
@@ -781,9 +747,6 @@ pub struct RedisWorkloadConfig<'s> {
     pub freq: Option<usize>,
     /// Specifies the page fault time if TSC offsetting is to try to account for it.
     pub pf_time: Option<u64>,
-    /// Indicates whether the workload should be run with eager paging. The path to Swapnil's
-    /// scripts must be passed.
-    pub eager: Option<&'s str>,
 
     /// Indicates the command prefix to use the cb_wrapper.
     pub cb_wrapper_cmd: Option<&'s str>,
@@ -802,8 +765,6 @@ pub struct RedisWorkloadConfig<'s> {
 ///     - delete any existing RDB files.
 ///     - set up a nullfs to use for the snapshot directory
 ///
-/// `eager` should only be used in a VM.
-///
 /// Returns the spawned shell.
 pub fn start_redis(
     shell: &SshShell,
@@ -811,10 +772,6 @@ pub fn start_redis(
 ) -> Result<SshSpawnHandle, failure::Error> {
     // Set overcommit
     shell.run(cmd!("echo 1 | sudo tee /proc/sys/vm/overcommit_memory"))?;
-
-    if let Some(swapnil_path) = cfg.eager {
-        setup_apriori_paging_process(shell, swapnil_path, "redis-server")?;
-    }
 
     // Delete any previous database
     shell.run(cmd!("rm -f /tmp/dump.rdb"))?;
@@ -926,20 +883,13 @@ pub fn run_redis_gen_data(
 ///
 /// - `bmk_dir` is the path to the `Metis` directory in the workspace on the remote.
 /// - `dim` is the dimension of the matrix (one side), which is assumed to be square.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
-///   the path to Swapnil's scripts must be passed.
 pub fn run_metis_matrix_mult(
     shell: &SshShell,
     bmk_dir: &str,
     dim: usize,
-    eager: Option<&str>,
     cb_wrapper_cmd: Option<&str>,
     tctx: &mut TasksetCtx,
 ) -> Result<SshSpawnHandle, SshError> {
-    if let Some(swapnil_path) = eager {
-        setup_apriori_paging_process(shell, swapnil_path, "matrix_mult2")?;
-    }
-
     shell.spawn(
         cmd!(
             "taskset -c {} {} ./obj/matrix_mult2 -q -o -l {} ; echo matrix_mult2 done ;",
@@ -967,8 +917,6 @@ pub fn run_metis_matrix_mult(
 /// - `redis_conf` is the path to the `redis.conf` file on the remote.
 /// - `freq` is the _host_ CPU frequency in MHz.
 /// - `size_gb` is the total amount of memory of the mix workload in GB.
-/// - `eager` indicates whether the workload should be run with eager paging (only in VM); if so,
-///   the path to Swapnil's scripts must be passed.
 /// - `cb_wrapper_cmd` are the cb_wrapper command prefix (it is reused for all commands).
 pub fn run_mix(
     shell: &SshShell,
@@ -980,7 +928,6 @@ pub fn run_mix(
     cb_wrapper_cmd: Option<&str>,
     freq: usize,
     size_gb: usize,
-    eager: Option<&str>,
     tctx: &mut TasksetCtx,
     runtime_file: &str,
 ) -> Result<(), failure::Error> {
@@ -996,7 +943,6 @@ pub fn run_mix(
             freq: Some(freq),
             pf_time: None,
             output_file: None,
-            eager,
             cb_wrapper_cmd: cb_wrapper_cmd.clone(),
             client_pin_core: tctx.next(),
             server_pin_core: None,
@@ -1006,14 +952,8 @@ pub fn run_mix(
     )?;
 
     let matrix_dim = (((size_gb / 3) << 27) as f64).sqrt() as usize;
-    let _metis_handle = run_metis_matrix_mult(
-        shell,
-        metis_dir,
-        matrix_dim,
-        eager,
-        cb_wrapper_cmd.clone(),
-        tctx,
-    )?;
+    let _metis_handle =
+        run_metis_matrix_mult(shell, metis_dir, matrix_dim, cb_wrapper_cmd.clone(), tctx)?;
 
     let _memhog_handles = run_memhog(
         shell,
@@ -1021,7 +961,6 @@ pub fn run_mix(
         None,
         (size_gb << 20) / 3,
         MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
-        eager,
         cb_wrapper_cmd,
         tctx,
     )?;

@@ -374,7 +374,6 @@ where
                         allow_oom: false,
                         pf_time: None,
                         output_file: None,
-                        eager: None,
                         client_pin_core: tctx.next(),
                         server_pin_core: None,
                         pintool: None,
@@ -397,7 +396,6 @@ where
                     Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
                     None,
                     None,
-                    /* eager */ None,
                     &mut tctx,
                 )?;
 
@@ -419,7 +417,6 @@ where
                     Some(MEMHOG_R),
                     size,
                     MemhogOptions::empty(),
-                    /* eager */ None,
                     /* cb_wrapper_cmd */ None,
                     &mut tctx,
                 )?

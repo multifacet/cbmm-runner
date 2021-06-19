@@ -424,30 +424,30 @@ where
         ref user_home,
         ref zerosim_exp_path,
         ref results_dir,
-        output_file: _,
         ref time_file,
         ref sim_file,
         ref mmstats_file,
-        damon_output_path: _,
-        trace_file: _,
-        ycsb_result_file: _,
         ref badger_trap_file,
         ref pftrace_file,
         ref pftrace_rejected_file,
         ref runtime_file,
+
+        instrumented_proc,
+        mmap_filter_csv_files,
+        mmu_overhead,
+
+        mut tctx,
+        bgctx,
+        kbadgerd_thread: _kbadgerd_thread,
+
+        cores: _,
         bmks_dir: _,
         damon_path: _,
         pin_path: _,
-        ref swapnil_path,
-        mmap_filter_csv_files: _,
-        mmu_overhead: _,
-
-        cores: _,
-        mut tctx,
-
-        bgctx,
-        instrumented_proc,
-        kbadgerd_thread: _kbadgerd_thread,
+        damon_output_path: _,
+        trace_file: _,
+        ycsb_result_file: _,
+        output_file: _,
     } = crate::exp00010::initial_setup(
         &ushell,
         cfg,
@@ -468,6 +468,7 @@ where
         cfg.pftrace,
         cfg.kbadgerd,
         cfg.kbadgerd_sleep_interval,
+        cfg.eager.is_some(),
         // Run normal thp init...
         |_shell| Ok(true),
         // Compute mmap_filters_csv_files
@@ -546,6 +547,7 @@ where
         },
         // No kbadgerd exceptionss...
         false,
+        |_| cfg.eager.clone().unwrap(),
     )?;
 
     // Collect timers on VM
@@ -567,7 +569,6 @@ where
                     None, // TODO cb_wrapper
                     freq,
                     size,
-                    cfg.eager.as_ref().map(|_| swapnil_path.as_str()),
                     &mut tctx,
                     &runtime_file,
                 )?

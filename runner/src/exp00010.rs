@@ -22,10 +22,10 @@ use crate::{
     workloads::{
         run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
         run_memcached_gen_data, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch,
-        run_ycsb_workload, spawn_nas_cg, CannealWorkload, Damon, LocalityMemAccessConfig,
-        LocalityMemAccessMode, MemcachedWorkloadConfig, MongoDBWorkloadConfig, NasClass, Pintool,
-        Spec2017Workload, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig,
-        YcsbSystem, YcsbWorkload,
+        run_ycsb_workload, setup_apriori_paging_processes, spawn_nas_cg, CannealWorkload, Damon,
+        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
+        MongoDBWorkloadConfig, NasClass, Pintool, Spec2017Workload, TasksetCtx,
+        TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -803,7 +803,6 @@ pub struct InitialSetupState<'s> {
     pub bmks_dir: String,
     pub damon_path: String,
     pub pin_path: String,
-    pub swapnil_path: String,
     pub mmap_filter_csv_files: HashMap<String, String>,
     pub mmu_overhead: Option<(String, Vec<String>)>,
     pub cores: usize,
@@ -813,7 +812,7 @@ pub struct InitialSetupState<'s> {
     pub kbadgerd_thread: Option<spurs::SshSpawnHandle>,
 }
 
-pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6>(
+pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6, F7>(
     ushell: &'s SshShell,
     output: &'s P,
     asynczero: bool,
@@ -833,6 +832,7 @@ pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6>(
     pftrace: Option<usize>,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
+    eager: bool,
     // Returns false if there was an exception and this should be skipped...
     transparent_hugepage_excpetion_hack: F1,
     compute_mmap_filter_csv_files: F2,
@@ -841,6 +841,7 @@ pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6>(
     set_huge_addr: F5,
     save_mmap_filter_benefits: F6,
     kbadgerd_early_start_exceptions: bool,
+    choose_eager_paging_process: F7,
 ) -> Result<InitialSetupState<'s>, failure::Error>
 where
     P: Parametrize,
@@ -850,6 +851,7 @@ where
     F4: FnOnce() -> Option<String>,
     F5: FnOnce(&SshShell, &Option<String>) -> Result<(), failure::Error>,
     F6: FnOnce(&SshShell, &HashMap<String, String>) -> Result<(), failure::Error>,
+    F7: FnOnce(&Option<String>) -> Vec<String>,
 {
     let user_home = get_user_home_dir(&ushell)?;
     let zerosim_exp_path = dir!(
@@ -1113,6 +1115,15 @@ where
         // scan_sleep_millisecs: 1000 for Fig 8 (HawkEye paper) experiments.
     }
 
+    // Turn on eager paging if needed.
+    if eager {
+        setup_apriori_paging_processes(
+            ushell,
+            &swapnil_path,
+            &choose_eager_paging_process(&instrumented_proc),
+        )?;
+    }
+
     Ok(InitialSetupState {
         user_home,
         zerosim_exp_path,
@@ -1132,7 +1143,6 @@ where
         bmks_dir,
         damon_path,
         pin_path,
-        swapnil_path,
         mmu_overhead,
         cores,
         tctx,
@@ -1290,13 +1300,15 @@ where
         ref bmks_dir,
         ref damon_path,
         ref pin_path,
-        ref swapnil_path,
         mmu_overhead,
-        mut tctx,
-        cores: _,
-        bgctx,
+
         instrumented_proc: proc_name,
+
+        mut tctx,
+        bgctx,
         kbadgerd_thread: _kbadgerd_thread,
+
+        cores: _,
     } = initial_setup(
         &ushell,
         cfg,
@@ -1317,6 +1329,7 @@ where
         cfg.pftrace,
         cfg.kbadgerd,
         cfg.kbadgerd_sleep_interval,
+        cfg.eager,
         // THP exception hack
         |shell| {
             if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
@@ -1441,6 +1454,8 @@ where
             cfg.workload,
             Workload::Memcached { .. } | Workload::MongoDB { .. }
         ),
+        // Choose eager paging process.
+        |proc_name| vec![proc_name.clone().unwrap()],
     )?;
 
     let proc_name = proc_name.as_ref().unwrap();
@@ -1468,14 +1483,7 @@ where
             time!(
                 timers,
                 "Workload",
-                run_time_loop(
-                    &ushell,
-                    zerosim_exp_path,
-                    n,
-                    output_file,
-                    cfg.eager.then(|| swapnil_path.as_str()),
-                    &mut tctx,
-                )?
+                run_time_loop(&ushell, zerosim_exp_path, n, output_file, &mut tctx,)?
             );
         }
 
@@ -1492,7 +1500,6 @@ where
                         n: n,
                         threads: None,
                         output_file: &dir!(results_dir, local_file),
-                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                     },
                 )?;
                 run_locality_mem_access(
@@ -1503,7 +1510,6 @@ where
                         n: n,
                         threads: None,
                         output_file: &dir!(results_dir, nonlocal_file),
-                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                     },
                 )?;
             });
@@ -1522,7 +1528,6 @@ where
                         prefault: false,
                         pf_time: None,
                         output_file: Some(output_file),
-                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                         pin_core: tctx.next(),
                     }
                 )?
@@ -1595,7 +1600,6 @@ where
                         allow_oom: true,
                         pf_time: None,
                         output_file: Some(output_file),
-                        eager: cfg.eager.then(|| swapnil_path.as_str()),
                         server_pin_core: Some(tctx.next()),
                         client_pin_core: {
                             tctx.skip();
@@ -1824,7 +1828,6 @@ where
                     Some(output_file),
                     cb_wrapper_cmd,
                     mmu_overhead,
-                    cfg.eager.then(|| swapnil_path.as_str()),
                     &mut tctx,
                 )?
                 .join()
