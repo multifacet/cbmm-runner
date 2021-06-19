@@ -1356,9 +1356,12 @@ where
         },
         // Compute mmap_filters_csv_files
         |results_dir| {
-            let dontcare = "foo".to_owned();
+            // This closure returns a map of "process name" -> "mmap filter csv fname",
+            // but we only have single-process workloads here, so the name doesn't matter.
             let fname = dir!(results_dir, cfg.gen_file_name("mmap-filters.csv"));
-            vec![(dontcare, fname)].into_iter().collect()
+            vec![("fakeprocessname".into(), fname)]
+                .into_iter()
+                .collect()
         },
         // Compute mmu_overhead
         |_shell, mmu_overhead_file| {
