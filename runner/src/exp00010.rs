@@ -324,20 +324,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg MM_ECON: --mm_econ
          "Enable mm_econ.")
         (@arg MM_ECON_BENEFIT_FILE: --mm_econ_benefit_file +takes_value
-         requires[MM_ECON] conflicts_with[MM_ECON_BENEFIT_PER_PROC]
+         requires[MM_ECON]
          "Set a benefits file for the workload process if there is an obvious choice. The file \
           should contain a list of mmap filters in the form of a CSV file. The file should have the \
           format:\n\
-          SECTION,MISSES,CONSTRAINTS\n\
-          where SECTION can be code, data, heap, or mmap,\n\
-          CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
-          QUANTITY can be section_off, addr, len, prot, flags, fd, or off\n\
-          COMP can be >, <, or =.")
-        (@arg MM_ECON_BENEFIT_PER_PROC: --mm_econ_benefit_per_proc +takes_value
-         requires[MM_ECON] conflicts_with[MM_ECON_BENEFIT_FILE]
-         "Set a benefits file for the given processes. The argument is a list of \
-          `process_name:file,process_name:file,...`. Each file should contain a list of mmap filters \
-          in the form of a CSV file. The file should have the format:\n\
           SECTION,MISSES,CONSTRAINTS\n\
           where SECTION can be code, data, heap, or mmap,\n\
           CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
