@@ -212,66 +212,106 @@ impl MultiProcessWorkload for MixWorkload<'_> {
     }
 }
 
-pub fn run_cloudsuite_web_serving(
-    shell: &SshShell,
+pub struct CloudsuiteWebServingWorkload<'s> {
     load_scale: usize,
-    benefit_file: Option<&str>,
-    output_file: &str,
-) -> Result<(), failure::Error> {
-    // Start db, cache, webserver.
-    with_shell! { shell =>
-        cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
-              cloudsuite/web-serving:db_server \
-              $(hostname -I | awk '{{print $1}}')"),
-        cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
-              cloudsuite/web-serving:memcached_server"),
-        cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
-              docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
-              --name=web_server_local cloudsuite/web-serving:web_server \
-              /etc/bootstrap.sh $WSIP $WSIP"),
+    output_file: &'s str,
+
+    prefixes: HashMap<CloudsuiteWebServingWorkloadKey, Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CloudsuiteWebServingWorkloadKey {
+    Mysql,
+    Memcached,
+    Nginx, // Nginx -- has multiple processes
+           //Hhvm,
+           //HHSingleCompile
+}
+
+impl CloudsuiteWebServingWorkload<'_> {
+    pub fn new<'s>(load_scale: usize, output_file: &'s str) -> CloudsuiteWebServingWorkload<'s> {
+        CloudsuiteWebServingWorkload {
+            load_scale,
+            output_file,
+
+            prefixes: HashMap::new(),
+        }
+    }
+}
+
+impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
+    type Key = CloudsuiteWebServingWorkloadKey;
+
+    fn process_names() -> Vec<String> {
+        vec!["mysqld".into(), "memcached".into(), "nginx".into(), todo!()]
     }
 
-    // Run the client to ensure that the servers have started.
-    shell.run(cmd!(
-        "docker run --pid=\"host\" --rm --net=host --name=faban_client \
-         cloudsuite/web-serving:faban_client \
-         $(hostname -I | awk '{{print $1}}') 1",
-    ))?;
+    fn add_command_prefix(&mut self, _key: Self::Key, _prefix: &str) {
+        unimplemented!()
+    }
 
-    // TODO: would make sense to have different benefits file for different processes :/
-    // Set CBMM benefits.
-    if let Some(benefits_file) = benefit_file {
-        shell.run(cmd!(
-            "cat {} | sudo tee /proc/`pgrep mysqld`/mmap_filters",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
-            "cat {} | sudo tee /proc/`pgrep memcached`/mmap_filters",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
-            "for p in $(pgrep hhvm) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
+    fn start_background_processes(
+        &mut self,
+        shell: &SshShell,
+    ) -> Result<Vec<SshSpawnHandle>, failure::Error> {
+        // Start db, cache, webserver.
+        with_shell! { shell =>
+            cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
+                  cloudsuite/web-serving:db_server \
+                  $(hostname -I | awk '{{print $1}}')"),
+            cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
+                  cloudsuite/web-serving:memcached_server"),
+            cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
+                  docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
+                  --name=web_server_local cloudsuite/web-serving:web_server \
+                  /etc/bootstrap.sh $WSIP $WSIP"),
+
+            // Run the client to ensure that the servers have started.
+            cmd!("docker run --pid=\"host\" --rm --net=host --name=faban_client \
+                  cloudsuite/web-serving:faban_client \
+                  $(hostname -I | awk '{{print $1}}') 1"),
+        }
+
+        Ok(vec![])
+    }
+
+    fn run_sync(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        /* TODO
+        // Set CBMM benefits.
+        if let Some(benefits_file) = benefit_file {
+            shell.run(cmd!(
+                "cat {} | sudo tee /proc/`pgrep mysqld`/mmap_filters",
+                benefits_file
+            ))?;
+            shell.run(cmd!(
+                "cat {} | sudo tee /proc/`pgrep memcached`/mmap_filters",
+                benefits_file
+            ))?;
+            shell.run(cmd!(
+                "for p in $(pgrep hhvm) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                benefits_file
+            ))?;
+            shell.run(cmd!(
             "for p in $(pgrep hh_single_compile) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
             benefits_file
         ))?;
+            shell.run(cmd!(
+                "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                benefits_file
+            ))?;
+        }
+        */
+
+        // Run workload
         shell.run(cmd!(
-            "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-            benefits_file
+            "docker run --pid=\"host\" --rm --net=host --name=faban_client \
+             cloudsuite/web-serving:faban_client \
+             $(hostname -I | awk '{{print $1}}') {} \
+             | tee {}",
+            self.load_scale,
+            self.output_file
         ))?;
+
+        Ok(())
     }
-
-    // Run workload
-    shell.run(cmd!(
-        "docker run --pid=\"host\" --rm --net=host --name=faban_client \
-         cloudsuite/web-serving:faban_client \
-         $(hostname -I | awk '{{print $1}}') {} \
-         | tee {}",
-        load_scale,
-        output_file
-    ))?;
-
-    Ok(())
 }

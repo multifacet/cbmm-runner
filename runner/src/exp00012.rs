@@ -14,7 +14,7 @@ use crate::{
     dir,
     exp_0sim::*,
     get_cpu_freq,
-    multiworkloads::{run_cloudsuite_web_serving, MixWorkload, MultiProcessWorkload},
+    multiworkloads::{CloudsuiteWebServingWorkload, MixWorkload, MultiProcessWorkload},
     output::{Parametrize, Timestamp},
     paths::*,
     time,
@@ -586,14 +586,15 @@ where
         }
 
         Workload::CloudsuiteWebServing { load_scale } => {
-            time!(timers, "Workload", {
-                run_cloudsuite_web_serving(
-                    &ushell,
-                    load_scale,
-                    None, // TODO cb_wrapper
-                    &runtime_file,
-                )?;
-            });
+            let mut wk = CloudsuiteWebServingWorkload::new(load_scale, &runtime_file);
+
+            let _handles = time!(
+                timers,
+                "Start servers",
+                wk.start_background_processes(&ushell)?
+            );
+
+            time!(timers, "Workload", wk.run_sync(&ushell)?);
         }
     }
 
