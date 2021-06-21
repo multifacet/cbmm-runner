@@ -14,10 +14,13 @@ use crate::{
     dir,
     exp_0sim::*,
     get_cpu_freq,
-    multiworkloads::{CloudsuiteWebServingWorkload, MixWorkload, MultiProcessWorkload},
+    multiworkloads::{
+        CloudsuiteWebServingWorkload, MixWorkload, MixWorkloadKey, MultiProcessWorkload,
+    },
     output::{Parametrize, Timestamp},
     paths::*,
     time,
+    workloads::gen_perf_command_prefix,
 };
 
 use serde::{Deserialize, Serialize};
@@ -553,7 +556,6 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
-    // TODO: mmu overhead
     // TODO: mmap filters
 
     // Run the workload.
@@ -576,6 +578,20 @@ where
                 &runtime_file,
             );
 
+            // Add prefix to measure mmu overhead.
+            if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let key = match instrumented_proc.as_ref().unwrap().as_str() {
+                    "redis-server" => MixWorkloadKey::Redis,
+                    "matrix_mult2" => MixWorkloadKey::Metis,
+                    "memhog" => MixWorkloadKey::Memhog,
+                    k => panic!("Unknown workload key: {}", k),
+                };
+
+                let prefix = gen_perf_command_prefix(mmu_overhead_file, &counters);
+
+                wk.add_command_prefix(key, &prefix);
+            }
+
             time!(
                 timers,
                 "Start server",
@@ -587,6 +603,8 @@ where
 
         Workload::CloudsuiteWebServing { load_scale } => {
             let mut wk = CloudsuiteWebServingWorkload::new(load_scale, &runtime_file);
+
+            // TODO: mmu overhead
 
             let _handles = time!(
                 timers,
