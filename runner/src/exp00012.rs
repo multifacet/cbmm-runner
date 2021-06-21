@@ -435,6 +435,7 @@ where
         ref pftrace_file,
         ref pftrace_rejected_file,
         ref runtime_file,
+        ref bmks_dir,
 
         instrumented_proc,
         mmap_filter_csv_files,
@@ -445,7 +446,6 @@ where
         kbadgerd_thread: _kbadgerd_thread,
 
         cores: _,
-        bmks_dir: _,
         damon_path: _,
         pin_path: _,
         damon_output_path: _,
@@ -557,8 +557,6 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
-    // TODO: mmap filters
-
     // Run the workload.
     match cfg.workload {
         Workload::Mix { size } => {
@@ -586,6 +584,13 @@ where
                 wk.add_command_prefix(key, &prefix);
             }
 
+            // Set mmap filters.
+            let filters = mmap_filter_csv_files
+                .into_iter()
+                .map(|(p, f)| (MixWorkloadKey::from_name(p), f))
+                .collect();
+            wk.set_mmap_filters(&dir!(bmks_dir, "cb_wrapper"), filters);
+
             time!(
                 timers,
                 "Start server",
@@ -598,6 +603,7 @@ where
         Workload::CloudsuiteWebServing { load_scale } => {
             let mut wk = CloudsuiteWebServingWorkload::new(load_scale, &runtime_file);
 
+            // TODO: mmap filters
             // TODO: mmu overhead
 
             let _handles = time!(

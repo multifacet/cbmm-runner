@@ -20,12 +20,13 @@ use crate::{
     paths::*,
     time,
     workloads::{
-        run_canneal, run_graph500, run_hacky_spec17, run_locality_mem_access,
-        run_memcached_gen_data, run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch,
-        run_ycsb_workload, setup_apriori_paging_processes, spawn_nas_cg, CannealWorkload, Damon,
-        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
-        MongoDBWorkloadConfig, NasClass, Pintool, Spec2017Workload, TasksetCtx,
-        TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem, YcsbWorkload,
+        gen_cb_wrapper_command_prefix, run_canneal, run_graph500, run_hacky_spec17,
+        run_locality_mem_access, run_memcached_gen_data, run_thp_ubmk, run_thp_ubmk_shm,
+        run_time_loop, run_time_mmap_touch, run_ycsb_workload, setup_apriori_paging_processes,
+        spawn_nas_cg, CannealWorkload, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
+        MemcachedWorkloadConfig, MongoDBWorkloadConfig, NasClass, Pintool, Spec2017Workload,
+        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem,
+        YcsbWorkload,
     },
 };
 
@@ -1466,10 +1467,9 @@ where
     };
 
     let cb_wrapper_cmd = cfg.mm_econ_benefit_file.as_ref().map(|_| {
-        format!(
-            "{} {}",
+        gen_cb_wrapper_command_prefix(
             dir!(bmks_dir, "cb_wrapper"),
-            mmap_filter_csv_files.into_iter().next().unwrap().1
+            mmap_filter_csv_files.into_iter().next().unwrap().1,
         )
     });
     let cb_wrapper_cmd = cb_wrapper_cmd.as_ref().map(String::as_str);

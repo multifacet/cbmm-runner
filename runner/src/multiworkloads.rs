@@ -5,8 +5,8 @@ use std::{collections::HashMap, time::Instant};
 use spurs::{cmd, Execute, SshShell, SshSpawnHandle};
 
 use crate::workloads::{
-    run_memhog, run_metis_matrix_mult, run_redis_gen_data, start_redis, MemhogOptions,
-    RedisWorkloadConfig, TasksetCtx,
+    gen_cb_wrapper_command_prefix, run_memhog, run_metis_matrix_mult, run_redis_gen_data,
+    start_redis, MemhogOptions, RedisWorkloadConfig, TasksetCtx,
 };
 
 /// Implemented common abilities for multi-process workloads.
@@ -117,6 +117,16 @@ impl MixWorkload<'_> {
             runtime_file,
 
             prefixes: HashMap::new(),
+        }
+    }
+
+    pub fn set_mmap_filters(
+        &mut self,
+        cb_wrapper_path: &str,
+        filters: HashMap<MixWorkloadKey, String>,
+    ) {
+        for (key, file) in filters.into_iter() {
+            self.add_command_prefix(key, &gen_cb_wrapper_command_prefix(cb_wrapper_path, file));
         }
     }
 }

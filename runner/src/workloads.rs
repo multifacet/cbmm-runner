@@ -61,6 +61,13 @@ pub fn gen_perf_command_prefix<S1: AsRef<str>, S2: AsRef<str>>(
     prefix
 }
 
+pub fn gen_cb_wrapper_command_prefix<S1: AsRef<str>, S2: AsRef<str>>(
+    cb_wrapper_path: S1,
+    benefits_file: S2,
+) -> String {
+    format!("{} {}", cb_wrapper_path.as_ref(), benefits_file.as_ref())
+}
+
 /// Keeps track of which guest vCPUs have been assigned.
 #[derive(Debug)]
 pub struct TasksetCtx {
