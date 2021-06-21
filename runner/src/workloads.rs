@@ -42,6 +42,25 @@ pub fn setup_apriori_paging_processes<S: AsRef<str>>(
     Ok(())
 }
 
+/// Generate a command prefix to run perf stat collecting the given counters.
+pub fn gen_perf_command_prefix<S1: AsRef<str>, S2: AsRef<str>>(
+    output_file: S1,
+    counters: &[S2],
+) -> String {
+    let mut prefix = String::from("perf stat ");
+
+    for c in counters {
+        prefix.push_str(" -e ");
+        prefix.push_str(c.as_ref());
+    }
+
+    prefix.push_str(" -o ");
+    prefix.push_str(output_file.as_ref());
+    prefix.push_str(" -- ");
+
+    prefix
+}
+
 /// Keeps track of which guest vCPUs have been assigned.
 #[derive(Debug)]
 pub struct TasksetCtx {
@@ -538,19 +557,12 @@ pub fn spawn_nas_cg(
     let handle = if let Some((mmu_overhead_file, counters)) = &mmu_perf {
         shell.spawn(
             cmd!(
-                "taskset -c {} \
-                perf stat \
-                -e {} \
-                -D 65000 \
-                -- {} \
-                ./bin/cg.{}.x > {} \
-                2> {}",
+                "taskset -c {} {} {} ./bin/cg.{}.x > {}",
                 tctx.next(),
-                counters.join(" -e "),
+                gen_perf_command_prefix(mmu_overhead_file, &counters),
                 cb_wrapper_cmd.unwrap_or(""),
                 class,
                 output_file.unwrap_or("/dev/null"),
-                mmu_overhead_file
             )
             .cwd(&format!("{}/NPB3.4/NPB3.4-OMP", zerosim_bmk_path)),
         )?
@@ -1097,7 +1109,7 @@ where
             // Start `perf` if needed.
             let perf_handle = if let Some((mmu_overhead_file, counters)) = &cfg_mongodb.mmu_perf {
                 let handle = shell.spawn(cmd!(
-                    "sudo perf stat -e {} -p `pgrep mongod` 2>&1 | tee {}",
+                    "sudo perf stat -e {} -p `pgrep mongod` -o {}",
                     counters.join(" -e "),
                     mmu_overhead_file
                 ))?;
@@ -1252,15 +1264,15 @@ pub fn run_thp_ubmk(
                 perf stat \
                 -e {} \
                 -D 65000 \
+                -o {}
                 -- {} \
-                ./ubmk {} {} 2>&1 | \
-                tee {}",
+                ./ubmk {} {}",
                 pin_core,
                 counters.join(" -e "),
+                mmu_overhead_file,
                 cb_wrapper_cmd.unwrap_or(""),
                 size,
                 reps_str,
-                mmu_overhead_file
             )
             .cwd(bmk_dir),
         )?;
@@ -1329,16 +1341,16 @@ pub fn run_thp_ubmk_shm(
                 perf stat \
                 -e {} \
                 -D 5000 \
+                -o {} \
                 -- {} \
-                ./ubmk-shm {} {} {} 2>&1 | \
-                tee {}",
+                ./ubmk-shm {} {} {}",
                 pin_core,
                 counters.join(" -e "),
+                mmu_overhead_file,
                 cb_wrapper_cmd.unwrap_or(""),
                 use_huge_pages,
                 size,
                 reps_str,
-                mmu_overhead_file
             )
             .cwd(bmk_dir),
         )?;
@@ -1449,14 +1461,9 @@ pub fn run_hacky_spec17(
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
-                "sudo taskset -c {} \
-                perf stat \
-                -e {} \
-                -o {} \
-                -- {} {}",
+                "sudo taskset -c {} {} {} {}",
                 pin_cores,
-                counters.join(" -e "),
-                mmu_overhead_file,
+                gen_perf_command_prefix(mmu_overhead_file, &counters),
                 cb_wrapper_cmd.unwrap_or(""),
                 cmd,
             )
@@ -1618,14 +1625,13 @@ pub fn run_canneal(
             cmd!(
                 "sudo taskset -c {} \
                 perf stat \
-                -e {} \
-                -- {} {} 2>&1 | \
-                tee {}",
+                -e {} -o {} \
+                -- {} {}",
                 pin_core,
                 counters.join(" -e "),
+                mmu_overhead_file,
                 cb_wrapper_cmd.unwrap_or(""),
                 CANNEAL_CMD,
-                mmu_overhead_file
             )
             .cwd(CANNEAL_PATH),
         )?;
