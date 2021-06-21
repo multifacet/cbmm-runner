@@ -1,6 +1,6 @@
 //! Common workloads with multiple processes.
 
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
 use spurs::{cmd, Execute, SshShell, SshSpawnHandle};
 
@@ -9,8 +9,7 @@ use crate::workloads::{
     RedisWorkloadConfig, TasksetCtx,
 };
 
-/// Implemented common abilities for multi-process workloads. Not all of these operations need to
-/// be implemented; the default implementation for unsupported operations just panics.
+/// Implemented common abilities for multi-process workloads.
 pub trait MultiProcessWorkload {
     /// A bunch of the methods of this trait take a `key` that identifies which process in the
     /// workload to apply the method to. This allows, e.g., adding a prefix only to one command.
@@ -22,9 +21,7 @@ pub trait MultiProcessWorkload {
     fn process_names() -> Vec<String>;
 
     /// Add a prefix to the command specified by the key.
-    fn add_command_prefix(&mut self, _key: Self::Key, _prefix: &str) {
-        unimplemented!();
-    }
+    fn add_command_prefix(&mut self, key: Self::Key, prefix: &str);
 
     /// Start any background processes needed by this workload.
     fn start_background_processes(
@@ -56,14 +53,21 @@ pub struct MixWorkload<'s> {
     nullfs_dir: &'s str,
     /// The path to the `redis.conf` file on the remote.
     redis_conf: &'s str,
-    /// The cb_wrapper command prefix (it is reused for all commands).
-    cb_wrapper_cmd: Option<&'s str>,
     /// The _host_ CPU frequency in MHz.
     freq: usize,
     /// The total amount of memory of the mix workload in GB.
     size_gb: usize,
     tctx: &'s mut TasksetCtx,
     runtime_file: &'s str,
+
+    prefixes: HashMap<MixWorkloadKey, Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MixWorkloadKey {
+    Redis,
+    Metis,
+    Memhog,
 }
 
 impl MixWorkload<'_> {
@@ -73,7 +77,6 @@ impl MixWorkload<'_> {
         numactl_dir: &'s str,
         nullfs_dir: &'s str,
         redis_conf: &'s str,
-        cb_wrapper_cmd: Option<&'s str>,
         freq: usize,
         size_gb: usize,
         tctx: &'s mut TasksetCtx,
@@ -85,17 +88,18 @@ impl MixWorkload<'_> {
             numactl_dir,
             nullfs_dir,
             redis_conf,
-            cb_wrapper_cmd,
             freq,
             size_gb,
             tctx,
             runtime_file,
+
+            prefixes: HashMap::new(),
         }
     }
 }
 
 impl MultiProcessWorkload for MixWorkload<'_> {
-    type Key = ();
+    type Key = MixWorkloadKey;
 
     fn process_names() -> Vec<String> {
         vec![
@@ -105,10 +109,22 @@ impl MultiProcessWorkload for MixWorkload<'_> {
         ]
     }
 
+    fn add_command_prefix(&mut self, key: Self::Key, prefix: &str) {
+        self.prefixes
+            .entry(key)
+            .or_insert_with(Vec::new)
+            .push(prefix.into());
+    }
+
     fn start_background_processes(
         &mut self,
         shell: &SshShell,
     ) -> Result<Vec<SshSpawnHandle>, failure::Error> {
+        let prefixes = self
+            .prefixes
+            .get(&MixWorkloadKey::Redis)
+            .map(|prefixes| prefixes.join(" "));
+
         // Start server
         let server_spawn_handle = start_redis(
             &shell,
@@ -120,7 +136,8 @@ impl MultiProcessWorkload for MixWorkload<'_> {
                 freq: Some(self.freq),
                 pf_time: None,
                 output_file: None,
-                cb_wrapper_cmd: self.cb_wrapper_cmd.clone(),
+                // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
+                cb_wrapper_cmd: prefixes.as_ref().map(String::as_str),
                 client_pin_core: self.tctx.next(),
                 server_pin_core: None,
                 redis_conf: self.redis_conf,
@@ -144,7 +161,7 @@ impl MultiProcessWorkload for MixWorkload<'_> {
                 freq: Some(self.freq),
                 pf_time: None,
                 output_file: None,
-                cb_wrapper_cmd: self.cb_wrapper_cmd.clone(),
+                cb_wrapper_cmd: None, // Ignored
                 client_pin_core: self.tctx.next(),
                 server_pin_core: None,
                 redis_conf: self.redis_conf,
@@ -157,7 +174,12 @@ impl MultiProcessWorkload for MixWorkload<'_> {
             shell,
             self.metis_dir,
             matrix_dim,
-            self.cb_wrapper_cmd.clone(),
+            // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
+            self.prefixes
+                .get(&MixWorkloadKey::Metis)
+                .map(|prefixes| prefixes.join(" "))
+                .as_ref()
+                .map(String::as_str),
             self.tctx,
         )?;
 
@@ -167,7 +189,12 @@ impl MultiProcessWorkload for MixWorkload<'_> {
             None,
             (self.size_gb << 20) / 3,
             MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
-            self.cb_wrapper_cmd,
+            // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
+            self.prefixes
+                .get(&MixWorkloadKey::Memhog)
+                .map(|prefixes| prefixes.join(" "))
+                .as_ref()
+                .map(String::as_str),
             self.tctx,
         )?;
 

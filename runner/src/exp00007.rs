@@ -508,7 +508,6 @@ where
                 &memhog_path,
                 &nullfs_path,
                 &redis_conf,
-                /* cb_wrapper_cmd */ None,
                 freq,
                 size >> 20,
                 &mut tctx,

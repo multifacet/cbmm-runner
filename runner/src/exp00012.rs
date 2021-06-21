@@ -570,7 +570,6 @@ where
                 &memhog_path,
                 &nullfs_path,
                 &redis_conf_path,
-                None, // TODO cb_wrapper
                 freq,
                 size,
                 &mut tctx,
