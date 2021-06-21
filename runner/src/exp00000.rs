@@ -15,8 +15,8 @@ use crate::{
     time,
     workloads::{
         run_graph500, run_memcached_gen_data, run_metis_matrix_mult, run_redis_gen_data,
-        run_time_mmap_touch, Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig,
-        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
+        run_time_mmap_touch, start_redis, Damon, MemcachedWorkloadConfig, Pintool,
+        RedisWorkloadConfig, TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern,
     },
 };
 
@@ -466,31 +466,32 @@ where
         }
 
         Workload::Redis => {
+            let out_file = dir!(VAGRANT_RESULTS_DIR, output_file);
+            let cfg = RedisWorkloadConfig {
+                exp_dir: zerosim_exp_path,
+                server_size_mb: size << 10,
+                wk_size_gb: size,
+                freq: Some(freq),
+                pf_time: None,
+                output_file: Some(&out_file),
+                client_pin_core: tctx.next(),
+                server_pin_core: None,
+                redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
+                nullfs: &dir!(
+                    "/home/vagrant",
+                    RESEARCH_WORKSPACE_PATH,
+                    ZEROSIM_NULLFS_SUBMODULE
+                ),
+                pintool: None,
+                cb_wrapper_cmd: None,
+            };
+
+            let _server_handle = time!(timers, "Start server", start_redis(&vshell, &cfg)?);
+
             time!(
                 timers,
-                "Start and Workload",
-                run_redis_gen_data(
-                    &vshell,
-                    &RedisWorkloadConfig {
-                        exp_dir: zerosim_exp_path,
-                        server_size_mb: size << 10,
-                        wk_size_gb: size,
-                        freq: Some(freq),
-                        pf_time: None,
-                        output_file: Some(&dir!(VAGRANT_RESULTS_DIR, output_file)),
-                        client_pin_core: tctx.next(),
-                        server_pin_core: None,
-                        redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-                        nullfs: &dir!(
-                            "/home/vagrant",
-                            RESEARCH_WORKSPACE_PATH,
-                            ZEROSIM_NULLFS_SUBMODULE
-                        ),
-                        pintool: None,
-                        cb_wrapper_cmd: None,
-                    }
-                )?
-                .wait_for_client()?
+                "Workload",
+                run_redis_gen_data(&vshell, &cfg)?.join().1?
             );
         }
 

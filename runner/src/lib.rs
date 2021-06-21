@@ -20,6 +20,7 @@ pub mod cpu;
 pub mod downloads;
 pub mod exp_0sim;
 pub mod hadoop;
+pub mod multiworkloads;
 pub mod workloads;
 
 // Setup and experimental routines

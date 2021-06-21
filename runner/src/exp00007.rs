@@ -13,13 +13,14 @@ use crate::{
     dir,
     exp_0sim::*,
     get_cpu_freq,
+    multiworkloads::{MixWorkload, MultiProcessWorkload},
     output::{Parametrize, Timestamp},
     paths::{setup00000::*, *},
     time,
     workloads::{
-        run_memcached_gen_data, run_memhog, run_metis_matrix_mult, run_mix, run_redis_gen_data,
-        spawn_nas_cg, MemcachedWorkloadConfig, MemhogOptions, NasClass, RedisWorkloadConfig,
-        TasksetCtx,
+        run_memcached_gen_data, run_memhog, run_metis_matrix_mult, run_redis_gen_data,
+        spawn_nas_cg, start_redis, MemcachedWorkloadConfig, MemhogOptions, NasClass,
+        RedisWorkloadConfig, TasksetCtx,
     },
 };
 
@@ -420,31 +421,31 @@ where
         }
 
         Workload::Redis => {
+            let cfg = RedisWorkloadConfig {
+                exp_dir: zerosim_exp_path,
+                server_size_mb: size >> 10,
+                wk_size_gb: size >> 20,
+                freq: Some(freq),
+                pf_time: None,
+                output_file: None,
+                client_pin_core: tctx.next(),
+                server_pin_core: None,
+                redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
+                nullfs: &dir!(
+                    "/home/vagrant",
+                    RESEARCH_WORKSPACE_PATH,
+                    ZEROSIM_NULLFS_SUBMODULE
+                ),
+                pintool: None,
+                cb_wrapper_cmd: None,
+            };
+
+            let _server_handle = time!(timers, "Start server", start_redis(&vshell, &cfg)?);
+
             time!(
                 timers,
                 "Start and Workload",
-                run_redis_gen_data(
-                    &vshell,
-                    &RedisWorkloadConfig {
-                        exp_dir: zerosim_exp_path,
-                        server_size_mb: size >> 10,
-                        wk_size_gb: size >> 20,
-                        freq: Some(freq),
-                        pf_time: None,
-                        output_file: None,
-                        client_pin_core: tctx.next(),
-                        server_pin_core: None,
-                        redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-                        nullfs: &dir!(
-                            "/home/vagrant",
-                            RESEARCH_WORKSPACE_PATH,
-                            ZEROSIM_NULLFS_SUBMODULE
-                        ),
-                        pintool: None,
-                        cb_wrapper_cmd: None,
-                    }
-                )?
-                .wait_for_client()?
+                run_redis_gen_data(&vshell, &cfg)?.join().1?
             );
         }
 
@@ -485,33 +486,42 @@ where
         }
 
         Workload::Mix => {
-            time!(timers, "Workload", {
-                run_mix(
-                    &vshell,
-                    zerosim_exp_path,
-                    &dir!(
-                        "/home/vagrant",
-                        RESEARCH_WORKSPACE_PATH,
-                        ZEROSIM_METIS_SUBMODULE
-                    ),
-                    &dir!(
-                        "/home/vagrant",
-                        RESEARCH_WORKSPACE_PATH,
-                        ZEROSIM_MEMHOG_SUBMODULE
-                    ),
-                    &dir!(
-                        "/home/vagrant",
-                        RESEARCH_WORKSPACE_PATH,
-                        ZEROSIM_NULLFS_SUBMODULE
-                    ),
-                    &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF,),
-                    /* cb_wrapper_cmd */ None,
-                    freq,
-                    size >> 20,
-                    &mut tctx,
-                    &runtime_file,
-                )?
-            });
+            let metis_path = dir!(
+                "/home/vagrant",
+                RESEARCH_WORKSPACE_PATH,
+                ZEROSIM_METIS_SUBMODULE
+            );
+            let memhog_path = dir!(
+                "/home/vagrant",
+                RESEARCH_WORKSPACE_PATH,
+                ZEROSIM_MEMHOG_SUBMODULE
+            );
+            let nullfs_path = dir!(
+                "/home/vagrant",
+                RESEARCH_WORKSPACE_PATH,
+                ZEROSIM_NULLFS_SUBMODULE
+            );
+            let redis_conf = dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let mut wk = MixWorkload::new(
+                zerosim_exp_path,
+                &metis_path,
+                &memhog_path,
+                &nullfs_path,
+                &redis_conf,
+                /* cb_wrapper_cmd */ None,
+                freq,
+                size >> 20,
+                &mut tctx,
+                &runtime_file,
+            );
+
+            let _server_handle = time!(
+                timers,
+                "Start server",
+                wk.start_background_processes(&vshell)?
+            );
+
+            time!(timers, "Workload", { wk.run_sync(&vshell)? });
         }
     }
 

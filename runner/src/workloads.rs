@@ -709,18 +709,6 @@ pub fn run_locality_mem_access(
     Ok(())
 }
 
-pub struct RedisWorkloadHandles {
-    pub server_spawn_handle: SshSpawnHandle,
-    pub client_spawn_handle: SshSpawnHandle,
-}
-
-impl RedisWorkloadHandles {
-    pub fn wait_for_client(self) -> Result<(), failure::Error> {
-        self.client_spawn_handle.join().1?;
-        Ok(())
-    }
-}
-
 /// Every setting of the redis workload.
 #[derive(Debug)]
 pub struct RedisWorkloadConfig<'s> {
@@ -838,14 +826,12 @@ pub fn start_redis(
     Ok(handle)
 }
 
-/// Run the `redis_gen_data` workload.
+/// Run the `redis_gen_data` workload. Use `start_redis` to start the server before calling this
+/// function.
 pub fn run_redis_gen_data(
     shell: &SshShell,
     cfg: &RedisWorkloadConfig<'_>,
-) -> Result<RedisWorkloadHandles, failure::Error> {
-    // Start server
-    let server_spawn_handle = start_redis(&shell, cfg)?;
-
+) -> Result<SshSpawnHandle, failure::Error> {
     // Run workload
     let client_spawn_handle = shell.spawn(
         cmd!(
@@ -868,10 +854,7 @@ pub fn run_redis_gen_data(
         .cwd(cfg.exp_dir),
     )?;
 
-    Ok(RedisWorkloadHandles {
-        server_spawn_handle,
-        client_spawn_handle,
-    })
+    Ok(client_spawn_handle)
 }
 
 /// Run the metis matrix multiply workload with the given matrix dimensions (square matrix). This
@@ -899,79 +882,6 @@ pub fn run_metis_matrix_mult(
         )
         .cwd(bmk_dir),
     )
-}
-
-/// Run the mix workload which consists of splitting memory between
-///
-/// - 1 data-obliv memhog process with memory pinning (running indefinitely)
-/// - 1 redis server and client pair. The redis server does snapshots every minute.
-/// - 1 metis instance doing matrix multiplication
-///
-/// This workload runs until the redis subworkload completes.
-///
-/// Given a requested workload size of `size_gb` GB, each sub-workload gets 1/3 of the space.
-///
-/// - `exp_dir` is the path of the `0sim-experiments` submodule on the remote.
-/// - `metis_dir` is the path to the `Metis` directory in the workspace on the remote.
-/// - `numactl_dir` is the path to the `numactl` directory in the workspace on the remote.
-/// - `redis_conf` is the path to the `redis.conf` file on the remote.
-/// - `freq` is the _host_ CPU frequency in MHz.
-/// - `size_gb` is the total amount of memory of the mix workload in GB.
-/// - `cb_wrapper_cmd` are the cb_wrapper command prefix (it is reused for all commands).
-pub fn run_mix(
-    shell: &SshShell,
-    exp_dir: &str,
-    metis_dir: &str,
-    numactl_dir: &str,
-    nullfs_dir: &str,
-    redis_conf: &str,
-    cb_wrapper_cmd: Option<&str>,
-    freq: usize,
-    size_gb: usize,
-    tctx: &mut TasksetCtx,
-    runtime_file: &str,
-) -> Result<(), failure::Error> {
-    let start = Instant::now();
-
-    let redis_handles = run_redis_gen_data(
-        shell,
-        &RedisWorkloadConfig {
-            exp_dir,
-            nullfs: nullfs_dir,
-            server_size_mb: (size_gb << 10) / 3,
-            wk_size_gb: size_gb / 3,
-            freq: Some(freq),
-            pf_time: None,
-            output_file: None,
-            cb_wrapper_cmd: cb_wrapper_cmd.clone(),
-            client_pin_core: tctx.next(),
-            server_pin_core: None,
-            redis_conf,
-            pintool: None,
-        },
-    )?;
-
-    let matrix_dim = (((size_gb / 3) << 27) as f64).sqrt() as usize;
-    let _metis_handle =
-        run_metis_matrix_mult(shell, metis_dir, matrix_dim, cb_wrapper_cmd.clone(), tctx)?;
-
-    let _memhog_handles = run_memhog(
-        shell,
-        numactl_dir,
-        None,
-        (size_gb << 20) / 3,
-        MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
-        cb_wrapper_cmd,
-        tctx,
-    )?;
-
-    // Wait for redis client to finish
-    redis_handles.client_spawn_handle.join().1?;
-
-    let duration = Instant::now() - start;
-    shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
-
-    Ok(())
 }
 
 /// Which YCSB core workload to run.
@@ -1781,68 +1691,4 @@ fn canneal_input_file_exists(
     };
 
     Ok(size == cur_file_size)
-}
-
-pub fn run_cloudsuite_web_serving(
-    shell: &SshShell,
-    load_scale: usize,
-    benefit_file: Option<&str>,
-    output_file: &str,
-) -> Result<(), failure::Error> {
-    // Start db, cache, webserver.
-    with_shell! { shell =>
-        cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
-              cloudsuite/web-serving:db_server \
-              $(hostname -I | awk '{{print $1}}')"),
-        cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
-              cloudsuite/web-serving:memcached_server"),
-        cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
-              docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
-              --name=web_server_local cloudsuite/web-serving:web_server \
-              /etc/bootstrap.sh $WSIP $WSIP"),
-    }
-
-    // Run the client to ensure that the servers have started.
-    shell.run(cmd!(
-        "docker run --pid=\"host\" --rm --net=host --name=faban_client \
-         cloudsuite/web-serving:faban_client \
-         $(hostname -I | awk '{{print $1}}') 1",
-    ))?;
-
-    // TODO: would make sense to have different benefits file for different processes :/
-    // Set CBMM benefits.
-    if let Some(benefits_file) = benefit_file {
-        shell.run(cmd!(
-            "cat {} | sudo tee /proc/`pgrep mysqld`/mmap_filters",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
-            "cat {} | sudo tee /proc/`pgrep memcached`/mmap_filters",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
-            "for p in $(pgrep hhvm) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
-            "for p in $(pgrep hh_single_compile) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-            benefits_file
-        ))?;
-        shell.run(cmd!(
-            "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-            benefits_file
-        ))?;
-    }
-
-    // Run workload
-    shell.run(cmd!(
-        "docker run --pid=\"host\" --rm --net=host --name=faban_client \
-         cloudsuite/web-serving:faban_client \
-         $(hostname -I | awk '{{print $1}}') {} \
-         | tee {}",
-        load_scale,
-        output_file
-    ))?;
-
-    Ok(())
 }

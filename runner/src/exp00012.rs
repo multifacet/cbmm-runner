@@ -14,10 +14,10 @@ use crate::{
     dir,
     exp_0sim::*,
     get_cpu_freq,
+    multiworkloads::{run_cloudsuite_web_serving, MixWorkload, MultiProcessWorkload},
     output::{Parametrize, Timestamp},
     paths::*,
     time,
-    workloads::{run_cloudsuite_web_serving, run_mix},
 };
 
 use serde::{Deserialize, Serialize};
@@ -553,26 +553,37 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
+    // TODO: mmu overhead
+    // TODO: mmap filters
+
     // Run the workload.
     match cfg.workload {
         Workload::Mix { size } => {
             let freq = get_cpu_freq(&ushell)?;
+            let metis_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE);
+            let memhog_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE);
+            let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
+            let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let mut wk = MixWorkload::new(
+                zerosim_exp_path,
+                &metis_path,
+                &memhog_path,
+                &nullfs_path,
+                &redis_conf_path,
+                None, // TODO cb_wrapper
+                freq,
+                size,
+                &mut tctx,
+                &runtime_file,
+            );
 
-            time!(timers, "Workload", {
-                run_mix(
-                    &ushell,
-                    zerosim_exp_path,
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE),
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE),
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE),
-                    &dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-                    None, // TODO cb_wrapper
-                    freq,
-                    size,
-                    &mut tctx,
-                    &runtime_file,
-                )?
-            });
+            time!(
+                timers,
+                "Start server",
+                wk.start_background_processes(&ushell)?
+            );
+
+            time!(timers, "Workload", wk.run_sync(&ushell)?);
         }
 
         Workload::CloudsuiteWebServing { load_scale } => {
