@@ -83,7 +83,7 @@ struct Config {
 }
 
 pub fn cli_options() -> clap::App<'static, 'static> {
-    let app = clap_app! { exp00010 =>
+    let app = clap_app! { exp00012 =>
         (about: "Run experiment 00010. Requires `sudo`.")
         (@setting ArgRequiredElseHelp)
         (@setting DisableVersion)

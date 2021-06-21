@@ -30,6 +30,7 @@ fn run() -> Result<(), failure::Error> {
         .subcommand(runner::exp00009::cli_options())
         .subcommand(runner::exp00010::cli_options())
         .subcommand(runner::exp00011::cli_options())
+        .subcommand(runner::exp00012::cli_options())
         .setting(clap::AppSettings::SubcommandRequiredElseHelp)
         .setting(clap::AppSettings::DisableVersion)
         .get_matches();
@@ -56,6 +57,7 @@ fn run() -> Result<(), failure::Error> {
         ("exp00009", Some(sub_m)) => runner::exp00009::run(sub_m),
         ("exp00010", Some(sub_m)) => runner::exp00010::run(sub_m),
         ("exp00011", Some(sub_m)) => runner::exp00011::run(sub_m),
+        ("exp00012", Some(sub_m)) => runner::exp00012::run(sub_m),
 
         _ => {
             unreachable!();
