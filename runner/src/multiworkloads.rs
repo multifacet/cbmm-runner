@@ -15,7 +15,7 @@ pub trait MultiProcessWorkload {
     /// workload to apply the method to. This allows, e.g., adding a prefix only to one command.
     ///
     /// If no key is needed, one can just use `()`.
-    type Key: Copy;
+    type Key: WorkloadKey;
 
     /// Return a list of process names in the workload.
     fn process_names() -> Vec<String>;
@@ -31,6 +31,18 @@ pub trait MultiProcessWorkload {
 
     /// Run the workload, blocking until it is complete.
     fn run_sync(&mut self, shell: &SshShell) -> Result<(), failure::Error>;
+}
+
+/// Any type that can act as a workload key for specifying which process in a workload to apply an
+/// operation to.
+pub trait WorkloadKey: Copy {
+    fn from_name<S: AsRef<str>>(name: S) -> Self;
+}
+
+impl WorkloadKey for () {
+    fn from_name<S: AsRef<str>>(_: S) -> Self {
+        ()
+    }
 }
 
 /// Run the mix workload which consists of splitting memory between
@@ -68,6 +80,17 @@ pub enum MixWorkloadKey {
     Redis,
     Metis,
     Memhog,
+}
+
+impl WorkloadKey for MixWorkloadKey {
+    fn from_name<S: AsRef<str>>(name: S) -> Self {
+        match name.as_ref() {
+            "redis-server" => Self::Redis,
+            "matrix_mult2" => Self::Metis,
+            "memhog" => Self::Memhog,
+            k => panic!("Unknown key: {}", k),
+        }
+    }
 }
 
 impl MixWorkload<'_> {
@@ -226,6 +249,18 @@ pub enum CloudsuiteWebServingWorkloadKey {
     Nginx, // Nginx -- has multiple processes
            //Hhvm,
            //HHSingleCompile
+}
+
+impl WorkloadKey for CloudsuiteWebServingWorkloadKey {
+    fn from_name<S: AsRef<str>>(name: S) -> Self {
+        match name.as_ref() {
+            "mysqld" => Self::Mysql,
+            "memcached" => Self::Memcached,
+            "nginx" => Self::Nginx,
+
+            k => panic!("Unknown key: {}", k),
+        }
+    }
 }
 
 impl CloudsuiteWebServingWorkload<'_> {
