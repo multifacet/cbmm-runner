@@ -166,7 +166,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           value and disable THP for all other memory regions and processes. This \
           flag should be followed by two values: a process name and an address in hex, \
           in that order. This can only be specified for a single process.")
-        (@arg THP_HUGE_ADDR_RANGES: --thp_huge_addr_ranges +takes_value min_values(2) ...
+        (@arg THP_HUGE_ADDR_RANGES: --thp_huge_addr_ranges +takes_value min_values(3) ...
          conflicts_with[THP_HUGE_ADDR]
          "For the specified process, make all pages in the given range(s) huge. \
           Pass values as a process name followed by space-separated integers in \
