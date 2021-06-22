@@ -234,6 +234,14 @@ impl MultiProcessWorkload for MixWorkload<'_> {
         // Wait for redis client to finish
         redis_client_handle.join().1?;
 
+        // Make sure redis dies so that perf terminates.
+        shell.run(cmd!("pkill -9 redis-server"))?;
+
+        // Make sure perf is done.
+        shell.run(cmd!(
+            "while [[ $(pgrep -f '^perf stat') ]] ; do sleep 1 ; done ; echo done"
+        ))?;
+
         let duration = Instant::now() - start;
         shell.run(cmd!(
             "echo '{}' > {}",

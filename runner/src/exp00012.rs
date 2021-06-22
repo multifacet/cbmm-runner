@@ -591,7 +591,7 @@ where
                 .collect();
             wk.set_mmap_filters(&dir!(bmks_dir, "cb_wrapper"), filters);
 
-            time!(
+            let _handle = time!(
                 timers,
                 "Start server",
                 wk.start_background_processes(&ushell)?
