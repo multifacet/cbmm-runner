@@ -601,7 +601,11 @@ where
         }
 
         Workload::CloudsuiteWebServing { load_scale } => {
-            let mut wk = CloudsuiteWebServingWorkload::new(load_scale, &runtime_file);
+            let mut wk = CloudsuiteWebServingWorkload::new(
+                load_scale,
+                /* use_hhvm; keep it simple for now */ false,
+                &runtime_file,
+            );
 
             // TODO: mmap filters
             // TODO: mmu overhead

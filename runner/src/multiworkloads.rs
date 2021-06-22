@@ -257,18 +257,28 @@ impl MultiProcessWorkload for MixWorkload<'_> {
 
 pub struct CloudsuiteWebServingWorkload<'s> {
     load_scale: usize,
+    use_hhvm: bool,
     output_file: &'s str,
+    //prefixes: HashMap<CloudsuiteWebServingWorkloadKey, Vec<String>>,
+}
 
-    prefixes: HashMap<CloudsuiteWebServingWorkloadKey, Vec<String>>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProcessSelector {
+    Master,
+    RandomWorker,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CloudsuiteWebServingWorkloadKey {
     Mysql,
     Memcached,
-    Nginx, // Nginx -- has multiple processes
-           //Hhvm,
-           //HHSingleCompile
+    /// Nginx has a master and worker pool.
+    Nginx(ProcessSelector),
+    /// Selects one of the co-equal processes at random.
+    Hhvm,
+    HHSingleCompile,
+    /// PhpFpm has a master and worker pool.
+    PhpFpm(ProcessSelector),
 }
 
 impl WorkloadKey for CloudsuiteWebServingWorkloadKey {
@@ -276,7 +286,15 @@ impl WorkloadKey for CloudsuiteWebServingWorkloadKey {
         match name.as_ref() {
             "mysqld" => Self::Mysql,
             "memcached" => Self::Memcached,
-            "nginx" => Self::Nginx,
+
+            "nginx:master" => Self::Nginx(ProcessSelector::Master),
+            "nginx:worker" => Self::Nginx(ProcessSelector::RandomWorker),
+
+            "hhvm" => Self::Hhvm,
+            "hh_single_compile" => Self::HHSingleCompile,
+
+            "php-fpm:master" => Self::PhpFpm(ProcessSelector::Master),
+            "php-fpm:pool" => Self::PhpFpm(ProcessSelector::RandomWorker),
 
             k => panic!("Unknown key: {}", k),
         }
@@ -284,12 +302,16 @@ impl WorkloadKey for CloudsuiteWebServingWorkloadKey {
 }
 
 impl CloudsuiteWebServingWorkload<'_> {
-    pub fn new<'s>(load_scale: usize, output_file: &'s str) -> CloudsuiteWebServingWorkload<'s> {
+    pub fn new<'s>(
+        load_scale: usize,
+        use_hhvm: bool,
+        output_file: &'s str,
+    ) -> CloudsuiteWebServingWorkload<'s> {
         CloudsuiteWebServingWorkload {
             load_scale,
+            use_hhvm,
             output_file,
-
-            prefixes: HashMap::new(),
+            //prefixes: HashMap::new(),
         }
     }
 }
@@ -298,7 +320,14 @@ impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
     type Key = CloudsuiteWebServingWorkloadKey;
 
     fn process_names() -> Vec<String> {
-        vec!["mysqld".into(), "memcached".into(), "nginx".into(), todo!()]
+        vec![
+            "mysqld".into(),
+            "memcached".into(),
+            "nginx".into(),
+            "hhvm".into(),
+            "hh_single_compile".into(),
+            "php-fpm".into(),
+        ]
     }
 
     fn add_command_prefix(&mut self, _key: Self::Key, _prefix: &str) {
@@ -317,9 +346,9 @@ impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
             cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
                   cloudsuite/web-serving:memcached_server"),
             cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
-                  docker run -e \"HHVM=true\" -dt --pid=\"host\" --rm --net=host \
+                  docker run -e \"HHVM={}\" -dt --pid=\"host\" --rm --net=host \
                   --name=web_server_local cloudsuite/web-serving:web_server \
-                  /etc/bootstrap.sh $WSIP $WSIP"),
+                  /etc/bootstrap.sh $WSIP $WSIP", self.use_hhvm),
 
             // Run the client to ensure that the servers have started.
             cmd!("docker run --pid=\"host\" --rm --net=host --name=faban_client \
