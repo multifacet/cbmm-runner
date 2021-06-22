@@ -2,11 +2,13 @@
 
 use std::{collections::HashMap, time::Instant};
 
+use rand::{rngs::SmallRng, SeedableRng};
+
 use spurs::{cmd, Execute, SshShell, SshSpawnHandle};
 
 use crate::workloads::{
-    gen_cb_wrapper_command_prefix, run_memhog, run_metis_matrix_mult, run_redis_gen_data,
-    start_redis, MemhogOptions, RedisWorkloadConfig, TasksetCtx,
+    gen_cb_wrapper_command_prefix, gen_perf_command_prefix, run_memhog, run_metis_matrix_mult,
+    run_redis_gen_data, start_redis, MemhogOptions, RedisWorkloadConfig, TasksetCtx,
 };
 
 /// Implemented common abilities for multi-process workloads.
@@ -259,7 +261,12 @@ pub struct CloudsuiteWebServingWorkload<'s> {
     load_scale: usize,
     use_hhvm: bool,
     output_file: &'s str,
-    //prefixes: HashMap<CloudsuiteWebServingWorkloadKey, Vec<String>>,
+
+    /// Used to randomly select processes when needed.
+    rng: SmallRng,
+    /// Save the pids of the instrumented processes, since we might have chosen one of many
+    /// processes at random.
+    saved_pids: HashMap<CloudsuiteWebServingWorkloadKey, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -311,8 +318,175 @@ impl CloudsuiteWebServingWorkload<'_> {
             load_scale,
             use_hhvm,
             output_file,
-            //prefixes: HashMap::new(),
+
+            rng: SmallRng::seed_from_u64(0),
+            saved_pids: HashMap::new(),
         }
+    }
+
+    /// Get the PID for the/a process matching the key.
+    fn key_to_pid(
+        &mut self,
+        shell: &SshShell,
+        key: CloudsuiteWebServingWorkloadKey,
+    ) -> Result<usize, failure::Error> {
+        use rand::seq::SliceRandom;
+        use CloudsuiteWebServingWorkloadKey::*;
+
+        fn get_pids_by_name(
+            shell: &SshShell,
+            container: &str,
+            name: &str,
+            extra: &str,
+        ) -> Result<Vec<usize>, failure::Error> {
+            let pids = shell
+                .run(cmd!(
+                    "docker top {} -o pid -o command \
+                     | grep -v 'sh -c ' | grep '{}' {} \
+                     | awk '{{print $1}}'",
+                    container,
+                    name,
+                    extra
+                ))?
+                .stdout
+                .trim()
+                .split_whitespace()
+                .map(|pid_str| pid_str.trim().parse::<usize>().unwrap())
+                .collect();
+
+            Ok(pids)
+        }
+
+        if let Some(saved) = self.saved_pids.get(&key) {
+            return Ok(*saved);
+        }
+
+        let pid = match key {
+            // Unique processes
+            Mysql => get_pids_by_name(shell, "mysql_server", "mysqld", "")?[0],
+            Memcached => get_pids_by_name(shell, "memcache_server", "memcached", "")?[0],
+            HHSingleCompile => {
+                get_pids_by_name(shell, "web_server_local", "hh_single_compile", "")?[0]
+            }
+            Nginx(ProcessSelector::Master) => {
+                get_pids_by_name(shell, "web_server_local", "nginx", "| grep master")?[0]
+            }
+            PhpFpm(ProcessSelector::Master) => {
+                get_pids_by_name(shell, "web_server_local", "php-fpm", "| grep master")?[0]
+            }
+
+            // Random selection
+            Hhvm => *get_pids_by_name(shell, "web_server_local", "hhvm", "")?
+                .choose(&mut self.rng)
+                .unwrap(),
+            Nginx(ProcessSelector::RandomWorker) => {
+                *get_pids_by_name(shell, "web_server_local", "nginx", "| grep worker")?
+                    .choose(&mut self.rng)
+                    .unwrap()
+            }
+            PhpFpm(ProcessSelector::RandomWorker) => {
+                *get_pids_by_name(shell, "web_server_local", "php-fpm", "| grep pool")?
+                    .choose(&mut self.rng)
+                    .unwrap()
+            }
+        };
+
+        self.saved_pids.insert(key, pid);
+
+        Ok(pid)
+    }
+
+    /// Since the background processes run in docker containers, it's kind of a pain to run them
+    /// with a prefix. Instead, we attach perf after starting them by specifying a PID to perf's
+    /// `-p` argument.
+    ///
+    /// Obviously, this function should run after `start_background_processes` but not to long
+    /// before running the workload. For the perf counters we have looked at so far, this makes the
+    /// numbers look a bit higher, but the error is still orders of magnitude less than the numbers
+    /// themselves, so it should be ok...
+    pub fn attach_perf_stat(
+        &mut self,
+        shell: &SshShell,
+        key: CloudsuiteWebServingWorkloadKey,
+        mmu_overhead_file: &str,
+        perf_counters: &[impl AsRef<str>],
+    ) -> Result<SshSpawnHandle, failure::Error> {
+        let pid = self.key_to_pid(shell, key)?;
+        let handle = shell.spawn(cmd!(
+            "sudo {}",
+            gen_perf_command_prefix(mmu_overhead_file, perf_counters, format!("-p {}", pid))
+        ))?;
+
+        Ok(handle)
+    }
+
+    /// Similar to `attach_perf_stat`, but less time sensitive. Also, we set the benefits for all
+    /// processes of a given type, rather than randomly selecting a worker.
+    pub fn set_mmap_filters(
+        &mut self,
+        shell: &SshShell,
+        filters: HashMap<CloudsuiteWebServingWorkloadKey, String>,
+    ) -> Result<(), failure::Error> {
+        for (key, benefits_file) in filters.iter() {
+            match key {
+                CloudsuiteWebServingWorkloadKey::Mysql => {
+                    shell.run(cmd!(
+                        "cat {} | sudo tee /proc/`pgrep mysqld`/mmap_filters",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::Memcached => {
+                    shell.run(cmd!(
+                        "cat {} | sudo tee /proc/`pgrep memcached`/mmap_filters",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::Hhvm => {
+                    shell.run(cmd!(
+                        "for p in $(pgrep hhvm) ; do \
+                         cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::HHSingleCompile => {
+                    shell.run(cmd!(
+                        "for p in $(pgrep hh_single_compile) ; do \
+                         cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::Nginx(ProcessSelector::Master) => {
+                    shell.run(cmd!(
+                        "for p in $(pgrep -f 'nginx: master') ; do \
+                         cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::Nginx(ProcessSelector::RandomWorker) => {
+                    shell.run(cmd!(
+                        "for p in $(pgrep -f 'nginx: worker') ; do \
+                         cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::PhpFpm(ProcessSelector::Master) => {
+                    shell.run(cmd!(
+                        "for p in $(pgrep -f 'php-fpm: master') ; do \
+                         cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                        benefits_file
+                    ))?;
+                }
+                CloudsuiteWebServingWorkloadKey::PhpFpm(ProcessSelector::RandomWorker) => {
+                    shell.run(cmd!(
+                        "for p in $(pgrep -f 'php-fpm: pool') ; do \
+                         cat {} | sudo tee /proc/$p/mmap_filters ; done",
+                        benefits_file
+                    ))?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -331,7 +505,7 @@ impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
     }
 
     fn add_command_prefix(&mut self, _key: Self::Key, _prefix: &str) {
-        unimplemented!()
+        unimplemented!("see `attach_perf_stat()")
     }
 
     fn start_background_processes(
@@ -360,32 +534,6 @@ impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
     }
 
     fn run_sync(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
-        /* TODO
-        // Set CBMM benefits.
-        if let Some(benefits_file) = benefit_file {
-            shell.run(cmd!(
-                "cat {} | sudo tee /proc/`pgrep mysqld`/mmap_filters",
-                benefits_file
-            ))?;
-            shell.run(cmd!(
-                "cat {} | sudo tee /proc/`pgrep memcached`/mmap_filters",
-                benefits_file
-            ))?;
-            shell.run(cmd!(
-                "for p in $(pgrep hhvm) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-                benefits_file
-            ))?;
-            shell.run(cmd!(
-            "for p in $(pgrep hh_single_compile) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-            benefits_file
-        ))?;
-            shell.run(cmd!(
-                "for p in $(pgrep nginx) ; do cat {} | sudo tee /proc/$p/mmap_filters ; done",
-                benefits_file
-            ))?;
-        }
-        */
-
         // Run workload
         shell.run(cmd!(
             "docker run --pid=\"host\" --rm --net=host --name=faban_client \

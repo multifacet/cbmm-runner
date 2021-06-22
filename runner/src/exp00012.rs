@@ -15,8 +15,8 @@ use crate::{
     exp_0sim::*,
     get_cpu_freq,
     multiworkloads::{
-        CloudsuiteWebServingWorkload, MixWorkload, MixWorkloadKey, MultiProcessWorkload,
-        WorkloadKey,
+        CloudsuiteWebServingWorkload, CloudsuiteWebServingWorkloadKey, MixWorkload, MixWorkloadKey,
+        MultiProcessWorkload, WorkloadKey,
     },
     output::{Parametrize, Timestamp},
     paths::*,
@@ -607,14 +607,30 @@ where
                 &runtime_file,
             );
 
-            // TODO: mmap filters
-            // TODO: mmu overhead
-
             let _handles = time!(
                 timers,
                 "Start servers",
                 wk.start_background_processes(&ushell)?
             );
+
+            // Set mmap filters.
+            let filters = mmap_filter_csv_files
+                .into_iter()
+                .map(|(p, f)| (CloudsuiteWebServingWorkloadKey::from_name(p), f))
+                .collect();
+            wk.set_mmap_filters(&ushell, filters)?;
+
+            // Attach perf to measure mmu overhead. See the comments on `attach_perf_stat` for more
+            // info about why we do it this way.
+            //
+            // NOTE: This should happen as close as possible to `run_sync`...
+            let _perf_handle = if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let key =
+                    CloudsuiteWebServingWorkloadKey::from_name(instrumented_proc.as_ref().unwrap());
+                Some(wk.attach_perf_stat(&ushell, key, &mmu_overhead_file, &counters)?)
+            } else {
+                None
+            };
 
             time!(timers, "Workload", wk.run_sync(&ushell)?);
         }
