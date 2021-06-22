@@ -182,11 +182,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg THP_HUGE_ADDR_GE: --thp_huge_addr_ge
             requires[THP_HUGE_ADDR] conflicts_with[THP_HUGE_ADDR_LE]
             "Make all pages >=THP_HUGE_ADDR huge.")
-        (@arg MM_ECON_BENEFIT_PER_PROC: --mm_econ_benefit_per_proc +takes_value ...
-         requires[MM_ECON]
-         "Set a benefits file for the given process (can be specified multiple times).  Each \
-          argument should have the form `process_name:file` Each file should be a CSV containing a \
-          list of mmap filters in the format:\n\
+        (@arg MM_ECON_BENEFIT_PER_PROC: --mm_econ_benefits +takes_value ...
+         requires[MM_ECON] number_of_values(2)
+         "Set a benefits file for the given process (can be specified multiple times). Each \
+          occurence of this flag should be followed by two arguments: a process name and file. \
+          Each file should be a CSV containing a list of mmap filters in the format:\n\
           SECTION,MISSES,CONSTRAINTS\n\
           where SECTION can be code, data, heap, or mmap,\n\
           CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
@@ -352,13 +352,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let mm_econ_benefits = sub_m
         .values_of("MM_ECON_BENEFIT_PER_PROC")
         .map(|s| {
-            s.map(|perproc| {
-                let mut parts = perproc.split(":");
-                let p = parts.next().unwrap().into();
-                let f = parts.next().unwrap().into();
-                (p, f)
-            })
-            .collect::<Vec<_>>()
+            let all = s.collect::<Vec<_>>();
+            all.chunks_exact(2)
+                .map(|parts| (parts[0].to_owned(), parts[1].to_owned()))
+                .collect::<Vec<_>>()
         })
         .unwrap_or_else(Vec::new);
 
