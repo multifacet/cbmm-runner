@@ -43,9 +43,10 @@ pub fn setup_apriori_paging_processes<S: AsRef<str>>(
 }
 
 /// Generate a command prefix to run perf stat collecting the given counters.
-pub fn gen_perf_command_prefix<S1: AsRef<str>, S2: AsRef<str>>(
-    output_file: S1,
-    counters: &[S2],
+pub fn gen_perf_command_prefix(
+    output_file: impl AsRef<str>,
+    counters: &[impl AsRef<str>],
+    extra_args: impl AsRef<str>,
 ) -> String {
     let mut prefix = String::from("perf stat ");
 
@@ -56,6 +57,10 @@ pub fn gen_perf_command_prefix<S1: AsRef<str>, S2: AsRef<str>>(
 
     prefix.push_str(" -o ");
     prefix.push_str(output_file.as_ref());
+
+    prefix.push_str(" ");
+    prefix.push_str(extra_args.as_ref());
+
     prefix.push_str(" -- ");
 
     prefix
@@ -304,12 +309,8 @@ where
     // Start `perf` if needed.
     Ok(if let Some((output_path, counters)) = &cfg.mmu_perf {
         let handle = shell.spawn(cmd!(
-            "perf stat \
-            -e {} \
-            -p `pgrep memcached` 2>&1 | \
-            tee {}",
-            counters.join(" -e "),
-            output_path
+            "{}",
+            gen_perf_command_prefix(output_path, counters, "-p `pgrep memcached`")
         ))?;
 
         // Wait for perf to start collection.
@@ -566,7 +567,7 @@ pub fn spawn_nas_cg(
             cmd!(
                 "taskset -c {} {} {} ./bin/cg.{}.x > {}",
                 tctx.next(),
-                gen_perf_command_prefix(mmu_overhead_file, &counters),
+                gen_perf_command_prefix(mmu_overhead_file, &counters, ""),
                 cb_wrapper_cmd.unwrap_or(""),
                 class,
                 output_file.unwrap_or("/dev/null"),
@@ -1109,9 +1110,8 @@ where
             // Start `perf` if needed.
             let perf_handle = if let Some((mmu_overhead_file, counters)) = &cfg_mongodb.mmu_perf {
                 let handle = shell.spawn(cmd!(
-                    "sudo perf stat -e {} -p `pgrep mongod` -o {}",
-                    counters.join(" -e "),
-                    mmu_overhead_file
+                    "{}",
+                    gen_perf_command_prefix(mmu_overhead_file, counters, "-p `pgrep mongod`"),
                 ))?;
 
                 // Wait for perf to start collection.
@@ -1181,14 +1181,9 @@ pub fn run_graph500(
         None => "".into(),
     };
 
-    let (mmu_perf, mmu_output) = if let Some((mmu_output, counters)) = mmu_overhead {
-        (
-            format!("perf stat -e {} -D 5000 -- ", counters.join(" -e ")),
-            format!(" 2> {}", mmu_output),
-        )
-    } else {
-        ("".into(), "".into())
-    };
+    let mmu_perf = mmu_overhead
+        .map(|(mmu_output, counters)| gen_perf_command_prefix(mmu_output, counters, "-D 5000"))
+        .unwrap_or_else(String::new);
 
     // Graph500 consists of 3 phases. The first phase generates the graph. It is not considered
     // part of the benchmark, but it takes a looong time. For memory tracing, we want to fast
@@ -1209,13 +1204,12 @@ pub fn run_graph500(
 
     // Run the workload, possibly under instrumentation, but don't block.
     let handle = shell.spawn(cmd!(
-        "{}{}{}{}/omp-csr/omp-csr -s {} {} | tee {}",
+        "{}{}{}{}/omp-csr/omp-csr -s {} | tee {}",
         mmu_perf,
         damon,
         pintool,
         graph500_path,
         scale,
-        mmu_output,
         output_file,
     ))?;
 
@@ -1260,16 +1254,9 @@ pub fn run_thp_ubmk(
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
-                "sudo taskset -c {} \
-                perf stat \
-                -e {} \
-                -D 65000 \
-                -o {}
-                -- {} \
-                ./ubmk {} {}",
+                "sudo taskset -c {} {} {} ./ubmk {} {}",
                 pin_core,
-                counters.join(" -e "),
-                mmu_overhead_file,
+                gen_perf_command_prefix(mmu_overhead_file, counters, "-D 65000"),
                 cb_wrapper_cmd.unwrap_or(""),
                 size,
                 reps_str,
@@ -1337,16 +1324,9 @@ pub fn run_thp_ubmk_shm(
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
-                "sudo taskset -c {} \
-                perf stat \
-                -e {} \
-                -D 5000 \
-                -o {} \
-                -- {} \
-                ./ubmk-shm {} {} {}",
+                "sudo taskset -c {} {} {} ./ubmk-shm {} {} {}",
                 pin_core,
-                counters.join(" -e "),
-                mmu_overhead_file,
+                gen_perf_command_prefix(mmu_overhead_file, counters, "-D 5000"),
                 cb_wrapper_cmd.unwrap_or(""),
                 use_huge_pages,
                 size,
@@ -1463,7 +1443,7 @@ pub fn run_hacky_spec17(
             cmd!(
                 "sudo taskset -c {} {} {} {}",
                 pin_cores,
-                gen_perf_command_prefix(mmu_overhead_file, &counters),
+                gen_perf_command_prefix(mmu_overhead_file, &counters, ""),
                 cb_wrapper_cmd.unwrap_or(""),
                 cmd,
             )
@@ -1623,13 +1603,9 @@ pub fn run_canneal(
     if let Some((mmu_overhead_file, counters)) = mmu_overhead {
         shell.run(
             cmd!(
-                "sudo taskset -c {} \
-                perf stat \
-                -e {} -o {} \
-                -- {} {}",
+                "sudo taskset -c {} {} {} {}",
                 pin_core,
-                counters.join(" -e "),
-                mmu_overhead_file,
+                gen_perf_command_prefix(mmu_overhead_file, counters, ""),
                 cb_wrapper_cmd.unwrap_or(""),
                 CANNEAL_CMD,
             )

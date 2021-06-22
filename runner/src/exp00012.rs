@@ -580,7 +580,7 @@ where
             // Add prefix to measure mmu overhead.
             if let Some((mmu_overhead_file, counters)) = mmu_overhead {
                 let key = MixWorkloadKey::from_name(instrumented_proc.as_ref().unwrap());
-                let prefix = gen_perf_command_prefix(mmu_overhead_file, &counters);
+                let prefix = gen_perf_command_prefix(mmu_overhead_file, &counters, "");
                 wk.add_command_prefix(key, &prefix);
             }
 
