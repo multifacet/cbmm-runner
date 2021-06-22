@@ -605,7 +605,7 @@ bitflags! {
 ///
 /// - `exp_dir` is the path of the `numactl` benchmark directory.
 /// - `r` is the number of times to call `memhog`, not the value of `-r`. `-r` is always passed a
-///   value of `1`. If `None`, then run indefinitely.
+///   value of `1`, unless we run indefinitely. If `None`, then run indefinitely.
 /// - `size_kb` is the number of kilobytes to mmap and touch.
 pub fn run_memhog(
     shell: &SshShell,
@@ -618,29 +618,22 @@ pub fn run_memhog(
 ) -> Result<SshSpawnHandle, SshError> {
     shell.spawn(cmd!(
         "{} ; do \
-         LD_LIBRARY_PATH={} taskset -c {} {} {}/memhog -r1 {}k {} {} > /dev/null ; \
+         LD_LIBRARY_PATH={} taskset -c {} {} {}/memhog -r{} {}k {} {} > /dev/null ; \
          done; \
          echo memhog done ;",
-        if let Some(r) = r {
-            format!("for i in `seq {}`", r)
-        } else {
-            "while [ 1 ]".into()
-        },
+        format!("for i in `seq {}`", r.unwrap_or(1)),
         exp_dir,
         tctx.next(),
         cb_wrapper_cmd.unwrap_or(""),
         exp_dir,
+        if r.is_some() { 1 } else { 0 },
         size_kb,
-        if opts.contains(MemhogOptions::PIN) {
-            "-p"
-        } else {
-            ""
-        },
-        if opts.contains(MemhogOptions::DATA_OBLIV) {
-            "-o"
-        } else {
-            ""
-        },
+        opts.contains(MemhogOptions::PIN)
+            .then(|| "-p")
+            .unwrap_or(""),
+        opts.contains(MemhogOptions::DATA_OBLIV)
+            .then(|| "-o")
+            .unwrap_or(""),
     ))
 }
 

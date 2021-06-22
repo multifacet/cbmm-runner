@@ -219,7 +219,7 @@ impl MultiProcessWorkload for MixWorkload<'_> {
         let _memhog_handles = run_memhog(
             shell,
             self.numactl_dir,
-            None,
+            None, // repeat indefinitely
             (self.size_gb << 20) / 3,
             MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
             // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
@@ -234,8 +234,10 @@ impl MultiProcessWorkload for MixWorkload<'_> {
         // Wait for redis client to finish
         redis_client_handle.join().1?;
 
-        // Make sure redis dies so that perf terminates.
+        // Make sure processes die so that perf terminates.
         shell.run(cmd!("pkill -9 redis-server"))?;
+        shell.run(cmd!("pkill -9 memhog"))?;
+        shell.run(cmd!("pkill -9 matrix_mult2"))?;
 
         // Make sure perf is done.
         shell.run(cmd!(
