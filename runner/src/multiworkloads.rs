@@ -457,28 +457,28 @@ impl CloudsuiteWebServingWorkload<'_> {
                 }
                 CloudsuiteWebServingWorkloadKey::Nginx(ProcessSelector::Master) => {
                     shell.run(cmd!(
-                        "for p in $(pgrep -f 'nginx: master') ; do \
+                        "for p in $(pgrep -f '^nginx: master') ; do \
                          cat {} | sudo tee /proc/$p/mmap_filters ; done",
                         benefits_file
                     ))?;
                 }
                 CloudsuiteWebServingWorkloadKey::Nginx(ProcessSelector::RandomWorker) => {
                     shell.run(cmd!(
-                        "for p in $(pgrep -f 'nginx: worker') ; do \
+                        "for p in $(pgrep -f '^nginx: worker') ; do \
                          cat {} | sudo tee /proc/$p/mmap_filters ; done",
                         benefits_file
                     ))?;
                 }
                 CloudsuiteWebServingWorkloadKey::PhpFpm(ProcessSelector::Master) => {
                     shell.run(cmd!(
-                        "for p in $(pgrep -f 'php-fpm: master') ; do \
+                        "for p in $(pgrep -f '^php-fpm: master') ; do \
                          cat {} | sudo tee /proc/$p/mmap_filters ; done",
                         benefits_file
                     ))?;
                 }
                 CloudsuiteWebServingWorkloadKey::PhpFpm(ProcessSelector::RandomWorker) => {
                     shell.run(cmd!(
-                        "for p in $(pgrep -f 'php-fpm: pool') ; do \
+                        "for p in $(pgrep -f '^php-fpm: pool') ; do \
                          cat {} | sudo tee /proc/$p/mmap_filters ; done",
                         benefits_file
                     ))?;
@@ -514,18 +514,18 @@ impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
     ) -> Result<Vec<SshSpawnHandle>, failure::Error> {
         // Start db, cache, webserver.
         with_shell! { shell =>
-            cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=mysql_server \
+            cmd!("docker run -dt --pid=host --rm --net=host --name=mysql_server \
                   cloudsuite/web-serving:db_server \
                   $(hostname -I | awk '{{print $1}}')"),
-            cmd!("docker run -dt --pid=\"host\" --rm --net=host --name=memcache_server \
+            cmd!("docker run -dt --pid=host --rm --net=host --name=memcache_server \
                   cloudsuite/web-serving:memcached_server"),
             cmd!("WSIP=$(hostname -I | awk '{{print $1}}')
-                  docker run -e \"HHVM={}\" -dt --pid=\"host\" --rm --net=host \
+                  docker run -e \"HHVM={}\" -dt --pid=host --rm --net=host \
                   --name=web_server_local cloudsuite/web-serving:web_server \
                   /etc/bootstrap.sh $WSIP $WSIP", self.use_hhvm),
 
             // Run the client to ensure that the servers have started.
-            cmd!("docker run --pid=\"host\" --rm --net=host --name=faban_client \
+            cmd!("docker run --pid=host --rm --net=host --name=faban_client \
                   cloudsuite/web-serving:faban_client \
                   $(hostname -I | awk '{{print $1}}') 1"),
         }
