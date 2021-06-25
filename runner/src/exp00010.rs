@@ -65,6 +65,7 @@ enum Workload {
         read_prop: f32,
         update_prop: f32,
         tmpfs_size: Option<usize>,
+        cache_size: Option<usize>,
     },
     Graph500 {
         scale: usize,
@@ -236,6 +237,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop")
             (@arg TMPFS_SIZE: --tmpfs_size + takes_value {validator::is::<usize>}
              "Place the MongoDB database in a tmpfs of the specified size in GB.")
+            (@arg CACHE_SIZE: --cache_size + takes_value {validator::is::<usize>}
+             "The size in GB of MongoDB's in memory cache")
         )
         (@subcommand graph500 =>
             (about: "Run the graph500 workload (all kernels).")
@@ -444,6 +447,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             } else {
                 None
             };
+            let cache_size = if let Some(size) = sub_m.value_of("CACHE_SIZE") {
+                // The command line arg is in GB and MongoDB wants it in MB
+                Some(size.parse::<usize>().unwrap() * 1024)
+            } else {
+                None
+            };
 
             if read_prop > 1.0 || read_prop < 0.0 {
                 panic!("--read_prop must be between 0 and 1.");
@@ -460,6 +469,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 read_prop,
                 update_prop,
                 tmpfs_size,
+                cache_size,
             }
         }
 
@@ -1666,13 +1676,14 @@ where
             read_prop,
             update_prop,
             tmpfs_size,
+            cache_size,
         } => {
             let ycsb_path = &dir!(bmks_dir, "YCSB");
             let mongodb_config = MongoDBWorkloadConfig {
                 bmks_dir,
                 db_dir: &dir!(user_home, "mongodb"),
                 tmpfs_size,
-                cache_size_mb: None,
+                cache_size_mb: cache_size,
                 server_pin_core: Some(tctx.next()),
                 client_pin_core: {
                     tctx.skip();
