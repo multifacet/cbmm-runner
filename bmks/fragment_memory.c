@@ -118,7 +118,7 @@ int main(int argc, char* argv[]) {
     if(argc == 2)
     {
         percentage = atoi(argv[1]);
-	if (percentage < 0 || percentage > 100)
+        if (percentage < 0 || percentage > 100)
             return -2;
     }
     else
@@ -148,16 +148,17 @@ int main(int argc, char* argv[]) {
     // Force the memory to be reallocated somewhere else and then freed.
     pid = fork();
     if (pid == -1) {
-      perror("Unable to fork.");
-      return -7;
+        perror("Unable to fork.");
+        return -7;
     } else if (pid == 0) { // Child
-      ret = reclaim_memory(total);
-      if (ret != 0) return ret;
+        ret = reclaim_memory(total);
+        return ret;
     } else {
-      pid = wait(NULL);
-      if (pid == -1)
-        printf("Unable to wait.\n");
-        return -8;
+        pid = wait(NULL);
+        if (pid == -1) {
+            printf("Unable to wait.\n");
+            return -8;
+        }
     }
 
     printf("Done. Daemonizing and sleeping...\n");
@@ -165,8 +166,8 @@ int main(int argc, char* argv[]) {
     // Daemonize and sleep...
     ret = daemon(0, 0);
     if (ret != 0) {
-      perror("Unable to daemonize.");
-      return -13;
+        perror("Unable to daemonize.");
+        return -13;
     }
 
     while(1) sleep(10000);
