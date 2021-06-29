@@ -16,6 +16,12 @@
 #define SUPER   (2ULL*1024*1024)
 #define SMALL   (1ULL*512*1024)
 
+#define ERROR_RETURN(ret, msg) ERROR_RETURN_COND(((ret) < 0), msg)
+#define ERROR_RETURN_COND(cond, msg) if (cond) {\
+    perror("Unable to " msg); \
+    return -1; \
+}
+
 // Set some system settings.
 int settings() {
     int ret;
@@ -23,14 +29,14 @@ int settings() {
     char buf[48];
 
     ret = system("echo 1 > /proc/sys/vm/overcommit_memory");
-    if (ret != 0) return -9;
+    ERROR_RETURN(ret, "set overcommit");
 
     ret = system("sysctl -w vm.max_map_count=1000000000");
-    if (ret != 0) return -10;
+    ERROR_RETURN(ret, "set mmap limit");
 
     snprintf(buf, 48, "echo -1000 > /proc/%d/oom_score_adj", pid);
     ret = system(buf);
-    if (ret != 0) return -11;
+    ERROR_RETURN(ret, "blacklist OOM");
 
     return 0;
 }
@@ -42,10 +48,7 @@ ssize_t total_memory() {
     unsigned long total;
 
     ret = sysinfo(&info);
-    if (ret != 0) {
-        perror("Unable to get sysinfo.");
-        return -12;
-    }
+    ERROR_RETURN(ret, "get sysinfo");
 
     // Amount of free memory.
     total = info.freeram * info.mem_unit;
@@ -70,17 +73,14 @@ int fragment(size_t size) {
 
     // mmap the required amount of memory.
     a = mmap(0, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_POPULATE, -1, 0);
-    if (a == MAP_FAILED) return -3;
+    ERROR_RETURN_COND(a == MAP_FAILED, "mmap");
 
     printf("mmapped\n");
 
     // Return all but one page from each huge page... ruining those huge pages.
     for (unsigned long i = 0; i < (size >> 21); ++i) {
         ret = munmap(a + (i<<21), (1<<21) - (1<<12));
-        if (ret != 0) {
-            perror("Unable to munmap.");
-            return -5;
-        }
+        ERROR_RETURN(ret, "munmap");
     }
 
     printf("munmapped\n");
@@ -96,12 +96,10 @@ int reclaim_memory(ssize_t amount) {
     printf("Reclaiming memory...");
 
     b = mmap(0, amount, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_POPULATE, -1, 0);
-    if (b == MAP_FAILED) return -4;
+    ERROR_RETURN_COND(b == MAP_FAILED, "mmap");
+
     ret = munmap(b, amount);
-    if (ret != 0) {
-        perror("Unable to munmap.");
-        return -6;
-    }
+    ERROR_RETURN(ret, "munmap");
 
     printf("done\n");
 
@@ -124,51 +122,44 @@ int main(int argc, char* argv[]) {
     else
     {
         printf("USAGE: ./foo <percent fragmented>\n");
-        return -1;
+        return -2;
     }
 
     if (uid != 0) {
         printf("Must run as root!");
-        return -13;
+        return -2;
     }
 
     // Set some important settings.
     ret = settings();
-    if (ret != 0) return ret;
+    ERROR_RETURN(ret, "munmap");
 
     // Amount of memory to fragment.
     total = total_memory();
-    if (total < 0) return total;
+    ERROR_RETURN(ret, "get total memory");
     size = (total * percentage / 100) & ~(SUPER - 1);
 
     // Map the amount of memory we want to fragment with MAP_POPULATE.
     ret = fragment(size);
-    if (ret != 0) return ret;
+    ERROR_RETURN(ret, "fragment memory");
 
     // Force the memory to be reallocated somewhere else and then freed.
     pid = fork();
-    if (pid == -1) {
-        perror("Unable to fork.");
-        return -7;
-    } else if (pid == 0) { // Child
+    ERROR_RETURN(pid, "fork");
+
+    if (pid == 0) { // Child
         ret = reclaim_memory(total);
         return ret;
     } else {
         pid = wait(NULL);
-        if (pid == -1) {
-            printf("Unable to wait.\n");
-            return -8;
-        }
+        ERROR_RETURN(pid, "wait for child");
     }
 
     printf("Done. Daemonizing and sleeping...\n");
 
     // Daemonize and sleep...
     ret = daemon(0, 0);
-    if (ret != 0) {
-        perror("Unable to daemonize.");
-        return -13;
-    }
+    ERROR_RETURN(pid, "daemonize");
 
     while(1) sleep(10000);
 }
