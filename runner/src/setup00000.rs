@@ -1068,6 +1068,10 @@ where
         cmd!("gcc -Wall -Werror -o fragment_memory fragment_memory.c")
             .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR)),
     )?;
+    ushell.run(
+        cmd!("$HOME/.cargo/bin/rustc buddyinfo.rs")
+            .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR)),
+    )?;
 
     // Cloudsuite - web-serving
     ushell.run(cmd!("docker pull -a cloudsuite/web-serving"))?;

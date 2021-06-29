@@ -1150,6 +1150,7 @@ where
     // Fragment memory if needed.
     if let Some(percentage) = fragmentation {
         ushell.run(cmd!("sudo ./fragment_memory {}", percentage).cwd(&bmks_dir))?;
+        ushell.run(cmd!("./buddyinfo").cwd(&bmks_dir))?;
     }
 
     Ok(InitialSetupState {
