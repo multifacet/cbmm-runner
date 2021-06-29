@@ -61,6 +61,8 @@ struct Config {
     enable_aslr: bool,
     asynczero: bool,
     hawkeye: Option<String>,
+    #[name(self.fragmentation.is_some())]
+    fragmentation: Option<usize>,
 
     #[name(self.transparent_hugepage_enabled == "never")]
     transparent_hugepage_enabled: String,
@@ -159,6 +161,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Turn on HawkEye (ASPLOS '19).")
         (@arg MM_ECON: --mm_econ conflicts_with[HAWKEYE]
          "Enable mm_econ.")
+        (@arg FRAGMENTATION: --fragmentation +takes_value {validator::is::<usize>}
+         "Fragment the given percentage of memory. Must be an integer between 0 and 100. \
+          This will consume a bit of memory, as there is a daemon that holds on to a bit \
+          of memory to fragment it.")
 
         // Per-process environmental settings
         (@arg EAGER: --eager +takes_value ...
@@ -344,6 +350,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         (1000, 1000)
     };
     let mm_econ = sub_m.is_present("MM_ECON");
+    let fragmentation = sub_m
+        .value_of("FRAGMENTATION")
+        .map(|s| s.parse::<usize>().unwrap());
 
     let eager = sub_m
         .values_of("EAGER")
@@ -386,6 +395,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         enable_aslr,
         asynczero,
         hawkeye,
+        fragmentation,
 
         transparent_hugepage_enabled,
         transparent_hugepage_defrag,
@@ -470,6 +480,7 @@ where
         cfg.kbadgerd,
         cfg.kbadgerd_sleep_interval,
         cfg.eager.is_some(),
+        cfg.fragmentation,
         // Run normal thp init...
         |_shell| Ok(true),
         // Compute mmap_filters_csv_files

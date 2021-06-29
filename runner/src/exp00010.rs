@@ -131,6 +131,9 @@ struct Config {
     #[name(self.eager)]
     eager: bool,
 
+    #[name(self.fragmentation.is_some())]
+    fragmentation: Option<usize>,
+
     #[name(self.transparent_hugepage_enabled == "never")]
     transparent_hugepage_enabled: String,
     transparent_hugepage_defrag: String,
@@ -349,6 +352,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg HAWKEYE: --hawkeye
          conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR PFTRACE EAGER MMSTATS]
          "Turn on HawkEye (ASPLOS '19).")
+        (@arg FRAGMENTATION: --fragmentation +takes_value {validator::is::<usize>}
+         "Fragment the given percentage of memory. Must be an integer between 0 and 100. \
+          This will consume a bit of memory, as there is a daemon that holds on to a bit \
+          of memory to fragment it.")
     };
 
     let app = damon::add_cli_options(app);
@@ -583,6 +590,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     });
     let asynczero = sub_m.is_present("ASYNCZERO");
     let hawkeye = sub_m.is_present("HAWKEYE");
+    let fragmentation = sub_m
+        .value_of("FRAGMENTATION")
+        .map(|s| s.parse::<usize>().unwrap());
 
     // FIXME: thp_ubmk_shm doesn't support thp_huge_addr at the moment. It's possible to implement
     // it, but I haven't yet... The implementation would look as follows: thp_ubmk_shm would take
@@ -696,6 +706,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         workload,
 
         eager,
+        fragmentation,
 
         transparent_hugepage_enabled,
         transparent_hugepage_defrag,
@@ -844,6 +855,7 @@ pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6, F7>(
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
     eager: bool,
+    fragmentation: Option<usize>,
     // Returns false if there was an exception and this should be skipped...
     transparent_hugepage_excpetion_hack: F1,
     compute_mmap_filter_csv_files: F2,
@@ -1135,6 +1147,11 @@ where
         )?;
     }
 
+    // Fragment memory if needed.
+    if let Some(percentage) = fragmentation {
+        ushell.run(cmd!("sudo ./fragment_memory {}", percentage).cwd(&bmks_dir))?;
+    }
+
     Ok(InitialSetupState {
         user_home,
         zerosim_exp_path,
@@ -1341,6 +1358,7 @@ where
         cfg.kbadgerd,
         cfg.kbadgerd_sleep_interval,
         cfg.eager,
+        cfg.fragmentation,
         // THP exception hack
         |shell| {
             if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
