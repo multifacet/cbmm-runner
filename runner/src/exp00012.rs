@@ -559,7 +559,10 @@ where
         },
         // No kbadgerd exceptionss...
         false,
+        // Choose eager paging process.
         |_| cfg.eager.clone().unwrap(),
+        // Choose hawkeye debloat process.
+        |_| cfg.hawkeye.clone().unwrap(),
     )?;
 
     // Collect timers on VM

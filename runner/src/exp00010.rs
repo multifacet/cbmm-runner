@@ -834,7 +834,7 @@ pub struct InitialSetupState<'s> {
     pub kbadgerd_thread: Option<spurs::SshSpawnHandle>,
 }
 
-pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6, F7>(
+pub fn initial_setup<'s, P: Parametrize>(
     ushell: &'s SshShell,
     output: &'s P,
     asynczero: bool,
@@ -857,25 +857,22 @@ pub fn initial_setup<'s, P, F1, F2, F3, F4, F5, F6, F7>(
     eager: bool,
     fragmentation: Option<usize>,
     // Returns false if there was an exception and this should be skipped...
-    transparent_hugepage_excpetion_hack: F1,
-    compute_mmap_filter_csv_files: F2,
-    compute_mmu_overhead: F3,
-    compute_instrumented_proc: F4,
-    set_huge_addr: F5,
-    save_mmap_filter_benefits: F6,
+    transparent_hugepage_excpetion_hack: impl FnOnce(&SshShell) -> Result<bool, failure::Error>,
+    compute_mmap_filter_csv_files: impl FnOnce(&str) -> HashMap<String, String>,
+    compute_mmu_overhead: impl FnOnce(
+        &SshShell,
+        &str,
+    ) -> Result<Option<(String, Vec<String>)>, failure::Error>,
+    compute_instrumented_proc: impl FnOnce() -> Option<String>,
+    set_huge_addr: impl FnOnce(&SshShell, &Option<String>) -> Result<(), failure::Error>,
+    save_mmap_filter_benefits: impl FnOnce(
+        &SshShell,
+        &HashMap<String, String>,
+    ) -> Result<(), failure::Error>,
     kbadgerd_early_start_exceptions: bool,
-    choose_eager_paging_process: F7,
-) -> Result<InitialSetupState<'s>, failure::Error>
-where
-    P: Parametrize,
-    F1: FnOnce(&SshShell) -> Result<bool, failure::Error>,
-    F2: FnOnce(&str) -> HashMap<String, String>,
-    F3: FnOnce(&SshShell, &str) -> Result<Option<(String, Vec<String>)>, failure::Error>,
-    F4: FnOnce() -> Option<String>,
-    F5: FnOnce(&SshShell, &Option<String>) -> Result<(), failure::Error>,
-    F6: FnOnce(&SshShell, &HashMap<String, String>) -> Result<(), failure::Error>,
-    F7: FnOnce(&Option<String>) -> Vec<String>,
-{
+    choose_eager_paging_process: impl FnOnce(&Option<String>) -> Vec<String>,
+    hawkeye_debloat_process: impl FnOnce(&Option<String>) -> String,
+) -> Result<InitialSetupState<'s>, failure::Error> {
     let user_home = get_user_home_dir(&ushell)?;
     let zerosim_exp_path = dir!(
         &user_home,
@@ -1112,10 +1109,11 @@ where
 
     // Turn on hawkeye bloat removal thread and profiler if needed.
     if hawkeye {
+        let debloat_process = hawkeye_debloat_process(&instrumented_proc);
         ushell.run(cmd!(
             "sudo insmod HawkEye/kbuild/hawkeye_modules/bloat_recovery/remove.ko \
                  debloat_comm={}",
-            instrumented_proc.as_ref().unwrap(),
+            debloat_process
         ))?;
         // 120s sleep between debloating, according to Ashish Panwar.
         ushell.run(cmd!(
@@ -1125,7 +1123,7 @@ where
         // Use default interval of 10s -- Ashish Panwar.
         ushell.run(cmd!(
             "./x86-MMU-Profiler/global_profile -d -p {} {}",
-            instrumented_proc.as_ref().unwrap(),
+            debloat_process,
             match cpu_family_model(ushell)? {
                 Processor::Intel(IntelX86Model::SkyLakeServer) => "-f skylakesp",
                 Processor::Intel(IntelX86Model::HaswellConsumer) => "-f haswell",
@@ -1486,6 +1484,8 @@ where
         ),
         // Choose eager paging process.
         |proc_name| vec![proc_name.clone().unwrap()],
+        // Choose hawkeye debloating process.
+        |proc_name| proc_name.clone().unwrap(),
     )?;
 
     let proc_name = proc_name.as_ref().unwrap();
