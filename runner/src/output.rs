@@ -104,6 +104,7 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
     /// that is not a `.out` or a `.params` file. The parameter `ext` is the extension without the
     /// leading dot (e.g. `err`).
     fn gen_file_name(&self, ext: &str) -> String {
+        const MAX_FILENAME_LEN: usize = 200;
         /// Helper to add the given setting to the given string. Used to build file names. The caller
         /// should ensure that the setting is registered.
         fn append_setting(string: &mut String, setting: &str, val: &str) {
@@ -133,6 +134,9 @@ pub trait Parametrize: Serialize + Deserialize<'static> {
             }
             append_setting(&mut base, setting, value);
         }
+
+        // Make sure the filename doesn't get too long
+        base.truncate(MAX_FILENAME_LEN);
 
         // append the date
         base.push_str("-");
