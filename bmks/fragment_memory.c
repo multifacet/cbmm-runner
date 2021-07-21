@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
     int percentage, ret;
     size_t size;
     ssize_t total;
-    pid_t pid;
+    //pid_t pid;
     uid_t uid = geteuid();
 
     if(argc == 2)
@@ -143,23 +143,24 @@ int main(int argc, char* argv[]) {
     ret = fragment(size);
     ERROR_RETURN(ret, "fragment memory");
 
-    // Force the memory to be reallocated somewhere else and then freed.
-    pid = fork();
-    ERROR_RETURN(pid, "fork");
+    //// Force the memory to be reallocated somewhere else and then freed.
+    //pid = fork();
+    //ERROR_RETURN(pid, "fork");
 
-    if (pid == 0) { // Child
-        ret = reclaim_memory(total);
-        return ret;
-    } else {
-        pid = wait(NULL);
-        ERROR_RETURN(pid, "wait for child");
-    }
+    //if (pid == 0) { // Child
+    //    ret = reclaim_memory(total);
+    //    return ret;
+    //} else {
+    //    pid = wait(NULL);
+    //    ERROR_RETURN(pid, "wait for child");
+    //}
 
-    printf("Done. Daemonizing and sleeping...\n");
+    //printf("Done. Daemonizing and sleeping...\n");
+    printf("Done. sleeping...\n");
 
-    // Daemonize and sleep...
-    ret = daemon(0, 0);
-    ERROR_RETURN(pid, "daemonize");
+    //// Daemonize and sleep...
+    //ret = daemon(0, 0);
+    //ERROR_RETURN(pid, "daemonize");
 
     while(1) sleep(10000);
 }
