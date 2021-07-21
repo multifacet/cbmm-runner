@@ -1488,11 +1488,21 @@ fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, 
     let user_home = &get_user_home_dir(&shell)?;
     let input_file = &dir!(user_home, "xz_input.tar.xz");
     let raw_input_file = &dir!(user_home, "xz_input.tar");
+
     // These directories add up to be about 25GB
-    let constituent_dirs: Vec<String> = vec!["qemu-4.0.0", "parsec-3.0", "kernel-*"]
-        .iter()
-        .map(|&s| dir!(user_home, s))
-        .collect();
+    let constituent_dirs: Vec<String> = {
+        // Depending on what kernel is installed, the name is different.
+        let kernel_dir = if shell.run(cmd!("ls kernel-*")).is_ok() {
+            "kernel-*"
+        } else {
+            "HawkEye"
+        };
+
+        vec!["qemu-4.0.0", "parsec-3.0", kernel_dir]
+            .iter()
+            .map(|&s| dir!(user_home, s))
+            .collect()
+    };
 
     // If the input file does not exist, we have to create it
     let result = shell.run(cmd!("test -f {}", input_file));
