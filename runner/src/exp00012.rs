@@ -451,6 +451,7 @@ where
         mut tctx,
         bgctx,
         kbadgerd_thread: _kbadgerd_thread,
+        sleeping_fragmenter: _sleeping_fragmenter,
 
         cores: _,
         damon_path: _,

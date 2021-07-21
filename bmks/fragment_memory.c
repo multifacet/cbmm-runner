@@ -158,6 +158,10 @@ int main(int argc, char* argv[]) {
     //printf("Done. Daemonizing and sleeping...\n");
     printf("Done. sleeping...\n");
 
+    // Create sentinel.
+    ret = system("touch /tmp/fragmented_sentinel");
+    ERROR_RETURN(ret, "touch sentinel");
+
     //// Daemonize and sleep...
     //ret = daemon(0, 0);
     //ERROR_RETURN(pid, "daemonize");

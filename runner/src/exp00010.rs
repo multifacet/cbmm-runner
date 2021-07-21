@@ -832,6 +832,7 @@ pub struct InitialSetupState<'s> {
     pub bgctx: BackgroundContext<'s>,
     pub instrumented_proc: Option<String>,
     pub kbadgerd_thread: Option<spurs::SshSpawnHandle>,
+    pub sleeping_fragmenter: Option<spurs::SshSpawnHandle>,
 }
 
 pub fn initial_setup<'s, P: Parametrize>(
@@ -944,6 +945,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let pftrace_file = dir!(&results_dir, output.gen_file_name("pftrace"));
     let pftrace_rejected_file = dir!(&results_dir, output.gen_file_name("rejected"));
     let runtime_file = dir!(&results_dir, output.gen_file_name("runtime"));
+    let frag_file = dir!(&results_dir, output.gen_file_name("precondition.frag"));
 
     let bmks_dir = dir!(&user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
     let damon_path = dir!(&bmks_dir, DAMON_PATH);
@@ -1146,10 +1148,18 @@ pub fn initial_setup<'s, P: Parametrize>(
     }
 
     // Fragment memory if needed.
-    if let Some(percentage) = fragmentation {
-        ushell.run(cmd!("sudo ./fragment_memory {}", percentage).cwd(&bmks_dir))?;
-        ushell.run(cmd!("./buddyinfo").cwd(&bmks_dir))?;
-    }
+    let sleeping_fragmenter = if let Some(percentage) = fragmentation {
+        ushell.run(cmd!("rm /tmp/fragmented_sentinel"))?;
+        let handle = ushell.spawn(cmd!("sudo ./fragment_memory {}", percentage).cwd(&bmks_dir))?;
+        ushell.run(cmd!(
+            "while [ ! -e /tmp/fragmented_sentinel ] ; do sleep 1 ; done ;"
+        ))?;
+        ushell.run(cmd!("./buddyinfo > {}", frag_file).cwd(&bmks_dir))?;
+
+        Some(handle)
+    } else {
+        None
+    };
 
     Ok(InitialSetupState {
         user_home,
@@ -1176,6 +1186,7 @@ pub fn initial_setup<'s, P: Parametrize>(
         bgctx,
         instrumented_proc,
         kbadgerd_thread,
+        sleeping_fragmenter,
     })
 }
 
@@ -1334,6 +1345,7 @@ where
         mut tctx,
         bgctx,
         kbadgerd_thread: _kbadgerd_thread,
+        sleeping_fragmenter: _sleeping_fragmenter,
 
         cores: _,
     } = initial_setup(
