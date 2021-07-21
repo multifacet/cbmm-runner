@@ -1149,7 +1149,11 @@ pub fn initial_setup<'s, P: Parametrize>(
 
     // Fragment memory if needed.
     let sleeping_fragmenter = if let Some(percentage) = fragmentation {
-        ushell.run(cmd!("rm -f /tmp/fragmented_sentinel"))?;
+        ushell.run(cmd!(
+            "echo 1 | sudo tee /sys/module/page_alloc/parameters/shuffle_trigger"
+        ))?;
+        ushell.run(cmd!("dmesg | grep page_alloc"))?;
+        ushell.run(cmd!("sudo rm -f /tmp/fragmented_sentinel"))?;
         let handle = ushell.spawn(cmd!("sudo ./fragment_memory {}", percentage).cwd(&bmks_dir))?;
         ushell.run(cmd!(
             "while [ ! -e /tmp/fragmented_sentinel ] ; do sleep 1 ; done ;"
