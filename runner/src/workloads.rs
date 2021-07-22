@@ -1507,21 +1507,9 @@ fn spec17_xz_get_cmd_with_size(shell: &SshShell, size: usize) -> Result<String, 
     // If the input file does not exist, we have to create it
     let result = shell.run(cmd!("test -f {}", input_file));
     let create_input = match result {
-        Err(e) => {
-            // The file does not exist if test returns 1.
-            // We can't handle any other error
-            match e {
-                SshError::NonZeroExit { cmd: _, exit } => {
-                    if exit == 1 {
-                        true
-                    } else {
-                        Err(e)?
-                    }
-                }
-                _ => Err(e)?,
-            }
-        }
         Ok(_) => false,
+        Err(SshError::NonZeroExit { cmd: _, exit }) if exit == 1 => true,
+        Err(e) => Err(e)?,
     };
 
     if create_input {
