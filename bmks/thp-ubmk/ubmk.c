@@ -141,6 +141,8 @@ int main(int argc, const char *argv[]) {
         printf("Using %ld reps.\n", reps);
 	}
 
+	int uninstrumented = !!getenv("THP_UBMK_UNINSTRUMENTED");
+
 	printf("Creating a region %lu GB\n", size);
 
 	struct hpage *mem = mmap(ADDRESS, size << 30, PROT_WRITE | PROT_READ,
@@ -169,19 +171,25 @@ int main(int argc, const char *argv[]) {
 	// Print status update and sleep before touching pages.
 	clock_t elapsed = clock() - start;
 	unsigned long elapsed_secs = elapsed / CLOCKS_PER_SEC;
-	printf("Created a region %lu GB (%lu huge pages) in %lu seconds. "
-		"Waiting %lus.\n",
-		size, n, elapsed_secs, wait_time - elapsed_secs);
+	if (uninstrumented) {
+		printf("Created a region %lu GB (%lu huge pages) in %lu seconds. "
+			"NOT waiting... uninstrumented.\n",
+			size, n, elapsed_secs);
+	} else {
+		printf("Created a region %lu GB (%lu huge pages) in %lu seconds. "
+			"Waiting %lus.\n",
+			size, n, elapsed_secs, wait_time - elapsed_secs);
 
-	if (elapsed_secs >= wait_time) {
-		printf("Didn't wait long enough!\n");
-		exit(-1);
-	}
+		if (elapsed_secs >= wait_time) {
+			printf("Didn't wait long enough!\n");
+			exit(-1);
+		}
 
-	int ret = sleep(wait_time - elapsed_secs);
-	if (ret != 0) {
-		printf("Didn't wait long enough! Sleep interrupted.\n");
-		exit(-1);
+		int ret = sleep(wait_time - elapsed_secs);
+		if (ret != 0) {
+			printf("Didn't wait long enough! Sleep interrupted.\n");
+			exit(-1);
+		}
 	}
 
 	unsigned long long start_bmk = rdtsc();

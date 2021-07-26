@@ -1280,9 +1280,12 @@ pub fn run_thp_ubmk(
             .cwd(bmk_dir),
         )?;
     } else {
+        // The `THP_UBMK_UNINSTRUMENTED` variable allows thp-ubmk to not worry about sleeping,
+        // which can either save time or avoid a failure if e.g. fragmentation causes init to take
+        // an unusually long time.
         shell.run(
             cmd!(
-                "sudo taskset -c {} {} ./ubmk {} {}",
+                "THP_UBMK_UNINSTRUMENTED=1 sudo taskset -c {} {} ./ubmk {} {}",
                 pin_core,
                 cb_wrapper_cmd.unwrap_or(""),
                 size,
