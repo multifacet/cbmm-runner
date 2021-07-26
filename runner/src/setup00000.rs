@@ -90,9 +90,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) If passed, setup and build SPEC 2017 on the remote machine (on the host only). \
           Because SPEC 2017 is not free, you need to pass runner a path to the SPEC 2017 ISO on the \
           driver machine. The ISO will be copied to the remote machine, mounted, and installed there.")
-        (@arg SPEC_XZ_INPUT: --spec_xz_input +takes_value requires[SPEC_2017]
+        (@arg SPEC_XZ_INPUT: --spec_xz_input +takes_value
          "(Optional) If passed, transfer a .tar.xz file to be used for the xz benchmark from the driver \
-          machine to the remote machine. Requires --spec_2017")
+          machine to the remote machine.")
 
         (@arg HOST_PREP: --prepare_host
          "(Optional) Prepare the host for initializing the VM.")
