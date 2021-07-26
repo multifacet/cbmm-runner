@@ -1285,7 +1285,7 @@ pub fn run_thp_ubmk(
         // an unusually long time.
         shell.run(
             cmd!(
-                "THP_UBMK_UNINSTRUMENTED=1 sudo taskset -c {} {} ./ubmk {} {}",
+                "THP_UBMK_UNINSTRUMENTED=1 sudo -E taskset -c {} {} ./ubmk {} {}",
                 pin_core,
                 cb_wrapper_cmd.unwrap_or(""),
                 size,
