@@ -66,6 +66,7 @@ int main(int argc, char *argv[])
     ret = fwrite(filebuf, sizeof(char), len, mmap_filters_file);
     if (ret != len) {
         fprintf(stderr, "Wrote %d bytes. Expected %d\n", ret, len);
+        return -1;
     }
 
     fclose(filter_file);
