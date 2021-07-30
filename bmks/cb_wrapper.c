@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
     FILE* filter_file;
     FILE* mmap_filters_file;
     int len;
+    int count = 0;
     int ret;
     pid_t pid;
 
@@ -63,9 +64,14 @@ int main(int argc, char *argv[])
     }
 
     // Write to the mmap_filters file
-    ret = fwrite(filebuf, sizeof(char), len, mmap_filters_file);
-    if (ret != len) {
-        fprintf(stderr, "Wrote %d bytes. Expected %d\n", ret, len);
+    while (count != len) {
+        ret = fwrite(&filebuf[count], sizeof(char), len - count, mmap_filters_file);
+        if (ret <= 0)
+            break;
+        count += ret;
+    }
+    if (count != len) {
+        fprintf(stderr, "Wrote %d bytes. Expected %d\n", count, len);
         return -1;
     }
 
