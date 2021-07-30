@@ -15,6 +15,7 @@ int main(int argc, char *argv[])
     int len;
     int count = 0;
     int ret;
+    int fd;
     pid_t pid;
 
     // Check if there are enough arguments
@@ -64,8 +65,11 @@ int main(int argc, char *argv[])
     }
 
     // Write to the mmap_filters file
+    fd = fileno(mmap_filters_file);
     while (count != len) {
-        ret = fwrite(&filebuf[count], sizeof(char), len - count, mmap_filters_file);
+        //ret = fwrite(&filebuf[count], sizeof(char), len - count, mmap_filters_file);
+	ret = write(fd, &filebuf[count], len - count);
+	printf("ret %d\n", ret);
         if (ret <= 0)
             break;
         count += ret;
