@@ -14,6 +14,8 @@ use spurs::{cmd, Execute};
 const HAWKEYE_GIT_REPO: &str = "https://github.com/mark-i-m/HawkEye";
 const HAWKEYE_X86_PROFILE_REPO: &str = "https://github.com/mark-i-m/x86-MMU-Profiler";
 
+const HAWKEYE_BRANCH: &str = "ohp";
+
 const HAWKEYE_KERNEL_CONFIG: &[(&str, bool)] = &[
     ("CONFIG_TRANSPARENT_HUGEPAGE", true),
     ("CONFIG_PAGE_TABLE_ISOLATION", false),
@@ -21,6 +23,8 @@ const HAWKEYE_KERNEL_CONFIG: &[(&str, bool)] = &[
     ("CONFIG_GDB_SCRIPTS", true),
     ("CONFIG_FRAME_POINTERS", true),
     ("CONFIG_IKHEADERS", true),
+    ("CONFIG_SLAB_FREELIST_RANDOM", true),
+    ("CONFIG_SHUFFLE_PAGE_ALLOCATOR", true),
 ];
 
 pub fn cli_options() -> clap::App<'static, 'static> {
@@ -70,13 +74,13 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         &ushell,
         KernelSrc::Git {
             repo_path: "HawkEye".into(),
-            commitish: "ohp".into(),
+            commitish: HAWKEYE_BRANCH.into(),
         },
         KernelConfig {
             base_config: KernelBaseConfigSource::Path(config.into()),
             extra_options: HAWKEYE_KERNEL_CONFIG,
         },
-        Some(&crate::gen_local_version("ohp", git_hash)),
+        Some(&crate::gen_local_version(HAWKEYE_BRANCH, git_hash)),
         KernelPkgType::Rpm,
         None,
         /* cpupower */ true,
