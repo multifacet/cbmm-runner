@@ -1096,7 +1096,10 @@ pub fn initial_setup<'s, P: Parametrize>(
         ))?;
         // NOTE: here the count is in individual 4KB pages.
         ushell.run(cmd!(
-            "echo 100 | sudo tee /sys/module/asynczero/parameters/count"
+            "echo 10 | sudo tee /sys/module/asynczero/parameters/count"
+        ))?;
+        ushell.run(cmd!(
+            "echo 100 | sudo tee /sys/module/asynczero/parameters/sleep"
         ))?;
     }
     if hawkeye {
