@@ -21,30 +21,30 @@ BPF_HASH(currpf, u64, u64);
 
 int kprobe__handle_mm_fault(struct pt_regs *ctx)
 {
-	u64 pid = bpf_get_current_pid_tgid();
-	u64 ts = bpf_ktime_get_ns();
+        u64 pid = bpf_get_current_pid_tgid();
+        u64 ts = bpf_ktime_get_ns();
 
-	currpf.update(&pid, &ts);
+        currpf.update(&pid, &ts);
 
-	return 0;
+        return 0;
 }
 
 int kretprobe__handle_mm_fault(struct pt_regs *ctx)
 {
-	u64 pid = bpf_get_current_pid_tgid();
-	u64 end = bpf_ktime_get_ns();
+        u64 pid = bpf_get_current_pid_tgid();
+        u64 end = bpf_ktime_get_ns();
 
-	u64 *start = currpf.lookup(&pid);
-	if (start == 0) {
-		return 0;
-	}
+        u64 *start = currpf.lookup(&pid);
+        if (start == 0) {
+                return 0;
+        }
 
-	u64 lat = end - *start;
-	bpf_trace_printk("%lld\n", lat);
+        u64 lat = end - *start;
+        bpf_trace_printk("bpfpftrace %lld\n", lat);
 
-	currpf.delete(&pid);
+        currpf.delete(&pid);
 
-	return 0;
+        return 0;
 }
 """
 
@@ -56,16 +56,20 @@ THRESHOLD = int(args.threshold)
 FAST_COUNT = 0
 
 while not os.path.isfile("/tmp/stop-pf-bpf"):
-        # Read messages from kernel pipe
-        try:
-            (task, pid, cpu, flags, ts, msg) = b.trace_fields()
-        except ValueError:
-            # Ignore messages from other tracers
-            continue
+    # Read messages from kernel pipe
+    try:
+        (task, pid, cpu, flags, ts, msg) = b.trace_fields()
+        (tag, latency) = msg.split()
+    except ValueError:
+        # Ignore messages from other tracers
+        continue
 
-	if int(msg) < THRESHOLD:
-		FAST_COUNT += 1
-	else:
-		print(msg)
+    if not tag == "bpfpftrace":
+        continue
+
+    if int(latency) < THRESHOLD:
+        FAST_COUNT += 1
+    else:
+        print(latency)
 
 print("fast: %d" % FAST_COUNT)
