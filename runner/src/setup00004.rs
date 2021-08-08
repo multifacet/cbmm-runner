@@ -125,5 +125,11 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     // Build userspace profiling tool
     ushell.run(cmd!("make -j {}", nprocess).cwd("x86-MMU-Profiler"))?;
 
+    // Make sure BCC/BPF works. We need to install the kernel modules and headers in a way that BCC
+    // can find it, and we need to rebuild bcc with the new kernel.
+    ushell.run(cmd!("sudo make modules_install headers_install").cwd("HawkEye/kbuild"))?;
+    ushell.run(cmd!("cmake3 .. ; make -j {} ; sudo make install", nprocess).cwd("bcc/build"))?;
+    ushell.run(cmd!("ldconfig ; sudo ldconfig"))?;
+
     Ok(())
 }
