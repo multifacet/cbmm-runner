@@ -1,4 +1,6 @@
-#!/usr/bin/python2
+#!/usr/bin/env python2
+
+from __future__ import print_function
 from bcc import BPF
 import argparse
 from time import strftime
@@ -73,3 +75,5 @@ while not os.path.isfile("/tmp/stop-pf-bpf"):
         print(latency)
 
 print("fast: %d" % FAST_COUNT)
+
+print("BPFPFTRACE DONE", file=sys.stderr)

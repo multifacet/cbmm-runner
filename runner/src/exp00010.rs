@@ -161,6 +161,7 @@ struct Config {
     mm_econ_benefit_file: Option<String>,
     enable_aslr: bool,
     pftrace: Option<usize>,
+    bpf_pftrace: Option<usize>,
     asynczero: bool,
     hawkeye: bool,
 
@@ -344,13 +345,18 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Enable ASLR.")
         (@arg PFTRACE: --pftrace
          "Enable page fault tracing (requires an instrumented kernel).")
+        (@arg BPFPFTRACE: --bpf_pftrace
+         "Enable page fault tracing via BPF.")
         (@arg PFTRACE_THRESHOLD: --pftrace_threshold
          +takes_value {validator::is::<usize>} requires[PFTRACE]
-         "Sets the pftrace_threshold for minimum latency to be sampled.")
+         "Sets the pftrace_threshold for minimum latency to be sampled (in cycles!).")
+        (@arg BPF_PFTRACE_THRESHOLD: --bpf_pftrace_threshold
+         +takes_value {validator::is::<usize>} requires[BPFPFTRACE]
+         "Sets the pftrace_threshold for minimum latency to be sampled (in nanoseconds!).")
         (@arg ASYNCZERO: --asynczero
          "Enable async pre-zeroing.")
         (@arg HAWKEYE: --hawkeye
-         conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR PFTRACE EAGER MMSTATS]
+         conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR PFTRACE BPFPFTRACE EAGER MMSTATS]
          "Turn on HawkEye (ASPLOS '19).")
         (@arg FRAGMENTATION: --fragmentation +takes_value {validator::is::<usize>}
          "Fragment the given percentage of memory. Must be an integer between 0 and 100. \
@@ -588,6 +594,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             .map(|s| s.parse::<usize>().unwrap())
             .unwrap_or(100000)
     });
+    let bpf_pftrace = sub_m.is_present("BPFPFTRACE").then(|| {
+        sub_m
+            .value_of("BPF_PFTRACE_THRESHOLD")
+            .map(|s| s.parse::<usize>().unwrap())
+            .unwrap_or(38461) // ~100k cycles at 2600MHz
+    });
     let asynczero = sub_m.is_present("ASYNCZERO");
     let hawkeye = sub_m.is_present("HAWKEYE");
     let fragmentation = sub_m
@@ -733,6 +745,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mm_econ_benefit_file,
         enable_aslr,
         pftrace,
+        bpf_pftrace,
         asynczero,
         hawkeye,
 
@@ -833,6 +846,7 @@ pub struct InitialSetupState<'s> {
     pub instrumented_proc: Option<String>,
     pub kbadgerd_thread: Option<spurs::SshSpawnHandle>,
     pub sleeping_fragmenter: Option<spurs::SshSpawnHandle>,
+    pub bpf_trace_thread: Option<spurs::SshSpawnHandle>,
 }
 
 pub fn initial_setup<'s, P: Parametrize>(
@@ -853,6 +867,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     badger_trap: bool,
     mm_econ: bool,
     pftrace: Option<usize>,
+    bpf_pftrace: Option<usize>,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
     eager: bool,
@@ -1056,6 +1071,24 @@ pub fn initial_setup<'s, P: Parametrize>(
         ))?;
     }
 
+    let bpf_trace_thread = if let Some(threshold) = bpf_pftrace {
+        ushell.run(cmd!("rm -f /tmp/stop-pf-bpf"))?;
+        let handle = ushell.spawn(cmd!(
+            "(source scl_source enable devtoolset-7 llvm-toolset-7 ; \
+             sudo  {}/page_fault_bpf.py -t {} ) > {}",
+            &bmks_dir,
+            threshold,
+            &pftrace_file,
+        ))?;
+
+        // Wait to begin...
+        ushell.run(cmd!("while ! [ -e {} ] ; do sleep 1 ; done", &pftrace_file))?;
+
+        Some(handle)
+    } else {
+        None
+    };
+
     // Turn on kbadgerd if needed.
     if kbadgerd {
         ushell.run(cmd!(
@@ -1194,6 +1227,7 @@ pub fn initial_setup<'s, P: Parametrize>(
         instrumented_proc,
         kbadgerd_thread,
         sleeping_fragmenter,
+        bpf_trace_thread,
     })
 }
 
@@ -1213,6 +1247,7 @@ pub fn teardown(
     results_dir: &str,
     pftrace_rejected_file: &str,
     pftrace_file: &str,
+    bpf_trace_thread: Option<spurs::SshSpawnHandle>,
     mmstats_file: &str,
     badger_trap_file: &str,
     time_file: &str,
@@ -1229,6 +1264,9 @@ pub fn teardown(
         ushell.run(cmd!("cat /proc/pftrace_discarded_from_error"))?;
         ushell.run(cmd!("sync"))?;
         ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
+    }
+    if let Some(handle) = bpf_trace_thread {
+        handle.join().1?;
     }
 
     if mm_econ {
@@ -1353,6 +1391,7 @@ where
         bgctx,
         kbadgerd_thread: _kbadgerd_thread,
         sleeping_fragmenter: _sleeping_fragmenter,
+        bpf_trace_thread,
 
         cores: _,
     } = initial_setup(
@@ -1373,6 +1412,7 @@ where
         cfg.badger_trap,
         cfg.mm_econ,
         cfg.pftrace,
+        cfg.bpf_pftrace,
         cfg.kbadgerd,
         cfg.kbadgerd_sleep_interval,
         cfg.eager,
@@ -1901,6 +1941,7 @@ where
         results_dir,
         pftrace_rejected_file,
         pftrace_file,
+        bpf_trace_thread,
         mmstats_file,
         badger_trap_file,
         time_file,

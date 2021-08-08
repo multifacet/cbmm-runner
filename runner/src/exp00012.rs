@@ -47,6 +47,7 @@ struct Config {
     mmstats: bool,
     meminfo_periodic: bool,
     pftrace: Option<usize>,
+    bpf_pftrace: Option<usize>,
 
     instrumented_process: Option<String>,
     mmu_overhead: bool,
@@ -121,9 +122,14 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect /proc/meminfo data periodically.")
         (@arg PFTRACE: --pftrace
          "Enable page fault tracing (requires an instrumented kernel).")
+        (@arg BPFPFTRACE: --bpf_pftrace
+         "Enable page fault tracing via BPF.")
         (@arg PFTRACE_THRESHOLD: --pftrace_threshold
          +takes_value {validator::is::<usize>} requires[PFTRACE]
-         "Sets the pftrace_threshold for minimum latency to be sampled (default 10000).")
+         "Sets the pftrace_threshold for minimum latency to be sampled (in cycles!).")
+        (@arg BPF_PFTRACE_THRESHOLD: --bpf_pftrace_threshold
+         +takes_value {validator::is::<usize>} requires[BPFPFTRACE]
+         "Sets the pftrace_threshold for minimum latency to be sampled (in nanoseconds!).")
 
         // Single-process instrumentation
         (@arg INSTRUMENT_PROCESS: --instrument +takes_value
@@ -156,7 +162,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Enable async pre-zeroing.")
         (@arg HAWKEYE: --hawkeye
          conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR THP_HUGE_ADDR_RANGES
-                        PFTRACE EAGER MMSTATS ASYNCZERO DISABLE_THP]
+                        PFTRACE BPFPFTRACE EAGER MMSTATS ASYNCZERO DISABLE_THP]
          requires[HAWKEYE_BLOAT_PROC]
          "Turn on HawkEye (ASPLOS '19).")
         (@arg MM_ECON: --mm_econ conflicts_with[HAWKEYE]
@@ -306,6 +312,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             .map(|s| s.parse::<usize>().unwrap())
             .unwrap_or(100000)
     });
+    let bpf_pftrace = sub_m.is_present("BPFPFTRACE").then(|| {
+        sub_m
+            .value_of("BPF_PFTRACE_THRESHOLD")
+            .map(|s| s.parse::<usize>().unwrap())
+            .unwrap_or(38461) // ~100k cycles at 2600MHz
+    });
 
     let instrumented_process = sub_m.value_of("INSTRUMENT_PROCESS").map(str::to_owned);
     let mmu_overhead = sub_m.is_present("MMU_OVERHEAD");
@@ -381,6 +393,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         mmstats,
         meminfo_periodic,
         pftrace,
+        bpf_pftrace,
 
         instrumented_process,
         mmu_overhead,
@@ -452,6 +465,7 @@ where
         bgctx,
         kbadgerd_thread: _kbadgerd_thread,
         sleeping_fragmenter: _sleeping_fragmenter,
+        bpf_trace_thread,
 
         cores: _,
         damon_path: _,
@@ -478,6 +492,7 @@ where
         cfg.badger_trap,
         cfg.mm_econ,
         cfg.pftrace,
+        cfg.bpf_pftrace,
         cfg.kbadgerd,
         cfg.kbadgerd_sleep_interval,
         cfg.eager.is_some(),
@@ -664,6 +679,7 @@ where
         results_dir,
         pftrace_rejected_file,
         pftrace_file,
+        bpf_trace_thread,
         mmstats_file,
         badger_trap_file,
         time_file,
