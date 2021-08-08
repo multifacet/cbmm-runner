@@ -356,7 +356,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg ASYNCZERO: --asynczero
          "Enable async pre-zeroing.")
         (@arg HAWKEYE: --hawkeye
-         conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR PFTRACE BPFPFTRACE EAGER MMSTATS]
+         conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR PFTRACE EAGER MMSTATS]
          "Turn on HawkEye (ASPLOS '19).")
         (@arg FRAGMENTATION: --fragmentation +takes_value {validator::is::<usize>}
          "Fragment the given percentage of memory. Must be an integer between 0 and 100. \

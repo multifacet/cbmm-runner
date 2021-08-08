@@ -162,7 +162,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Enable async pre-zeroing.")
         (@arg HAWKEYE: --hawkeye
          conflicts_with[MM_ECON KBADGERD THP_HUGE_ADDR THP_HUGE_ADDR_RANGES
-                        PFTRACE BPFPFTRACE EAGER MMSTATS ASYNCZERO DISABLE_THP]
+                        PFTRACE EAGER MMSTATS ASYNCZERO DISABLE_THP]
          requires[HAWKEYE_BLOAT_PROC]
          "Turn on HawkEye (ASPLOS '19).")
         (@arg MM_ECON: --mm_econ conflicts_with[HAWKEYE]
