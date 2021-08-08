@@ -1266,6 +1266,7 @@ pub fn teardown(
         ushell.run(cmd!("cp /pftrace {}", pftrace_file))?;
     }
     if let Some(handle) = bpf_trace_thread {
+        ushell.run(cmd!("touch /tmp/stop-pf-bpf"))?;
         handle.join().1?;
     }
 
