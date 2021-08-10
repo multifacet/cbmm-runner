@@ -58,7 +58,7 @@ int do_fault_probe(struct pt_regs *ctx)
         return 0;
 }
 
-int kprobe__do_swap_page(struct pt_regs *ctx)
+int swap_page_probe(struct pt_regs *ctx)
 {
         u64 pid = bpf_get_current_pid_tgid();
         currpf.delete(&pid);
@@ -70,7 +70,8 @@ int kprobe__do_swap_page(struct pt_regs *ctx)
 # Do some fancy code substitution
 bpf_text = bpf_text.replace("#THRESHOLD_PLACEHOLDER#", args.threshold)
 b = BPF(text=bpf_text)
-b.attach_kprobe(event="__do_fault.isra.61", fn_name="do_fault_probe")
+b.attach_kprobe(event="__do_fault", fn_name="do_fault_probe")
+b.attach_kprobe(event="lookup_swap_cache", fn_name="swap_page_probe")
 
 THRESHOLD = int(args.threshold)
 FAST_COUNT = 0
