@@ -104,6 +104,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kernel_rpm
     ))?;
 
+    // Install these now for BPF to use later. Somehow installing these after the kernel leads to
+    // corrupted root file system...
+    ushell.run(cmd!("sudo make modules_install headers_install").cwd("HawkEye/kbuild"))?;
+
     // update grub to choose this entry (new kernel) by default
     ushell.run(cmd!("sudo grub2-set-default 0"))?;
     ushell.run(cmd!("sync"))?;
@@ -127,7 +131,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     // Make sure BCC/BPF works. We need to install the kernel modules and headers in a way that BCC
     // can find it, and we need to rebuild bcc with the new kernel.
-    ushell.run(cmd!("sudo make modules_install headers_install").cwd("HawkEye/kbuild"))?;
     ushell.run(cmd!("cmake3 .. ; make -j {} ; sudo make install", nprocess).cwd("bcc/build"))?;
     ushell.run(cmd!("ldconfig ; sudo ldconfig"))?;
 
