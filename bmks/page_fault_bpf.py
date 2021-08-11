@@ -55,6 +55,8 @@ int do_fault_probe(struct pt_regs *ctx)
         u64 pid = bpf_get_current_pid_tgid();
         currpf.delete(&pid);
 
+        bpf_trace_printk("bpfpftrace -1\n");
+
         return 0;
 }
 
@@ -62,6 +64,8 @@ int swap_page_probe(struct pt_regs *ctx)
 {
         u64 pid = bpf_get_current_pid_tgid();
         currpf.delete(&pid);
+
+        bpf_trace_printk("bpfpftrace -2\n");
 
         return 0;
 }
@@ -71,10 +75,13 @@ int swap_page_probe(struct pt_regs *ctx)
 bpf_text = bpf_text.replace("#THRESHOLD_PLACEHOLDER#", args.threshold)
 b = BPF(text=bpf_text)
 b.attach_kprobe(event="__do_fault", fn_name="do_fault_probe")
+b.attach_kprobe(event="pte_to_swp_entry", fn_name="swap_page_probe")
 b.attach_kprobe(event="lookup_swap_cache", fn_name="swap_page_probe")
 
 THRESHOLD = int(args.threshold)
 FAST_COUNT = 0
+SWAP_COUNT = 0
+NONANON_COUNT = 0
 
 while not os.path.isfile("/tmp/stop-pf-bpf"):
     # Read messages from kernel pipe
@@ -88,7 +95,12 @@ while not os.path.isfile("/tmp/stop-pf-bpf"):
     if not tag == "bpfpftrace":
         continue
 
-    if int(latency) < THRESHOLD:
+    lat = int(latency)
+    if lat == -1:
+        NONANON_COUNT += 1
+    elif lat == -2:
+        SWAP_COUNT += 1
+    elif lat < THRESHOLD:
         FAST_COUNT += 1
     else:
         print(latency)
@@ -96,3 +108,4 @@ while not os.path.isfile("/tmp/stop-pf-bpf"):
 print("fast: %d" % FAST_COUNT)
 
 print("BPFPFTRACE DONE", file=sys.stderr)
+print("swap %d not-anon %d" % (SWAP_COUNT, NONANON_COUNT), file=sys.stderr)
