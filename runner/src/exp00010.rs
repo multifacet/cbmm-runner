@@ -20,11 +20,12 @@ use crate::{
     paths::*,
     time,
     workloads::{
-        gen_cb_wrapper_command_prefix, run_canneal, run_graph500, run_hacky_spec17,
-        run_locality_mem_access, run_memcached_gen_data, run_thp_ubmk, run_thp_ubmk_shm,
-        run_time_loop, run_time_mmap_touch, run_ycsb_workload, setup_apriori_paging_processes,
-        spawn_nas_cg, CannealWorkload, Damon, LocalityMemAccessConfig, LocalityMemAccessMode,
-        MemcachedWorkloadConfig, MongoDBWorkloadConfig, NasClass, Pintool, Spec2017Workload,
+        gen_cb_wrapper_command_prefix, gen_perf_command_prefix, run_canneal, run_graph500,
+        run_hacky_spec17, run_locality_mem_access, run_memcached_gen_data, run_redis_gen_data,
+        run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, run_ycsb_workload,
+        setup_apriori_paging_processes, spawn_nas_cg, start_redis, CannealWorkload, Damon,
+        LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
+        MongoDBWorkloadConfig, NasClass, Pintool, RedisWorkloadConfig, Spec2017Workload,
         TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem,
         YcsbWorkload,
     },
@@ -58,6 +59,9 @@ enum Workload {
         reps: usize,
     },
     Memcached {
+        size: usize,
+    },
+    Redis {
         size: usize,
     },
     MongoDB {
@@ -227,6 +231,11 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run the `memcached` workload.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
+        )
+        (@subcommand redis =>
+            (about: "Run the `redis` workload.")
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
+             "The number of GBs of the workload")
         )
         (@subcommand mongodb =>
             (about: "Run the MongoDB workload.")
@@ -437,6 +446,12 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
             Workload::Memcached { size }
+        }
+
+        ("redis", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+
+            Workload::Redis { size }
         }
 
         ("mongodb", Some(sub_m)) => {
@@ -1476,6 +1491,7 @@ where
                     Workload::TimeMmapTouch { .. } => "time_mmap_touch",
                     Workload::ThpUbmk { .. } => "ubmk",
                     Workload::ThpUbmkShm { .. } => "ubmk-shm",
+                    Workload::Redis { .. } => "redis-server",
                     Workload::Memcached { .. } => "memcached",
                     Workload::MongoDB { .. } => "mongod",
                     Workload::Graph500 { .. } => "graph500",
@@ -1515,6 +1531,7 @@ where
                     Workload::ThpUbmk { .. }
                     | Workload::ThpUbmkShm { .. }
                     | Workload::Memcached { .. }
+                    | Workload::Redis { .. }
                     | Workload::MongoDB { .. }
                     | Workload::Spec2017Mcf
                     | Workload::Spec2017Xalancbmk { .. }
@@ -1748,6 +1765,57 @@ where
                     &runtime_file
                 )?
             );
+        }
+
+        Workload::Redis { size } => {
+            let freq = get_cpu_freq(&ushell)?;
+            let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
+            let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let redis_config = RedisWorkloadConfig {
+                exp_dir: zerosim_exp_path,
+                nullfs: &nullfs_path,
+                redis_conf: &redis_conf_path,
+                server_size_mb: size << 10,
+                wk_size_gb: size,
+                output_file: None,
+                server_pin_core: None,
+                client_pin_core: tctx.next(),
+                freq: Some(freq),
+                pf_time: None,
+                cb_wrapper_cmd: cb_wrapper_cmd,
+                pintool: None,
+            };
+
+            let _redis_handle = start_redis(&ushell, &redis_config);
+
+            // Start perf if needed
+            let perf_handle = if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let handle = ushell.spawn(cmd!(
+                    "{}",
+                    gen_perf_command_prefix(mmu_overhead_file, counters, "-p `pgrep redis-server`")
+                ))?;
+
+                // Wait for perf to start collection.
+                ushell.run(
+                    cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
+                )?;
+
+                Some(handle)
+            } else {
+                None
+            };
+
+            // Actually run the workload
+            run_redis_gen_data(&ushell, &redis_config)?.join().1?;
+
+            // Make sure redis dies
+            ushell.run(cmd!("pkill -9 redis-server"))?;
+
+            // Make sure perf is done.
+            if let Some(handle) = perf_handle {
+                let (_, result) = handle.join();
+                result?;
+            }
         }
 
         Workload::MongoDB {
