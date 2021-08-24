@@ -1235,7 +1235,7 @@ pub fn initial_setup<'s, P: Parametrize>(
                 interval,
                 &eagerprofile_file
             )
-            .cwd(dir!(&bmks_dir, "eagerprofile")),
+            .cwd(dir!(&bmks_dir, "eagerprofiling")),
         )?;
         ushell.run(cmd!(
             "while [ ! -e {} ] ; do sleep 1 ; done ;",

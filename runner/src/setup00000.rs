@@ -1083,7 +1083,7 @@ where
             .cwd(dir!(
                 RESEARCH_WORKSPACE_PATH,
                 ZEROSIM_BENCHMARKS_DIR,
-                "eagerprofile"
+                "eagerprofiling"
             )),
     )?;
 
