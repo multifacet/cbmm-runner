@@ -1076,6 +1076,17 @@ where
     // Cloudsuite - web-serving
     ushell.run(cmd!("docker pull -a cloudsuite/web-serving"))?;
 
+    // Build pagemap tool.
+    ushell.run(
+        cmd!("$HOME/.cargo/bin/cargo build --release")
+            .use_bash()
+            .cwd(dir!(
+                RESEARCH_WORKSPACE_PATH,
+                ZEROSIM_BENCHMARKS_DIR,
+                "eagerprofile"
+            )),
+    )?;
+
     Ok(())
 }
 

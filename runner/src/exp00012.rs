@@ -466,6 +466,7 @@ where
         kbadgerd_thread: _kbadgerd_thread,
         sleeping_fragmenter: _sleeping_fragmenter,
         bpf_trace_thread,
+        eagerprofile_thread,
 
         cores: _,
         damon_path: _,
@@ -497,6 +498,7 @@ where
         cfg.kbadgerd_sleep_interval,
         cfg.eager.is_some(),
         cfg.fragmentation,
+        None, /* eagerprofile */
         // Run normal thp init...
         |_shell| Ok(true),
         // Compute mmap_filters_csv_files
@@ -685,6 +687,7 @@ where
         time_file,
         sim_file,
         false,
+        eagerprofile_thread,
     )?;
 
     let glob = cfg.gen_file_name("");

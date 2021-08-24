@@ -168,6 +168,7 @@ struct Config {
     bpf_pftrace: Option<usize>,
     asynczero: bool,
     hawkeye: bool,
+    eagerprofile: Option<usize>,
 
     username: String,
     host: String,
@@ -371,6 +372,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Fragment the given percentage of memory. Must be an integer between 0 and 100. \
           This will consume a bit of memory, as there is a daemon that holds on to a bit \
           of memory to fragment it.")
+        (@arg EAGERPROFILE: --eagerprofile +takes_value {validator::is::<usize>}
+         "Recorded pagemap info at the given interval (in seconds) for the workload.")
     };
 
     let app = damon::add_cli_options(app);
@@ -630,6 +633,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             unimplemented!("thp_huge_addr isn't supported by thp_ubmk_shm yet.");
         }
     }
+    let eagerprofile = sub_m
+        .value_of("EAGERPROFILE")
+        .map(|s| s.parse::<usize>().unwrap());
 
     let (
         transparent_hugepage_enabled,
@@ -763,6 +769,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         bpf_pftrace,
         asynczero,
         hawkeye,
+        eagerprofile,
 
         username: login.username.into(),
         host: login.hostname.into(),
@@ -862,6 +869,7 @@ pub struct InitialSetupState<'s> {
     pub kbadgerd_thread: Option<spurs::SshSpawnHandle>,
     pub sleeping_fragmenter: Option<spurs::SshSpawnHandle>,
     pub bpf_trace_thread: Option<spurs::SshSpawnHandle>,
+    pub eagerprofile_thread: Option<spurs::SshSpawnHandle>,
 }
 
 pub fn initial_setup<'s, P: Parametrize>(
@@ -887,6 +895,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     kbadgerd_sleep_interval: Option<usize>,
     eager: bool,
     fragmentation: Option<usize>,
+    eagerprofile: Option<usize>,
     // Returns false if there was an exception and this should be skipped...
     transparent_hugepage_excpetion_hack: impl FnOnce(&SshShell) -> Result<bool, failure::Error>,
     compute_mmap_filter_csv_files: impl FnOnce(&str) -> HashMap<String, String>,
@@ -976,6 +985,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let pftrace_rejected_file = dir!(&results_dir, output.gen_file_name("rejected"));
     let runtime_file = dir!(&results_dir, output.gen_file_name("runtime"));
     let frag_file = dir!(&results_dir, output.gen_file_name("precondition.frag"));
+    let eagerprofile_file = dir!(&results_dir, output.gen_file_name("eagerprofile"));
 
     let bmks_dir = dir!(&user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
     let damon_path = dir!(&bmks_dir, DAMON_PATH);
@@ -1216,6 +1226,27 @@ pub fn initial_setup<'s, P: Parametrize>(
         None
     };
 
+    // Record pagemap info if needed.
+    let eagerprofile_thread = if let Some(interval) = eagerprofile {
+        let thread = ushell.spawn(
+            cmd!(
+                "./target/release/eagerprofile {} {} | tee {}",
+                instrumented_proc.as_ref().unwrap(),
+                interval,
+                &eagerprofile_file
+            )
+            .cwd(dir!(&bmks_dir, "eagerprofile")),
+        )?;
+        ushell.run(cmd!(
+            "while [ ! -e {} ] ; do sleep 1 ; done ;",
+            &eagerprofile_file
+        ))?;
+
+        Some(thread)
+    } else {
+        None
+    };
+
     Ok(InitialSetupState {
         user_home,
         zerosim_exp_path,
@@ -1243,6 +1274,7 @@ pub fn initial_setup<'s, P: Parametrize>(
         kbadgerd_thread,
         sleeping_fragmenter,
         bpf_trace_thread,
+        eagerprofile_thread,
     })
 }
 
@@ -1268,6 +1300,7 @@ pub fn teardown(
     time_file: &str,
     sim_file: &str,
     damon_off_exception: bool,
+    eagerprofile_thread: Option<spurs::SshSpawnHandle>,
 ) -> Result<(), failure::Error> {
     if pftrace.is_some() {
         ushell.run(cmd!("echo 0 | sudo tee /proc/pftrace_enable"))?;
@@ -1308,6 +1341,10 @@ pub fn teardown(
             "Waiting for data collectioned threads to halt",
             bgctx.notify_and_join_all()?
         );
+    }
+
+    if let Some(thread) = eagerprofile_thread {
+        thread.join().1?;
     }
 
     // Tell damon to write data, if needed. (Graph500 waits for damon to finish, so we don't need
@@ -1408,6 +1445,7 @@ where
         kbadgerd_thread: _kbadgerd_thread,
         sleeping_fragmenter: _sleeping_fragmenter,
         bpf_trace_thread,
+        eagerprofile_thread,
 
         cores: _,
     } = initial_setup(
@@ -1433,6 +1471,7 @@ where
         cfg.kbadgerd_sleep_interval,
         cfg.eager,
         cfg.fragmentation,
+        cfg.eagerprofile,
         // THP exception hack
         |shell| {
             if matches!(cfg.workload, Workload::ThpUbmkShm { .. }) {
@@ -2016,6 +2055,7 @@ where
         time_file,
         sim_file,
         matches!(cfg.workload, Workload::Graph500 { .. }),
+        eagerprofile_thread,
     )?;
 
     let glob = cfg.gen_file_name("");
