@@ -22,7 +22,16 @@ fn main() -> io::Result<()> {
     let mut touched_pages = HashSet::new();
 
     while !stop_path.is_file() {
-        do_work(&pagemap_filename, &maps_filename, &mut touched_pages)?;
+        match do_work(&pagemap_filename, &maps_filename, &mut touched_pages) {
+            Err(error) => {
+                if error.kind() == io::ErrorKind::NotFound {
+                    break;
+                } else {
+                    Err(error)
+                }
+            },
+            _ => Ok(()),
+        }?;
 
         std::thread::sleep(std::time::Duration::from_secs(interval));
     }
