@@ -1,6 +1,6 @@
 //! A utility for reading `/proc/[pid]/pagemap` to produce a profile for eager paging.
 
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io;
@@ -19,7 +19,7 @@ fn main() -> io::Result<()> {
 
     let stop_path = std::path::PathBuf::from("/tmp/stop-readpagemap");
 
-    let mut touched_pages = HashSet::new();
+    let mut touched_pages = BTreeMap::new();
 
     while !stop_path.is_file() {
         match do_work(&pagemap_filename, &maps_filename, &mut touched_pages) {
@@ -36,8 +36,38 @@ fn main() -> io::Result<()> {
         std::thread::sleep(std::time::Duration::from_secs(interval));
     }
 
-    for addr in touched_pages.into_iter() {
-        println!("{:X}", addr);
+    let mut start = 0;
+    let mut end = 0;
+    const PAGE_SIZE: u64 = 0x1000;
+    for addr in touched_pages.into_keys() {
+        if start == 0 {
+            start = addr;
+            end = addr;
+            continue;
+        }
+
+        // If this addr is the next page after end, update end.
+        // Otherwise print the old range and start a new one
+        if addr == end + PAGE_SIZE {
+            end = addr
+        } else {
+            // If the range is only one page long, just print it alone
+            if start == end {
+                println!("{:X}", start);
+            } else {
+                println!("{:X} - {:X}", start, end);
+            }
+
+            start = addr;
+            end = addr;
+        }
+    }
+
+    // Print the last range
+    if start == end {
+        println!("{:X}", start);
+    } else {
+        println!("{:X} - {:X}", start, end);
     }
 
     Ok(())
@@ -46,7 +76,7 @@ fn main() -> io::Result<()> {
 fn do_work(
     pagemap_filename: &str,
     maps_filename: &str,
-    touched: &mut HashSet<u64>,
+    touched: &mut BTreeMap<u64, ()>,
 ) -> io::Result<()> {
     let mut pagemap = PageMap::new(fs::File::open(pagemap_filename)?);
 
@@ -68,7 +98,7 @@ fn do_work(
             if !page_info.present() && !page_info.swap() {
                 untouched += 1;
             } else {
-                touched.insert(addr);
+                touched.insert(addr, ());
             }
 
             total_pages += 1;
