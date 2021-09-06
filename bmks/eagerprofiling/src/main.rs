@@ -13,6 +13,7 @@ fn main() -> io::Result<()> {
     let mut args = env::args().skip(1);
     let pid = args.next().expect(USAGE);
     let interval = args.next().expect(USAGE).parse().expect(USAGE);
+    println!("hello");
 
     let pagemap_filename = format!("/proc/{}/pagemap", pid);
     let maps_filename = format!("/proc/{}/maps", pid);
@@ -24,8 +25,9 @@ fn main() -> io::Result<()> {
     while !stop_path.is_file() {
         match do_work(&pagemap_filename, &maps_filename, &mut touched_pages) {
             Err(error) => {
+                // If the file is not found,
                 if error.kind() == io::ErrorKind::NotFound {
-                    break;
+                    Ok(())
                 } else {
                     Err(error)
                 }
@@ -35,6 +37,7 @@ fn main() -> io::Result<()> {
 
         std::thread::sleep(std::time::Duration::from_secs(interval));
     }
+    println!("world");
 
     let mut start = 0;
     let mut end = 0;
