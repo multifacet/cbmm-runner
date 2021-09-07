@@ -24,10 +24,10 @@ fn main() -> io::Result<()> {
     while !stop_path.is_file() {
         match do_work(&pagemap_filename, &maps_filename, &mut touched_pages) {
             Err(error) => {
-                if error.kind() == io::ErrorKind::NotFound {
-                    break;
-                } else {
-                    Err(error)
+                match error.kind() {
+                    io::ErrorKind::NotFound => break,
+                    io::ErrorKind::UnexpectedEof => Ok(()),   
+                    _ => Err(error)
                 }
             },
             _ => Ok(()),
