@@ -1230,7 +1230,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let eagerprofile_thread = if let Some(interval) = eagerprofile {
         let thread = ushell.spawn(
             cmd!(
-                "while ! [ `pgrep -x {pname}` ] ; do echo `Waiting for {pname}`; sleep 10 ; done ; \
+                "while ! [ `pgrep -x {pname}` ] ; do echo 'Waiting for {pname}'; sleep 10 ; done ; \
                 sudo ./target/release/eagerprofiling `pgrep -x {pname}` {} | tee {}",
                 interval,
                 &eagerprofile_file,
@@ -1341,7 +1341,6 @@ pub fn teardown(
     }
 
     if let Some(thread) = eagerprofile_thread {
-        ushell.run(cmd!("touch /tmp/stop-readpagemap"))?;
         thread.join().1?;
     }
 
