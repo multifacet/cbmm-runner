@@ -328,6 +328,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Measure the workload using perf record.")
         (@arg PERF_COUNTER: --perf_counter +takes_value ... number_of_values(1)
          "Collect the given counters instead of the default ones.")
+        (@arg PERF_USER_INST: --usermode_instr
+         requires[MMU_OVERHEAD] conflicts_with[PERF_COUNTER]
+         "Only record usermode instruction counts.")
         (@arg SMAPS_PERIODIC: --smaps_periodic
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
         (@arg MMAP_TRACKER: --mmap_tracker
@@ -716,6 +719,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             format!("dtlb_store_misses.{}", suffix),
         )
     };
+    let perf_usermode_insts = sub_m.is_present("PERF_USER_INST");
     let perf_counters: Vec<String> = sub_m.values_of("PERF_COUNTER").map_or_else(
         || {
             vec![
@@ -724,7 +728,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 "dtlb_load_misses.miss_causes_a_walk".into(),
                 "dtlb_store_misses.miss_causes_a_walk".into(),
                 "cpu_clk_unhalted.thread_any".into(),
-                "inst_retired.any".into(),
+                format!(
+                    "inst_retired.any{}",
+                    if perf_usermode_insts { ":u" } else { "" }
+                ),
                 "faults".into(),
                 "migrations".into(),
                 "cs".into(),
