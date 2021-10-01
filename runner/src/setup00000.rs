@@ -430,7 +430,7 @@ where
     }
 
     with_shell! { ushell =>
-        // Add docker repo
+        // Add docker repo.
         cmd!("sudo yum-config-manager --add-repo \
               https://download.docker.com/linux/centos/docker-ce.repo"),
 
@@ -498,8 +498,11 @@ where
             "docker",
         ]),
 
-        // Add user to libvirt group after installing
+        // Add user to libvirt group after installing.
         spurs_util::add_to_group("libvirt"),
+
+        // Make sure certificates are up to date.
+        cmd!("sudo yum update -y ca-certificates"),
     }
 
     // Start docker daemon

@@ -94,9 +94,9 @@ pub fn download(
     let info = artifact_info(artifact);
 
     // Some websites reject non-browsers, so pretend to be Google Chrome.
-    const USER_AGENT: &str = r#"--user-agent="Mozilla/5.0 (Windows NT 10.0; WOW64) \
-                                AppleWebKit/537.36 (KHTML, like Gecko) \
-                                Chrome/51.0.2704.103 Safari/537.36""#;
+    const USER_AGENT: &str = r#"--user-agent="Mozilla/5.0 \
+                             (X11; Ubuntu; Linux x86_64; rv:92.0) \
+                             Gecko/20100101 Firefox/92.0""#;
 
     // Check if the file exists and then maybe download.
     if let Some(name) = name {
