@@ -107,6 +107,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         )
         (@subcommand cloudsuite =>
             (about: "Run a Cloudsuite benchmark.")
+            (@setting SubcommandRequiredElseHelp)
             (@subcommand web_serving =>
                 (about: "Run the Web Serving benchmark.")
                 (@arg LOAD_SCALE: +takes_value {validator::is::<usize>}
