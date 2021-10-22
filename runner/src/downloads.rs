@@ -60,12 +60,12 @@ pub fn artifact_info(artifact: Artifact) -> Download<'static> {
             version: "3.11-97998-g7ecce2dac",
         },
         KyotoCabinetCore => Download {
-            url: "https://fallabs.com/kyotocabinet/pkg/kyotocabinet-1.2.77.tar.gz",
+            url: "https://dbmx.net/kyotocabinet/pkg/kyotocabinet-1.2.77.tar.gz",
             name: "kyotocabinet-1.2.77.tar.gz",
             version: "1.2.77",
         },
         KyotoCabinetJava => Download {
-            url: "https://fallabs.com/kyotocabinet/javapkg/kyotocabinet-java-1.24.tar.gz",
+            url: "https://dbmx.net/kyotocabinet/javapkg/kyotocabinet-java-1.24.tar.gz",
             name:"kyotocabinet-java-1.24.tar.gz",
             version: "1.24",
         },
