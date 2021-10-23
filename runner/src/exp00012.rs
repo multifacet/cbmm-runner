@@ -663,6 +663,9 @@ where
             };
 
             time!(timers, "Workload", wk.run_sync(&ushell)?);
+
+            // Make sure workload terminates so that profiling ends.
+            wk.kill_background_processes(&ushell)?;
         }
     }
 

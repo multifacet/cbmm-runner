@@ -33,6 +33,9 @@ pub trait MultiProcessWorkload {
 
     /// Run the workload, blocking until it is complete.
     fn run_sync(&mut self, shell: &SshShell) -> Result<(), failure::Error>;
+
+    /// Forcibly kill any background processes started by this workload.
+    fn kill_background_processes(&mut self, shell: &SshShell) -> Result<(), failure::Error>;
 }
 
 /// Any type that can act as a workload key for specifying which process in a workload to apply an
@@ -255,6 +258,11 @@ impl MultiProcessWorkload for MixWorkload<'_> {
 
         Ok(())
     }
+
+    fn kill_background_processes(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        shell.run(cmd!("pkill -9 redis-server"))?;
+        Ok(())
+    }
 }
 
 pub struct CloudsuiteWebServingWorkload<'s> {
@@ -341,7 +349,7 @@ impl CloudsuiteWebServingWorkload<'_> {
         ) -> Result<Vec<usize>, failure::Error> {
             let pids = shell
                 .run(cmd!(
-                    "docker top {} -o pid -o command \
+                    "docker top {} -o pid -o command -A \
                      | grep -v 'sh -c ' | grep '{}' {} \
                      | awk '{{print $1}}'",
                     container,
@@ -544,6 +552,11 @@ impl MultiProcessWorkload for CloudsuiteWebServingWorkload<'_> {
             self.output_file
         ))?;
 
+        Ok(())
+    }
+
+    fn kill_background_processes(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        shell.run(cmd!("docker kill $(docker ps -q)"))?;
         Ok(())
     }
 }
