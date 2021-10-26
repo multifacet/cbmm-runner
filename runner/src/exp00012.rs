@@ -587,6 +587,9 @@ where
     // Collect timers on VM
     let mut timers = vec![];
 
+    // NMI watchdog sometimes causes dropped perf events for these workloads for some reason...
+    ushell.run(cmd!("echo 0 | sudo tee /proc/sys/kernel/nmi_watchdog"))?;
+
     // Run the workload.
     match cfg.workload {
         Workload::Mix { size } => {
@@ -668,6 +671,8 @@ where
             wk.kill_background_processes(&ushell)?;
         }
     }
+
+    ushell.run(cmd!("echo 1 | sudo tee /proc/sys/kernel/nmi_watchdog"))?;
 
     crate::exp00010::teardown(
         &ushell,
