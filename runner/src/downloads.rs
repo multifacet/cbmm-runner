@@ -21,6 +21,8 @@ pub enum Artifact {
     Linux,
     /// PARSEC benchmark suit
     Parsec,
+    /// jemalloc allocator
+    Jemalloc,
 }
 
 /// Represents a possible artifact that can be downloaded.
@@ -79,6 +81,11 @@ pub fn artifact_info(artifact: Artifact) -> Download<'static> {
             name: "parsec-3.0.tar.gz",
             version: "3.0",
         },
+        Jemalloc => Download {
+            url: "https://github.com/jemalloc/jemalloc/archive/refs/tags/5.2.1.tar.gz",
+            name: "5.2.1.tar.gz",
+            version: "5.2.1",
+        }
     }
 }
 

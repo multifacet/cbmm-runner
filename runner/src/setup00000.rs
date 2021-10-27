@@ -116,6 +116,9 @@ pub fn cli_options() -> clap::App<'static, 'static> {
 
         (@arg CENTOS7: --centos7
          "(Optional) the remote machine is running CentOS 7.")
+
+        (@arg JEMALLOC: --jemalloc
+         "(Optional) set jemalloc as the system allocator.")
     }
 }
 
@@ -189,6 +192,9 @@ where
 
     /// The remote machine is using Centos 7, rather thena Centos 8.
     centos7: bool,
+
+    /// Set jemalloc as the default system allocator.
+    jemalloc: bool,
 }
 
 pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
@@ -237,6 +243,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let centos7 = sub_m.is_present("CENTOS7");
 
+    let jemalloc = sub_m.is_present("JEMALLOC");
+
     let cfg = SetupConfig {
         login,
         aws,
@@ -264,6 +272,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         guest_bmks,
         setup_hadoop,
         centos7,
+        jemalloc,
     };
 
     run_inner(cfg)
@@ -292,6 +301,9 @@ where
         disable_ept(&ushell)?;
     }
 
+    if cfg.jemalloc {
+        install_jemalloc(&ushell)?;
+    }
     if cfg.host_dep {
         install_rust(&ushell)?;
     }
@@ -880,6 +892,30 @@ fn disable_ept(shell: &SshShell) -> Result<(), failure::Error> {
     shell.run(cmd!("sudo modprobe kvm_intel"))?;
 
     shell.run(cmd!("sudo tail /sys/module/kvm_intel/parameters/ept"))?;
+
+    Ok(())
+}
+
+/// Install jemalloc as the system directory.
+fn install_jemalloc(shell: &SshShell) -> Result<(), failure::Error> {
+    // Download jemalloc.
+    let user_home = &get_user_home_dir(&shell)?;
+    download_and_extract(shell, Artifact::Jemalloc, user_home, Some("jemalloc"))?;
+
+    // Build and install.
+    with_shell! { shell in &dir!(user_home, "jemalloc") =>
+        cmd!("./autogen.sh"),
+        cmd!("make -j"),
+        cmd!("sudo make install"),
+        cmd!("sudo touch /etc/ld.so.preload"),
+    }
+
+    // Set as the system allocator.
+    shell.run(cmd!(
+        "echo \" `jemalloc-config --libdir`/libjemalloc.so.`jemalloc-config --revision` \" \
+         | sudo tee -a /etc/ld.so.preload",
+    ))?;
+    shell.run(cmd!("sudo ldconfig"))?;
 
     Ok(())
 }
