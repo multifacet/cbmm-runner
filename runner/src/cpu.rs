@@ -102,3 +102,38 @@ pub fn page_walk_perf_counter_suffix(shell: &SshShell) -> Result<String, failure
 
     Ok(output.trim().to_owned())
 }
+
+pub fn default_perf_counters(shell: &SshShell) -> Result<Vec<String>, failure::Error> {
+    let (load_misses, store_misses) = {
+        let suffix = crate::cpu::page_walk_perf_counter_suffix(&shell)?;
+        (
+            format!("dtlb_load_misses.{}", suffix),
+            format!("dtlb_store_misses.{}", suffix),
+        )
+    };
+
+    // We want to measure each of these for userspace, kernelspace, and total. Note that userspace
+    // + kernelspace > total because of the delay between a mode/context-switch and the time when
+    // perf saves/restores perf counters.
+    let base_counters = vec![
+        load_misses,
+        store_misses,
+        "dtlb_load_misses.miss_causes_a_walk".into(),
+        "dtlb_store_misses.miss_causes_a_walk".into(),
+        "cpu_clk_unhalted.thread_any".into(),
+        "inst_retired.any".into(),
+        "faults".into(),
+        "migrations".into(),
+        "cs".into(),
+    ];
+
+    let mut counters = Vec::with_capacity(3 * base_counters.len());
+
+    for mode in &[":u", ":k", ""] {
+        for counter in base_counters.iter() {
+            counters.push(format!("{}{}", counter, mode));
+        }
+    }
+
+    Ok(counters)
+}

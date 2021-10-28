@@ -519,26 +519,8 @@ where
         // Compute mmu_overhead
         |shell, mmu_overhead_file| {
             Ok(if cfg.mmu_overhead {
-                let (load_misses, store_misses) = {
-                    let suffix = crate::cpu::page_walk_perf_counter_suffix(shell)?;
-                    (
-                        format!("dtlb_load_misses.{}", suffix),
-                        format!("dtlb_store_misses.{}", suffix),
-                    )
-                };
-                let perf_counters: Vec<String> = cfg.perf_counters.clone().unwrap_or_else(|| {
-                    vec![
-                        load_misses,
-                        store_misses,
-                        "dtlb_load_misses.miss_causes_a_walk".into(),
-                        "dtlb_store_misses.miss_causes_a_walk".into(),
-                        "cpu_clk_unhalted.thread_any".into(),
-                        "inst_retired.any".into(),
-                        "faults".into(),
-                        "migrations".into(),
-                        "cs".into(),
-                    ]
-                });
+                let perf_counters = crate::cpu::default_perf_counters(shell)?;
+                let perf_counters: Vec<String> = cfg.perf_counters.clone().unwrap_or(perf_counters);
 
                 Some((mmu_overhead_file.to_owned(), perf_counters))
             } else {
