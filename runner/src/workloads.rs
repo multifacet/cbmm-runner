@@ -1573,25 +1573,22 @@ pub fn run_canneal(
         rand_num_inputs,
     } = workload
     {
-        // Only generate an input file if a suitable one already exists
-        if !canneal_input_file_exists(shell, size, CANNEAL_PATH)? {
-            shell.run(cmd!(
-                "~/0sim-workspace/bmks/canneal/rand_canneal_input.py \
-                {} {} {} {}/input.nets",
-                size,
-                if uniform_dist {
-                    "--dist_uniform"
-                } else {
-                    "--dist_normal"
-                },
-                if rand_num_inputs {
-                    "--rand_num_inputs"
-                } else {
-                    ""
-                },
-                CANNEAL_PATH
-            ))?;
-        }
+        shell.run(cmd!(
+            "~/0sim-workspace/bmks/canneal/rand_canneal_input.py \
+            {} {} {} {}/input.nets",
+            size,
+            if uniform_dist {
+                "--dist_uniform"
+            } else {
+                "--dist_normal"
+            },
+            if rand_num_inputs {
+                "--rand_num_inputs"
+            } else {
+                ""
+            },
+            CANNEAL_PATH
+        ))?;
     } else {
         let input_file = match workload {
             CannealWorkload::Small => "input_simsmall.tar",
@@ -1648,35 +1645,4 @@ pub fn run_canneal(
     shell.run(cmd!("echo '{}' > {}", duration.as_millis(), runtime_file))?;
 
     Ok(())
-}
-
-fn canneal_input_file_exists(
-    shell: &SshShell,
-    size: usize,
-    canneal_path: &str,
-) -> Result<bool, failure::Error> {
-    // We need to check if the input file exists and if it is the right size
-    let result = shell.run(cmd!("head -n1 {}/input.nets", canneal_path));
-    let cur_file_size = match result {
-        Err(e) => {
-            // The file does not exist if tail returns 1.
-            // We can't handle any other error
-            match e {
-                SshError::NonZeroExit { cmd: _, exit } => {
-                    if exit == 1 {
-                        return Ok(false);
-                    } else {
-                        Err(e)?;
-                    }
-                }
-                _ => Err(e)?,
-            }
-            0
-        }
-        // The size of the currently existing input file should be
-        // the first part of the header
-        Ok(output) => output.stdout.split(" ").next().unwrap().parse::<usize>()?,
-    };
-
-    Ok(size == cur_file_size)
 }
