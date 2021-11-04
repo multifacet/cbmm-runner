@@ -289,8 +289,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
                 (@arg DIST_NORMAL: --dist_normal requires[RAND]
                  "Use a normal distribution to generate the canneal input file.")
              )
-             (@arg RAND_NUM_INPUTS: --rand_num_inputs requires[RAND]
-              "Have a random number of inputs per net in the canneal input file.")
+             (@arg SEED: --seed requires[RAND] +takes_value {validator::is::<usize>}
+              "Seed used to generate input file")
         )
         (@subcommand nascg =>
             (about: "Run NAS Parallel Benchmark CG")
@@ -559,15 +559,11 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 } else {
                     true
                 };
-                let rand_num_inputs = if sub_m.is_present("RAND_NUM_INPUTS") {
-                    true
-                } else {
-                    false
-                };
+                let seed = sub_m.value_of("SEED").map(|s| s.parse::<usize>().unwrap());
                 CannealWorkload::Rand {
                     size,
                     uniform_dist,
-                    rand_num_inputs,
+                    seed,
                 }
             } else {
                 CannealWorkload::Native

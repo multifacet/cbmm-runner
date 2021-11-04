@@ -41,13 +41,14 @@ def calc_num_inputs(rand):
         # If we don't want a random number of inputs, just use 5
         return 5
 
-def gen_lines(start, size, num_nets, rand_num_inputs, dist_uniform):
+def gen_lines(start, size, num_nets, dist_uniform, seed):
     line = ""
+    random.seed(seed)
     for i in range(start, start + size):
         if i % 1000000 == 0:
             print(i)
 
-        num_inputs = calc_num_inputs(rand_num_inputs)
+        num_inputs = calc_num_inputs(False)
 
         # Start with the net id and the "type" which is unused
         line += index_to_net(i) + " 1 "
@@ -79,17 +80,14 @@ if __name__ == '__main__':
     else:
         dist_uniform = True
 
-    # If there is a third argument, determine if there should be a random number
-    # of inputs per net
+    # If there is a third argument, it will be the seed of the random number generator
+    # Otherwise, choose the seed randomly
     if len(sys.argv) >= 5:
-        if sys.argv[3] == "--rand_num_inputs":
-            rand_num_inputs = True
-        else:
-            print("Invalid third argument. Either use --rand_num_inputs or do not "
-                  "include third argument")
-            sys.exit()
+        seed = int(sys.argv[3])
     else:
-        rand_num_inputs = False
+        seed = random.randint(1, 1000000000)
+
+    print("Using seed: " + str(seed))
 
     # The last argument is the output filename
     filename = sys.argv[-1]
@@ -107,11 +105,11 @@ if __name__ == '__main__':
     for i in range(0, num_nets, pool_size):
         if i + pool_size > num_nets:
             break
-        pool_params.append((i, pool_size, num_nets, rand_num_inputs, dist_uniform))
+        pool_params.append((i, pool_size, num_nets, dist_uniform, seed + i))
     # Be sure to include any left over nets
     remainder = num_nets % pool_size
     if remainder != 0:
-        pool_params.append((num_nets - remainder, remainder, num_nets, rand_num_inputs, dist_uniform))
+        pool_params.append((num_nets - remainder, remainder, num_nets, dist_uniform, seed - 1))
 
     # Write the first line
     f.write(str(num_nets) + " " + str(size) + " " + str(size) + "\n")
