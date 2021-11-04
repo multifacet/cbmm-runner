@@ -1549,7 +1549,7 @@ pub enum CannealWorkload {
     Rand {
         size: usize,
         uniform_dist: bool,
-        rand_num_inputs: bool,
+        seed: Option<usize>,
     },
 }
 
@@ -1570,7 +1570,7 @@ pub fn run_canneal(
     if let CannealWorkload::Rand {
         size,
         uniform_dist,
-        rand_num_inputs,
+        seed,
     } = workload
     {
         shell.run(cmd!(
@@ -1582,10 +1582,10 @@ pub fn run_canneal(
             } else {
                 "--dist_normal"
             },
-            if rand_num_inputs {
-                "--rand_num_inputs"
+            if let Some(s) = seed {
+                s.to_string()
             } else {
-                ""
+                "".to_string()
             },
             CANNEAL_PATH
         ))?;
