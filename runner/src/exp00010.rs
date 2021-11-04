@@ -79,6 +79,7 @@ enum Workload {
         size: usize,
     },
     Spec2017Xz {
+        spec_input: bool,
         size: usize,
     },
     Canneal {
@@ -265,6 +266,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              "Which spec workload to run.")
             (@arg SIZE: --spec_size +takes_value {validator::is::<usize>}
              "The size of the spec workload input.")
+            (@arg SPEC_INPUT: --spec_input
+             "Use the given SPEC input for the workload.")
         )
         (@subcommand canneal =>
             (about: "Run the canneal workload.")
@@ -516,17 +519,18 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 .unwrap_or("0")
                 .parse::<usize>()
                 .unwrap();
+            let spec_input = sub_m.is_present("SPEC_INPUT");
 
             let wk = match sub_m.value_of("WHICH").unwrap() {
                 "mcf" => Workload::Spec2017Mcf,
                 "xalancbmk" => Workload::Spec2017Xalancbmk { size },
-                "xz" => Workload::Spec2017Xz { size },
+                "xz" => Workload::Spec2017Xz { spec_input, size },
                 _ => panic!("Unknown spec workload"),
             };
 
             if size != 0 {
                 let size_implemented = match &wk {
-                    Workload::Spec2017Xz { size: _ } => true,
+                    Workload::Spec2017Xz { spec_input: _, size: _ } => true,
                     Workload::Spec2017Xalancbmk { size: _ } => true,
                     _ => false,
                 };
@@ -1949,11 +1953,11 @@ where
         }
 
         w @ Workload::Spec2017Mcf
-        | w @ Workload::Spec2017Xz { size: _ }
+        | w @ Workload::Spec2017Xz { spec_input: _, size: _ }
         | w @ Workload::Spec2017Xalancbmk { size: _ } => {
             let wkload = match w {
                 Workload::Spec2017Mcf => Spec2017Workload::Mcf,
-                Workload::Spec2017Xz { size } => Spec2017Workload::Xz { size },
+                Workload::Spec2017Xz { spec_input, size } => Spec2017Workload::Xz { spec_input, size },
                 Workload::Spec2017Xalancbmk { size } => Spec2017Workload::Xalancbmk { size },
                 _ => unreachable!(),
             };
