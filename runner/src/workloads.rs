@@ -1374,7 +1374,7 @@ pub fn run_thp_ubmk_shm(
 /// Represents a single SPEC 2017 workload.
 pub enum Spec2017Workload {
     Mcf,
-    Xz { size: usize },
+    Xz { spec_input: bool, size: usize },
     Xalancbmk { size: usize },
 }
 
@@ -1399,10 +1399,15 @@ pub fn run_hacky_spec17(
 
     let (cmd, bmk) = match workload {
         Spec2017Workload::Mcf => (MCF_CMD.to_string(), "mcf_s"),
-        Spec2017Workload::Xz { size } => {
+        Spec2017Workload::Xz { spec_input, size } => {
             // If size is 0, just use the default command otherwise use the custom one
             let cmd = if size == 0 {
                 XZ_CMD.to_string()
+            } else if spec_input {
+                format!("./xz_s cpu2006docs.tar.xz {} \
+                        055ce243071129412e9dd0b3b69a21654033a9b723d874b2015c\
+                        774fac1553d9713be561ca86f74e4f16f22e664fc17a79f30caa\
+                        5ad2c04fbc447549c2810fae -1 -1 4", size)
             } else {
                 spec17_xz_get_cmd_with_size(shell, size)?
             };
