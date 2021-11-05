@@ -22,11 +22,11 @@ use crate::{
     workloads::{
         gen_cb_wrapper_command_prefix, gen_perf_command_prefix, run_canneal, run_graph500,
         run_hacky_spec17, run_locality_mem_access, run_memcached_gen_data, run_redis_gen_data,
-        run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch, run_ycsb_workload,
+        run_thp_ubmk, run_thp_ubmk_shm, run_time_loop, run_time_mmap_touch,
         setup_apriori_paging_processes, spawn_nas_cg, start_redis, CannealWorkload, Damon,
         LocalityMemAccessConfig, LocalityMemAccessMode, MemcachedWorkloadConfig,
         MongoDBWorkloadConfig, NasClass, Pintool, RedisWorkloadConfig, Spec2017Workload,
-        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSystem,
+        TasksetCtx, TimeMmapTouchConfig, TimeMmapTouchPattern, YcsbConfig, YcsbSession, YcsbSystem,
         YcsbWorkload,
     },
 };
@@ -1934,7 +1934,6 @@ where
                     Ok(())
                 },
             };
-            let mut perf_handle = None;
             let ycsb_cfg = YcsbConfig {
                 workload: YcsbWorkload::Custom {
                     record_count: op_count,
@@ -1946,57 +1945,54 @@ where
                 system: YcsbSystem::Memcached(memcached_cfg),
                 ycsb_path,
                 ycsb_result_file: Some(ycsb_result_file),
-                callback: || {
-                    // Turn on damon if needed.
-                    if cfg.damon {
-                        let damon = Damon {
-                            damon_path: &damon_path,
-                            output_path: &damon_output_path,
-                            sample_interval: cfg.damon_sample_interval,
-                            aggregate_interval: cfg.damon_aggr_interval,
-                        };
-                        ushell.run(cmd!(
-                            "sudo {}/damo record -s {} -a {} -o {} `pidof memcached`",
-                            damon.damon_path,
-                            damon.sample_interval,
-                            damon.aggregate_interval,
-                            damon.output_path,
-                        ))?;
-                    }
+            };
+            let mut ycsb = YcsbSession::new(ycsb_cfg);
 
-                    // Turn on kbadgerd if needed.
-                    if cfg.kbadgerd {
-                        ushell.run(cmd!(
-                            "echo `pgrep memcached` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-                        ))?;
-                    }
+            // Prepare.
+            ycsb.start_and_load(&ushell)?;
 
-                    // Turn on perf if needed.
-                    perf_handle = if let Some((output_path, counters)) = mmu_overhead {
-                        let handle = ushell.spawn(cmd!(
-                            "{}",
-                            gen_perf_command_prefix(output_path, counters, "-p `pgrep memcached`")
-                        ))?;
+            // Turn on damon if needed.
+            if cfg.damon {
+                let damon = Damon {
+                    damon_path: &damon_path,
+                    output_path: &damon_output_path,
+                    sample_interval: cfg.damon_sample_interval,
+                    aggregate_interval: cfg.damon_aggr_interval,
+                };
+                ushell.run(cmd!(
+                    "sudo {}/damo record -s {} -a {} -o {} `pidof memcached`",
+                    damon.damon_path,
+                    damon.sample_interval,
+                    damon.aggregate_interval,
+                    damon.output_path,
+                ))?;
+            }
 
-                        // Wait for perf to start collection.
-                        ushell.run(
-                            cmd!("while [ ! -e {} ] ; do sleep 1 ; done", output_path).use_bash(),
-                        )?;
+            // Turn on kbadgerd if needed.
+            if cfg.kbadgerd {
+                ushell.run(cmd!(
+                    "echo `pgrep memcached` | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                ))?;
+            }
 
-                        Some(handle)
-                    } else {
-                        None
-                    };
+            // Turn on perf if needed.
+            let perf_handle = if let Some((output_path, counters)) = mmu_overhead {
+                let handle = ushell.spawn(cmd!(
+                    "{}",
+                    gen_perf_command_prefix(output_path, counters, "-p `pgrep memcached`")
+                ))?;
 
-                    Ok(())
-                },
+                // Wait for perf to start collection.
+                ushell
+                    .run(cmd!("while [ ! -e {} ] ; do sleep 1 ; done", output_path).use_bash())?;
+
+                Some(handle)
+            } else {
+                None
             };
 
-            time!(
-                timers,
-                "Workload",
-                run_ycsb_workload::<spurs::SshError, _, _>(&ushell, ycsb_cfg,)?
-            );
+            // Run workload.
+            time!(timers, "Workload", ycsb.run(&ushell)?);
 
             // Make sure the server dies.
             ushell.run(cmd!("pkill -9 memcached"))?;
@@ -2083,9 +2079,7 @@ where
                 cb_wrapper_cmd,
                 pintool: None,
             };
-
-            let mut perf_handle = None;
-            let ycsb_cfg: YcsbConfig<_, _, for<'a> fn(&'a _) -> _> = YcsbConfig {
+            let ycsb_cfg: YcsbConfig<for<'a> fn(&'a _) -> _> = YcsbConfig {
                 workload: YcsbWorkload::Custom {
                     record_count: op_count,
                     op_count,
@@ -2096,57 +2090,49 @@ where
                 system: YcsbSystem::Redis(redis_config),
                 ycsb_path,
                 ycsb_result_file: Some(ycsb_result_file),
-                callback: || {
-                    // Turn on kbadgerd if needed.
-                    if cfg.kbadgerd {
-                        if let Ok(mongod_pid) = ushell
-                            .run(cmd!("pgrep mongod"))?
-                            .stdout
-                            .as_str()
-                            .trim()
-                            .parse::<usize>()
-                        {
-                            ushell.run(cmd!(
-                                "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-                                mongod_pid
-                            ))?;
-                        } else {
-                            ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
-                        }
-                    }
+            };
+            let mut ycsb = YcsbSession::new(ycsb_cfg);
 
-                    // Start perf if needed
-                    perf_handle = if let Some((mmu_overhead_file, counters)) = mmu_overhead {
-                        let handle = ushell.spawn(cmd!(
-                            "{}",
-                            gen_perf_command_prefix(
-                                mmu_overhead_file,
-                                counters,
-                                "-p `pgrep redis-server`"
-                            )
-                        ))?;
+            // Prepare.
+            ycsb.start_and_load(&ushell)?;
 
-                        // Wait for perf to start collection.
-                        ushell.run(
-                            cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file)
-                                .use_bash(),
-                        )?;
+            // Turn on kbadgerd if needed.
+            if cfg.kbadgerd {
+                if let Ok(mongod_pid) = ushell
+                    .run(cmd!("pgrep mongod"))?
+                    .stdout
+                    .as_str()
+                    .trim()
+                    .parse::<usize>()
+                {
+                    ushell.run(cmd!(
+                        "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                        mongod_pid
+                    ))?;
+                } else {
+                    ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
+                }
+            }
 
-                        Some(handle)
-                    } else {
-                        None
-                    };
+            // Start perf if needed
+            let perf_handle = if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let handle = ushell.spawn(cmd!(
+                    "{}",
+                    gen_perf_command_prefix(mmu_overhead_file, counters, "-p `pgrep redis-server`")
+                ))?;
 
-                    Ok(())
-                },
+                // Wait for perf to start collection.
+                ushell.run(
+                    cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
+                )?;
+
+                Some(handle)
+            } else {
+                None
             };
 
             // Actually run the workload
-            time!(
-                timers,
-                "Workload",
-                run_ycsb_workload::<spurs::SshError, _, _>(&ushell, ycsb_cfg,)?
-            );
+            time!(timers, "Workload", ycsb.run(&ushell)?);
 
             // Make sure redis dies
             ushell.run(cmd!("pkill -9 redis-server"))?;
@@ -2208,33 +2194,58 @@ where
                 system: YcsbSystem::MongoDB(mongodb_config),
                 ycsb_path,
                 ycsb_result_file: Some(ycsb_result_file),
-                callback: || {
-                    // Turn on kbadgerd if needed.
-                    if cfg.kbadgerd {
-                        if let Ok(mongod_pid) = ushell
-                            .run(cmd!("pgrep mongod"))?
-                            .stdout
-                            .as_str()
-                            .trim()
-                            .parse::<usize>()
-                        {
-                            ushell.run(cmd!(
-                                "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
-                                mongod_pid
-                            ))?;
-                        } else {
-                            ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
-                        }
-                    }
-                    Ok(())
-                },
+            };
+            let mut ycsb = YcsbSession::new(ycsb_cfg);
+
+            // Prepare.
+            ycsb.start_and_load(&ushell)?;
+
+            // Turn on kbadgerd if needed.
+            if cfg.kbadgerd {
+                if let Ok(mongod_pid) = ushell
+                    .run(cmd!("pgrep mongod"))?
+                    .stdout
+                    .as_str()
+                    .trim()
+                    .parse::<usize>()
+                {
+                    ushell.run(cmd!(
+                        "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                        mongod_pid
+                    ))?;
+                } else {
+                    ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
+                }
+            }
+
+            // Start `perf` if needed.
+            let perf_handle = if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let handle = ushell.spawn(cmd!(
+                    "{}",
+                    gen_perf_command_prefix(mmu_overhead_file, counters, "-p `pgrep mongod`"),
+                ))?;
+
+                // Wait for perf to start collection.
+                ushell.run(
+                    cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
+                )?;
+
+                Some(handle)
+            } else {
+                None
             };
 
-            time!(
-                timers,
-                "Workload",
-                run_ycsb_workload::<spurs::SshError, _, _>(&ushell, ycsb_cfg,)?
-            );
+            // Run the workload.
+            time!(timers, "Workload", ycsb.run(&ushell)?);
+
+            // Make sure mongod dies
+            ushell.run(cmd!("sudo pkill mongod"))?;
+
+            // Make sure perf is done.
+            if let Some(handle) = perf_handle {
+                let (_, result) = handle.join();
+                result?;
+            }
         }
 
         Workload::Graph500 { scale } => {
