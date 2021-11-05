@@ -933,11 +933,9 @@ where
 }
 
 /// Every setting of a YCSB workload.
-pub struct YcsbConfig<'s, E, F, F2>
+pub struct YcsbConfig<'s, F>
 where
-    E: std::error::Error + Sync + Send + 'static,
-    F: FnMut() -> Result<(), E>,
-    F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
     pub workload: YcsbWorkload,
 
@@ -949,212 +947,227 @@ where
     /// - output_file
     /// - freq
     /// - pf_time
-    pub system: YcsbSystem<'s, F2>,
+    pub system: YcsbSystem<'s, F>,
 
     /// The path of the YCSB directory.
     pub ycsb_path: &'s str,
 
     /// Path for the results file of the YCSB output
     pub ycsb_result_file: Option<&'s str>,
-
-    /// A callback to run after the loading phase is complete.
-    pub callback: F,
 }
 
-/// Run a YCSB workload, waiting to completion.
-pub fn run_ycsb_workload<E, F, F2>(
-    shell: &SshShell,
-    mut cfg: YcsbConfig<E, F, F2>,
-) -> Result<(), failure::Error>
+/// State associated with actually running a ycsb workload.
+pub struct YcsbSession<'a, F>
 where
-    E: std::error::Error + Sync + Send + 'static,
-    F: FnMut() -> Result<(), E>,
-    F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
-    let user_home = get_user_home_dir(&shell)?;
-    let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
-    let workload_file = match cfg.workload {
-        YcsbWorkload::A => "workloads/workloada",
-        YcsbWorkload::B => "workloads/workloadb",
-        YcsbWorkload::C => "workloads/workloadc",
-        YcsbWorkload::D => "workloads/workloadd",
-        YcsbWorkload::E => "workloads/workloade",
-        YcsbWorkload::F => "workloads/workloadf",
-        YcsbWorkload::Custom { .. } => &ycsb_wkld_file,
-    };
-    let ycsb_result_file = cfg.ycsb_result_file.unwrap_or("");
+    /// The configuration.
+    cfg: YcsbConfig<'a, F>,
 
-    // If this is a custom workload, we have to build the workload file
-    if let YcsbWorkload::Custom {
-        record_count,
-        op_count,
-        read_prop,
-        update_prop,
-        insert_prop,
-    } = cfg.workload
-    {
-        shell.run(cmd!(
-            "echo \"recordcount={}\" > {}",
+    /// Computed flags for YCSB.
+    flags: Vec<String>,
+}
+
+impl<F> YcsbSession<'_, F>
+where
+    F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
+{
+    pub fn new<'a>(cfg: YcsbConfig<'a, F>) -> YcsbSession<'a, F> {
+        YcsbSession { cfg, flags: vec![] }
+    }
+
+    /// Start background processes/storage systems/servers, and load the dataset into it, but do
+    /// not run the actual workload yet.
+    pub fn start_and_load(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        let user_home = get_user_home_dir(&shell)?;
+        let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
+        let workload_file = match self.cfg.workload {
+            YcsbWorkload::A => "workloads/workloada",
+            YcsbWorkload::B => "workloads/workloadb",
+            YcsbWorkload::C => "workloads/workloadc",
+            YcsbWorkload::D => "workloads/workloadd",
+            YcsbWorkload::E => "workloads/workloade",
+            YcsbWorkload::F => "workloads/workloadf",
+            YcsbWorkload::Custom { .. } => &ycsb_wkld_file,
+        };
+
+        // If this is a custom workload, we have to build the workload file
+        if let YcsbWorkload::Custom {
             record_count,
-            ycsb_wkld_file
-        ))?;
-        shell.run(cmd!(
-            "echo \"operationcount={}\" >> {}",
             op_count,
-            ycsb_wkld_file
-        ))?;
-        shell.run(cmd!(
-            "echo \"workload=site.ycsb.workloads.CoreWorkload\" >> {}",
-            ycsb_wkld_file
-        ))?;
-        shell.run(cmd!("echo \"readallfields=true\" >> {}", ycsb_wkld_file))?;
-        shell.run(cmd!(
-            "echo \"readproportion={:.3}\" >> {}",
             read_prop,
-            ycsb_wkld_file
-        ))?;
-        shell.run(cmd!(
-            "echo \"updateproportion={:.3}\" >> {}",
             update_prop,
-            ycsb_wkld_file
-        ))?;
-        shell.run(cmd!("echo \"scanproportion=0\" >> {}", ycsb_wkld_file))?;
-        shell.run(cmd!(
-            "echo \"insertproportion={:.3}\" >> {}",
             insert_prop,
-            ycsb_wkld_file
-        ))?;
-        shell.run(cmd!(
-            "echo \"requestdistribution=zipfian\" >> {}",
-            ycsb_wkld_file
-        ))?;
-    }
-
-    #[allow(dead_code)]
-    /// The number of KB a record takes.
-    const RECORD_SIZE_KB: usize = 16;
-
-    match &cfg.system {
-        YcsbSystem::Memcached(cfg_memcached) => {
-            start_memcached(shell, &cfg_memcached)?;
-
-            /*
-            // This is the number of records that would consume the memory given to memcached
-            // (approximately)...
-            let nrecords = (cfg_memcached.server_size_mb << 10) / RECORD_SIZE_KB;
-
-            // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
-            // so we make the workload a bit smaller to avoid being killed by the OOM killer.
-            let nrecords = nrecords * 9 / 10;
-
-            // recordcount is used for the "load" phase, while operationcount is used for the "run
-            // phase. YCSB ignores the parameters in the alternate phases.
-            let ycsb_flags = format!(
-                "-p memcached.hosts=localhost:11211 -p recordcount={} -p operationcount={}",
-                nrecords, nrecords
-            );
-            */
-            let ycsb_flags = "-p memcached.hosts=localhost:11211";
-
-            with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, ycsb_flags),
-                cmd!("memcached-tool localhost:11211"),
-            }
-
-            // Run the callback before starting the next part.
-            (cfg.callback)()?;
-
-            with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb run memcached -s -P {} {} | tee {}", workload_file, ycsb_flags, ycsb_result_file),
-            }
+        } = self.cfg.workload
+        {
+            shell.run(cmd!(
+                "echo \"recordcount={}\" > {}",
+                record_count,
+                ycsb_wkld_file
+            ))?;
+            shell.run(cmd!(
+                "echo \"operationcount={}\" >> {}",
+                op_count,
+                ycsb_wkld_file
+            ))?;
+            shell.run(cmd!(
+                "echo \"workload=site.ycsb.workloads.CoreWorkload\" >> {}",
+                ycsb_wkld_file
+            ))?;
+            shell.run(cmd!("echo \"readallfields=true\" >> {}", ycsb_wkld_file))?;
+            shell.run(cmd!(
+                "echo \"readproportion={:.3}\" >> {}",
+                read_prop,
+                ycsb_wkld_file
+            ))?;
+            shell.run(cmd!(
+                "echo \"updateproportion={:.3}\" >> {}",
+                update_prop,
+                ycsb_wkld_file
+            ))?;
+            shell.run(cmd!("echo \"scanproportion=0\" >> {}", ycsb_wkld_file))?;
+            shell.run(cmd!(
+                "echo \"insertproportion={:.3}\" >> {}",
+                insert_prop,
+                ycsb_wkld_file
+            ))?;
+            shell.run(cmd!(
+                "echo \"requestdistribution=zipfian\" >> {}",
+                ycsb_wkld_file
+            ))?;
         }
 
-        YcsbSystem::Redis(cfg_redis) => {
-            let _handle = start_redis(shell, &cfg_redis)?;
+        #[allow(dead_code)]
+        /// The number of KB a record takes.
+        const RECORD_SIZE_KB: usize = 16;
 
-            /*
-            // This is the number of records that would consume the memory given to redis
-            // (approximately)...
-            let nrecords = (cfg_redis.server_size_mb << 10) / RECORD_SIZE_KB;
+        match &self.cfg.system {
+            YcsbSystem::Memcached(cfg_memcached) => {
+                start_memcached(shell, &cfg_memcached)?;
 
-            // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
-            // so we make the workload a bit smaller to avoid being killed by the OOM killer.
-            let nrecords = nrecords * 9 / 10;
+                /*
+                // This is the number of records that would consume the memory given to memcached
+                // (approximately)...
+                let nrecords = (cfg_memcached.server_size_mb << 10) / RECORD_SIZE_KB;
 
-            // recordcount is used for the "load" phase, while operationcount is used for the "run
-            // phase. YCSB ignores the parameters in the alternate phases.
-            let ycsb_flags = format!(
-                "-p redis.uds=/tmp/redis.sock -p recordcount={} -p operationcount={}",
-                nrecords, nrecords
-            );
-            */
-            let ycsb_flags = "-p redis.uds=/tmp/redis.sock";
+                // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
+                // so we make the workload a bit smaller to avoid being killed by the OOM killer.
+                let nrecords = nrecords * 9 / 10;
 
-            with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb load redis -s -P {} {}", workload_file, ycsb_flags),
-                cmd!("redis-cli -s /tmp/redis.sock INFO"),
+                // recordcount is used for the "load" phase, while operationcount is used for the "run
+                // phase. YCSB ignores the parameters in the alternate phases.
+                let ycsb_flags = format!(
+                    "-p memcached.hosts=localhost:11211 -p recordcount={} -p operationcount={}",
+                    nrecords, nrecords
+                );
+                */
+                self.flags.push("-p memcached.hosts=localhost:11211".into());
+
+                with_shell! { shell in &self.cfg.ycsb_path =>
+                    cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, self.flags.join(" ")),
+                    cmd!("memcached-tool localhost:11211"),
+                }
             }
 
-            // Run the callback before starting the next part.
-            (cfg.callback)()?;
+            YcsbSystem::Redis(cfg_redis) => {
+                let _handle = start_redis(shell, &cfg_redis)?;
 
-            with_shell! { shell in &cfg.ycsb_path =>
-                cmd!("./bin/ycsb run redis -s -P {} {} | tee {}", workload_file, ycsb_flags, ycsb_result_file),
+                /*
+                // This is the number of records that would consume the memory given to redis
+                // (approximately)...
+                let nrecords = (cfg_redis.server_size_mb << 10) / RECORD_SIZE_KB;
+
+                // ... however, the JVM for YCSB also consumes about 5-8% more memory (empirically),
+                // so we make the workload a bit smaller to avoid being killed by the OOM killer.
+                let nrecords = nrecords * 9 / 10;
+
+                // recordcount is used for the "load" phase, while operationcount is used for the "run
+                // phase. YCSB ignores the parameters in the alternate phases.
+                let ycsb_flags = format!(
+                    "-p redis.uds=/tmp/redis.sock -p recordcount={} -p operationcount={}",
+                    nrecords, nrecords
+                );
+                */
+                self.flags.push("-p redis.uds=/tmp/redis.sock".into());
+
+                with_shell! { shell in &self.cfg.ycsb_path =>
+                    cmd!("./bin/ycsb load redis -s -P {} {}", workload_file, self.flags.join(" ")),
+                    cmd!("redis-cli -s /tmp/redis.sock INFO"),
+                }
             }
-        }
 
-        YcsbSystem::MongoDB(cfg_mongodb) => {
-            start_mongodb(&shell, cfg_mongodb)?;
+            YcsbSystem::MongoDB(cfg_mongodb) => {
+                start_mongodb(&shell, cfg_mongodb)?;
 
-            // Load the database before starting the workload
-            shell.run(
-                cmd!("./bin/ycsb load mongodb -s -P {}", ycsb_wkld_file).cwd(&cfg.ycsb_path),
-            )?;
-
-            // Run the callback
-            (cfg.callback)()?;
-
-            // Start `perf` if needed.
-            let perf_handle = if let Some((mmu_overhead_file, counters)) = &cfg_mongodb.mmu_perf {
-                let handle = shell.spawn(cmd!(
-                    "{}",
-                    gen_perf_command_prefix(mmu_overhead_file, counters, "-p `pgrep mongod`"),
-                ))?;
-
-                // Wait for perf to start collection.
+                // Load the database before starting the workload
                 shell.run(
-                    cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
+                    cmd!("./bin/ycsb load mongodb -s -P {}", ycsb_wkld_file)
+                        .cwd(&self.cfg.ycsb_path),
                 )?;
-
-                Some(handle)
-            } else {
-                None
-            };
-
-            // Run workload
-            shell.run(
-                cmd!(
-                    "./bin/ycsb run mongodb -s -P {} | tee {}",
-                    ycsb_wkld_file,
-                    ycsb_result_file
-                )
-                .cwd(&cfg.ycsb_path),
-            )?;
-
-            // Make sure mongod dies
-            shell.run(cmd!("sudo pkill mongod"))?;
-
-            // Make sure perf is done.
-            if let Some(handle) = perf_handle {
-                let (_, result) = handle.join();
-                result?;
             }
+
+            YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
         }
 
-        YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
+        Ok(())
     }
 
-    Ok(())
+    /// Run a YCSB workload, waiting to completion. `start_and_load` must be called first.
+    pub fn run(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        let user_home = get_user_home_dir(&shell)?;
+        let ycsb_wkld_file = format!("{}/ycsb_wkld", user_home);
+        let workload_file = match self.cfg.workload {
+            YcsbWorkload::A => "workloads/workloada",
+            YcsbWorkload::B => "workloads/workloadb",
+            YcsbWorkload::C => "workloads/workloadc",
+            YcsbWorkload::D => "workloads/workloadd",
+            YcsbWorkload::E => "workloads/workloade",
+            YcsbWorkload::F => "workloads/workloadf",
+            YcsbWorkload::Custom { .. } => &ycsb_wkld_file,
+        };
+        let ycsb_result_file = self.cfg.ycsb_result_file.unwrap_or("");
+
+        match &self.cfg.system {
+            YcsbSystem::Memcached(_cfg_memcached) => {
+                shell.run(
+                    cmd!(
+                        "./bin/ycsb run memcached -s -P {} {} | tee {}",
+                        workload_file,
+                        self.flags.join(" "),
+                        ycsb_result_file
+                    )
+                    .cwd(&self.cfg.ycsb_path),
+                )?;
+            }
+
+            YcsbSystem::Redis(_cfg_redis) => {
+                shell.run(
+                    cmd!(
+                        "./bin/ycsb run redis -s -P {} {} | tee {}",
+                        workload_file,
+                        self.flags.join(" "),
+                        ycsb_result_file
+                    )
+                    .cwd(&self.cfg.ycsb_path),
+                )?;
+            }
+
+            YcsbSystem::MongoDB(_cfg_mongodb) => {
+                shell.run(
+                    cmd!(
+                        "./bin/ycsb run mongodb -s -P {} | tee {}",
+                        ycsb_wkld_file,
+                        ycsb_result_file
+                    )
+                    .cwd(&self.cfg.ycsb_path),
+                )?;
+            }
+
+            YcsbSystem::KyotoCabinet => todo!("KC with memtracing support"),
+        }
+
+        Ok(())
+    }
 }
 
 /// Run the Graph500 workload (BFS and SSSP), waiting to completion.

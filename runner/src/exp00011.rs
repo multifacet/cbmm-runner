@@ -15,8 +15,8 @@ use crate::{
     paths::{setup00000::*, *},
     time,
     workloads::{
-        run_ycsb_workload, Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig,
-        YcsbConfig, YcsbSystem, YcsbWorkload,
+        Damon, MemcachedWorkloadConfig, Pintool, RedisWorkloadConfig, YcsbConfig, YcsbSession,
+        YcsbSystem, YcsbWorkload,
     },
 };
 
@@ -417,41 +417,35 @@ where
         YcsbBackend::KyotoCabinet => YcsbSystem::KyotoCabinet,
     };
 
-    let callback = || {
-        // If we are taking a trace, sleep for 10 seconds to hopefully make a noticable
-        // mark in the trace data.
-        if cfg.memtrace {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-        }
+    let mut ycsb = YcsbSession::new(YcsbConfig {
+        workload: cfg.workload,
+        system,
+        ycsb_path: &ycsb_path,
+        ycsb_result_file: None,
+    });
 
-        // If we are collecting memory stats, reset them now.
-        if cfg.mmstats {
-            // Print the current numbers, 'cause why not?
-            vshell.run(cmd!("tail /proc/mm_*"))?;
+    // Prepare.
+    ycsb.start_and_load(&vshell)?;
 
-            // Writing to any of the params will reset the plot.
-            vshell.run(cmd!(
-                "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
-            ))?;
-        }
+    // If we are taking a trace, sleep for 10 seconds to hopefully make a noticable
+    // mark in the trace data.
+    if cfg.memtrace {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+    }
 
-        Ok(())
-    };
+    // If we are collecting memory stats, reset them now.
+    if cfg.mmstats {
+        // Print the current numbers, 'cause why not?
+        vshell.run(cmd!("tail /proc/mm_*"))?;
 
-    time!(
-        timers,
-        "Workload",
-        run_ycsb_workload::<spurs::SshError, _, _>(
-            &vshell,
-            YcsbConfig {
-                workload: cfg.workload,
-                system,
-                ycsb_path: &ycsb_path,
-                ycsb_result_file: None,
-                callback,
-            }
-        )?
-    );
+        // Writing to any of the params will reset the plot.
+        vshell.run(cmd!(
+            "for h in /proc/mm_*_min ; do echo $h ; echo 0 | sudo tee $h ; done"
+        ))?;
+    }
+
+    // Run the workload.
+    time!(timers, "Workload", ycsb.run(&vshell)?);
 
     // Collect stats after the workload runs.
     if cfg.mmstats && !cfg.mmstats_periodic {
