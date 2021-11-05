@@ -61,8 +61,20 @@ enum Workload {
     Memcached {
         size: usize,
     },
+    MemcachedYcsb {
+        size: usize,
+        op_count: usize,
+        read_prop: f32,
+        update_prop: f32,
+    },
     Redis {
         size: usize,
+    },
+    RedisYcsb {
+        size: usize,
+        op_count: usize,
+        read_prop: f32,
+        update_prop: f32,
     },
     MongoDB {
         op_count: usize,
@@ -230,14 +242,42 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              "The number of reps the workload should run (e.g. 50)")
         )
         (@subcommand memcached =>
-            (about: "Run the `memcached` workload.")
+            (about: "Run the `memcached` workload using the memcached_gen_data driver.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
         )
+        (@subcommand memcachedycsb =>
+            (about: "Run the `memcached` workload using the YCSB driver.")
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
+             "The number of GBs of the workload (e.g. 500)")
+            (@arg OP_COUNT: --op_count +takes_value {validator::is::<usize>}
+             "The number of operations to perform during the workload.\
+             The default is 1000.")
+            (@arg READ_PROP: --read_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop.")
+            (@arg UPDATE_PROP: --update_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop")
+        )
         (@subcommand redis =>
-            (about: "Run the `redis` workload.")
+            (about: "Run the `redis` workload using the redis_gen_data driver.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload")
+        )
+        (@subcommand redisycsb =>
+            (about: "Run the `redis` workload using the YCSB driver.")
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
+             "The number of GBs of the workload")
+            (@arg OP_COUNT: --op_count +takes_value {validator::is::<usize>}
+             "The number of operations to perform during the workload.\
+             The default is 1000.")
+            (@arg READ_PROP: --read_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop.")
+            (@arg UPDATE_PROP: --update_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop")
         )
         (@subcommand mongodb =>
             (about: "Run the MongoDB workload.")
@@ -454,10 +494,62 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             Workload::Memcached { size }
         }
 
+        ("memcachedycsb", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let op_count = sub_m
+                .value_of("OP_COUNT")
+                .unwrap_or("1000")
+                .parse::<usize>()
+                .unwrap();
+            let read_prop = sub_m
+                .value_of("READ_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+            let update_prop = sub_m
+                .value_of("UPDATE_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+
+            Workload::MemcachedYcsb {
+                size,
+                op_count,
+                read_prop,
+                update_prop,
+            }
+        }
+
         ("redis", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
 
             Workload::Redis { size }
+        }
+
+        ("redisycsb", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let op_count = sub_m
+                .value_of("OP_COUNT")
+                .unwrap_or("1000")
+                .parse::<usize>()
+                .unwrap();
+            let read_prop = sub_m
+                .value_of("READ_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+            let update_prop = sub_m
+                .value_of("UPDATE_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+
+            Workload::RedisYcsb {
+                size,
+                op_count,
+                read_prop,
+                update_prop,
+            }
         }
 
         ("mongodb", Some(sub_m)) => {
@@ -1508,8 +1600,8 @@ where
                     Workload::TimeMmapTouch { .. } => "time_mmap_touch",
                     Workload::ThpUbmk { .. } => "ubmk",
                     Workload::ThpUbmkShm { .. } => "ubmk-shm",
-                    Workload::Redis { .. } => "redis-server",
-                    Workload::Memcached { .. } => "memcached",
+                    Workload::Redis { .. } | Workload::RedisYcsb { .. } => "redis-server",
+                    Workload::Memcached { .. } | Workload::MemcachedYcsb { .. } => "memcached",
                     Workload::MongoDB { .. } => "mongod",
                     Workload::Graph500 { .. } => "graph500",
                     Workload::Spec2017Xz { .. } => "xz_s",
@@ -1548,7 +1640,9 @@ where
                     Workload::ThpUbmk { .. }
                     | Workload::ThpUbmkShm { .. }
                     | Workload::Memcached { .. }
+                    | Workload::MemcachedYcsb { .. }
                     | Workload::Redis { .. }
+                    | Workload::RedisYcsb { .. }
                     | Workload::MongoDB { .. }
                     | Workload::Spec2017Mcf
                     | Workload::Spec2017Xalancbmk { .. }
@@ -1784,6 +1878,124 @@ where
             );
         }
 
+        Workload::MemcachedYcsb {
+            size,
+            op_count,
+            read_prop,
+            update_prop,
+        } => {
+            let freq = get_cpu_freq(&ushell)?;
+            let ycsb_path = &dir!(bmks_dir, "YCSB");
+            let memcached_cfg = MemcachedWorkloadConfig {
+                user: login.username,
+                exp_dir: zerosim_exp_path,
+                memcached: &dir!(
+                    user_home.as_str(),
+                    RESEARCH_WORKSPACE_PATH,
+                    ZEROSIM_MEMCACHED_SUBMODULE
+                ),
+                server_size_mb: size << 10,
+                wk_size_gb: size,
+                freq: Some(freq),
+                allow_oom: true,
+                pf_time: None,
+                output_file: Some(output_file),
+                server_pin_core: Some(tctx.next()),
+                client_pin_core: {
+                    tctx.skip();
+                    tctx.next()
+                },
+                pintool: if cfg.memtrace {
+                    Some(Pintool::MemTrace {
+                        pin_path: &pin_path,
+                        output_path: &trace_file,
+                    })
+                } else {
+                    None
+                },
+                damon: if cfg.damon {
+                    Some(Damon {
+                        damon_path: &damon_path,
+                        output_path: &damon_output_path,
+                        sample_interval: cfg.damon_sample_interval,
+                        aggregate_interval: cfg.damon_aggr_interval,
+                    })
+                } else {
+                    None
+                },
+                cb_wrapper_cmd,
+                mmu_perf: mmu_overhead,
+                server_start_cb: |shell| {
+                    // Set `huge_addr` if needed.
+                    if let Some(ref huge_addr) = cfg.transparent_hugepage_huge_addr {
+                        let memcached_pid = shell
+                            .run(cmd!("pgrep memcached"))?
+                            .stdout
+                            .as_str()
+                            .trim()
+                            .parse::<usize>()?;
+                        turn_on_huge_addr(
+                            shell,
+                            huge_addr.clone(),
+                            ThpHugeAddrProcess::Pid(memcached_pid),
+                        )?;
+                    }
+                    // Turn on kbadgerd if needed.
+                    if cfg.kbadgerd {
+                        let memcached_pid = shell
+                            .run(cmd!("pgrep memcached"))?
+                            .stdout
+                            .as_str()
+                            .trim()
+                            .parse::<usize>()?;
+                        ushell.run(cmd!(
+                            "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                            memcached_pid
+                        ))?;
+                    }
+                    Ok(())
+                },
+            };
+            let ycsb_cfg = YcsbConfig {
+                workload: YcsbWorkload::Custom {
+                    record_count: op_count,
+                    op_count,
+                    read_prop,
+                    update_prop,
+                    insert_prop: 1.0 - read_prop - update_prop,
+                },
+                system: YcsbSystem::Memcached(memcached_cfg),
+                ycsb_path,
+                ycsb_result_file: Some(ycsb_result_file),
+                callback: || {
+                    // Turn on kbadgerd if needed.
+                    if cfg.kbadgerd {
+                        if let Ok(mongod_pid) = ushell
+                            .run(cmd!("pgrep mongod"))?
+                            .stdout
+                            .as_str()
+                            .trim()
+                            .parse::<usize>()
+                        {
+                            ushell.run(cmd!(
+                                "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                                mongod_pid
+                            ))?;
+                        } else {
+                            ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
+                        }
+                    }
+                    Ok(())
+                },
+            };
+
+            time!(
+                timers,
+                "Workload",
+                run_ycsb_workload::<spurs::SshError, _, _>(&ushell, ycsb_cfg,)?
+            );
+        }
+
         Workload::Redis { size } => {
             let freq = get_cpu_freq(&ushell)?;
             let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
@@ -1799,7 +2011,7 @@ where
                 client_pin_core: tctx.next(),
                 freq: Some(freq),
                 pf_time: None,
-                cb_wrapper_cmd: cb_wrapper_cmd,
+                cb_wrapper_cmd,
                 pintool: None,
             };
 
@@ -1824,6 +2036,100 @@ where
 
             // Actually run the workload
             run_redis_gen_data(&ushell, &redis_config)?.join().1?;
+
+            // Make sure redis dies
+            ushell.run(cmd!("pkill -9 redis-server"))?;
+
+            // Make sure perf is done.
+            if let Some(handle) = perf_handle {
+                let (_, result) = handle.join();
+                result?;
+            }
+        }
+
+        Workload::RedisYcsb {
+            size,
+            op_count,
+            read_prop,
+            update_prop,
+        } => {
+            let freq = get_cpu_freq(&ushell)?;
+            let ycsb_path = &dir!(bmks_dir, "YCSB");
+            let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
+            let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let redis_config = RedisWorkloadConfig {
+                exp_dir: zerosim_exp_path,
+                nullfs: &nullfs_path,
+                redis_conf: &redis_conf_path,
+                server_size_mb: size << 10,
+                wk_size_gb: size,
+                output_file: None,
+                server_pin_core: None,
+                client_pin_core: tctx.next(),
+                freq: Some(freq),
+                pf_time: None,
+                cb_wrapper_cmd,
+                pintool: None,
+            };
+
+            let _redis_handle = start_redis(&ushell, &redis_config);
+
+            // Start perf if needed
+            let perf_handle = if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let handle = ushell.spawn(cmd!(
+                    "{}",
+                    gen_perf_command_prefix(mmu_overhead_file, counters, "-p `pgrep redis-server`")
+                ))?;
+
+                // Wait for perf to start collection.
+                ushell.run(
+                    cmd!("while [ ! -e {} ] ; do sleep 1 ; done", mmu_overhead_file).use_bash(),
+                )?;
+
+                Some(handle)
+            } else {
+                None
+            };
+
+            let ycsb_cfg: YcsbConfig<_, _, for<'a> fn(&'a _) -> _> = YcsbConfig {
+                workload: YcsbWorkload::Custom {
+                    record_count: op_count,
+                    op_count,
+                    read_prop,
+                    update_prop,
+                    insert_prop: 1.0 - read_prop - update_prop,
+                },
+                system: YcsbSystem::Redis(redis_config),
+                ycsb_path,
+                ycsb_result_file: Some(ycsb_result_file),
+                callback: || {
+                    // Turn on kbadgerd if needed.
+                    if cfg.kbadgerd {
+                        if let Ok(mongod_pid) = ushell
+                            .run(cmd!("pgrep mongod"))?
+                            .stdout
+                            .as_str()
+                            .trim()
+                            .parse::<usize>()
+                        {
+                            ushell.run(cmd!(
+                                "echo {} | sudo tee /sys/kernel/mm/kbadgerd/enabled",
+                                mongod_pid
+                            ))?;
+                        } else {
+                            ushell.run(cmd!("echo \"Could not find process mongod.\""))?;
+                        }
+                    }
+                    Ok(())
+                },
+            };
+
+            // Actually run the workload
+            time!(
+                timers,
+                "Workload",
+                run_ycsb_workload::<spurs::SshError, _, _>(&ushell, ycsb_cfg,)?
+            );
 
             // Make sure redis dies
             ushell.run(cmd!("pkill -9 redis-server"))?;
