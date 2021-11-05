@@ -936,7 +936,7 @@ where
 pub struct YcsbConfig<'s, E, F, F2>
 where
     E: std::error::Error + Sync + Send + 'static,
-    F: Fn() -> Result<(), E>,
+    F: FnMut() -> Result<(), E>,
     F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
     pub workload: YcsbWorkload,
@@ -964,11 +964,11 @@ where
 /// Run a YCSB workload, waiting to completion.
 pub fn run_ycsb_workload<E, F, F2>(
     shell: &SshShell,
-    cfg: YcsbConfig<E, F, F2>,
+    mut cfg: YcsbConfig<E, F, F2>,
 ) -> Result<(), failure::Error>
 where
     E: std::error::Error + Sync + Send + 'static,
-    F: Fn() -> Result<(), E>,
+    F: FnMut() -> Result<(), E>,
     F2: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
     let user_home = get_user_home_dir(&shell)?;
