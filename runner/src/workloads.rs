@@ -1030,11 +1030,15 @@ where
         ))?;
     }
 
+    #[allow(dead_code)]
     /// The number of KB a record takes.
     const RECORD_SIZE_KB: usize = 16;
 
     match &cfg.system {
         YcsbSystem::Memcached(cfg_memcached) => {
+            start_memcached(shell, &cfg_memcached)?;
+
+            /*
             // This is the number of records that would consume the memory given to memcached
             // (approximately)...
             let nrecords = (cfg_memcached.server_size_mb << 10) / RECORD_SIZE_KB;
@@ -1043,14 +1047,14 @@ where
             // so we make the workload a bit smaller to avoid being killed by the OOM killer.
             let nrecords = nrecords * 9 / 10;
 
-            start_memcached(shell, &cfg_memcached)?;
-
             // recordcount is used for the "load" phase, while operationcount is used for the "run
             // phase. YCSB ignores the parameters in the alternate phases.
             let ycsb_flags = format!(
                 "-p memcached.hosts=localhost:11211 -p recordcount={} -p operationcount={}",
                 nrecords, nrecords
             );
+            */
+            let ycsb_flags = "-p memcached.hosts=localhost:11211";
 
             with_shell! { shell in &cfg.ycsb_path =>
                 cmd!("./bin/ycsb load memcached -s -P {} {}", workload_file, ycsb_flags),
@@ -1066,6 +1070,9 @@ where
         }
 
         YcsbSystem::Redis(cfg_redis) => {
+            let _handle = start_redis(shell, &cfg_redis)?;
+
+            /*
             // This is the number of records that would consume the memory given to redis
             // (approximately)...
             let nrecords = (cfg_redis.server_size_mb << 10) / RECORD_SIZE_KB;
@@ -1074,14 +1081,14 @@ where
             // so we make the workload a bit smaller to avoid being killed by the OOM killer.
             let nrecords = nrecords * 9 / 10;
 
-            let _handle = start_redis(shell, &cfg_redis)?;
-
             // recordcount is used for the "load" phase, while operationcount is used for the "run
             // phase. YCSB ignores the parameters in the alternate phases.
             let ycsb_flags = format!(
                 "-p redis.uds=/tmp/redis.sock -p recordcount={} -p operationcount={}",
                 nrecords, nrecords
             );
+            */
+            let ycsb_flags = "-p redis.uds=/tmp/redis.sock";
 
             with_shell! { shell in &cfg.ycsb_path =>
                 cmd!("./bin/ycsb load redis -s -P {} {}", workload_file, ycsb_flags),
