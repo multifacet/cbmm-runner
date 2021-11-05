@@ -622,7 +622,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             if size != 0 {
                 let size_implemented = match &wk {
-                    Workload::Spec2017Xz { spec_input: _, size: _ } => true,
+                    Workload::Spec2017Xz {
+                        spec_input: _,
+                        size: _,
+                    } => true,
                     Workload::Spec2017Xalancbmk { size: _ } => true,
                     _ => false,
                 };
@@ -2285,11 +2288,16 @@ where
         }
 
         w @ Workload::Spec2017Mcf
-        | w @ Workload::Spec2017Xz { spec_input: _, size: _ }
+        | w @ Workload::Spec2017Xz {
+            spec_input: _,
+            size: _,
+        }
         | w @ Workload::Spec2017Xalancbmk { size: _ } => {
             let wkload = match w {
                 Workload::Spec2017Mcf => Spec2017Workload::Mcf,
-                Workload::Spec2017Xz { spec_input, size } => Spec2017Workload::Xz { spec_input, size },
+                Workload::Spec2017Xz { spec_input, size } => {
+                    Spec2017Workload::Xz { spec_input, size }
+                }
                 Workload::Spec2017Xalancbmk { size } => Spec2017Workload::Xalancbmk { size },
                 _ => unreachable!(),
             };
