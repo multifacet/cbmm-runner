@@ -8,7 +8,8 @@ use spurs::{cmd, Execute, SshShell, SshSpawnHandle};
 
 use crate::workloads::{
     gen_cb_wrapper_command_prefix, gen_perf_command_prefix, run_memhog, run_metis_matrix_mult,
-    run_redis_gen_data, start_redis, MemhogOptions, RedisWorkloadConfig, TasksetCtx,
+    run_redis_gen_data, start_redis, MemhogOptions, RedisWorkloadConfig, TasksetCtx, YcsbConfig,
+    YcsbSession, YcsbSystem, YcsbWorkload,
 };
 
 /// Implemented common abilities for multi-process workloads.
@@ -78,6 +79,34 @@ pub struct MixWorkload<'s> {
     runtime_file: &'s str,
 
     prefixes: HashMap<MixWorkloadKey, Vec<String>>,
+}
+
+/// Like `MixWorkload`, but redis is driven by YCSB.
+pub struct MixYcsbWorkload<'s> {
+    /// The path of the `0sim-experiments` submodule on the remote.
+    exp_dir: &'s str,
+    /// The path to the `Metis` directory in the workspace on the remote.
+    metis_dir: &'s str,
+    /// The path to the `numactl` directory in the workspace on the remote.
+    numactl_dir: &'s str,
+    nullfs_dir: &'s str,
+    /// The path to the `redis.conf` file on the remote.
+    redis_conf: &'s str,
+    /// The path of the YCSB directory.
+    ycsb_path: &'s str,
+    /// Path for the results file of the YCSB output
+    ycsb_result_file: Option<&'s str>,
+    /// The YCSB workload to use.
+    ycsb_workload: YcsbWorkload,
+    /// The _host_ CPU frequency in MHz.
+    freq: usize,
+    /// The total amount of memory of the mix workload in GB.
+    size_gb: usize,
+    tctx: &'s mut TasksetCtx,
+    runtime_file: &'s str,
+
+    prefixes: HashMap<MixWorkloadKey, Vec<String>>,
+    ycsb: Option<YcsbSession<'s, for<'a> fn(&'a SshShell) -> Result<(), failure::Error>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -175,7 +204,7 @@ impl MultiProcessWorkload for MixWorkload<'_> {
                 pf_time: None,
                 output_file: None,
                 // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
-                cb_wrapper_cmd: prefixes.as_ref().map(String::as_str),
+                cb_wrapper_cmd: prefixes,
                 client_pin_core: self.tctx.next(),
                 server_pin_core: None,
                 redis_conf: self.redis_conf,
@@ -238,6 +267,170 @@ impl MultiProcessWorkload for MixWorkload<'_> {
 
         // Wait for redis client to finish
         redis_client_handle.join().1?;
+
+        // Make sure processes die so that perf terminates.
+        shell.run(cmd!("pkill -9 redis-server"))?;
+        shell.run(cmd!("pkill -9 memhog"))?;
+        shell.run(cmd!("pkill -9 matrix_mult2"))?;
+
+        // Make sure perf is done.
+        shell.run(cmd!(
+            "while [[ $(pgrep -f '^perf stat') ]] ; do sleep 1 ; done ; echo done"
+        ))?;
+
+        let duration = Instant::now() - start;
+        shell.run(cmd!(
+            "echo '{}' > {}",
+            duration.as_millis(),
+            self.runtime_file
+        ))?;
+
+        Ok(())
+    }
+
+    fn kill_background_processes(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        shell.run(cmd!("pkill -9 redis-server"))?;
+        Ok(())
+    }
+}
+
+impl MixYcsbWorkload<'_> {
+    pub fn new<'s>(
+        exp_dir: &'s str,
+        metis_dir: &'s str,
+        numactl_dir: &'s str,
+        nullfs_dir: &'s str,
+        redis_conf: &'s str,
+        ycsb_path: &'s str,
+        ycsb_result_file: Option<&'s str>,
+        ycsb_workload: YcsbWorkload,
+        freq: usize,
+        size_gb: usize,
+        tctx: &'s mut TasksetCtx,
+        runtime_file: &'s str,
+    ) -> MixYcsbWorkload<'s> {
+        MixYcsbWorkload {
+            exp_dir,
+            metis_dir,
+            numactl_dir,
+            nullfs_dir,
+            redis_conf,
+            ycsb_path,
+            ycsb_result_file,
+            ycsb_workload,
+            freq,
+            size_gb,
+            tctx,
+            runtime_file,
+
+            ycsb: None,
+            prefixes: HashMap::new(),
+        }
+    }
+
+    pub fn set_mmap_filters(
+        &mut self,
+        cb_wrapper_path: &str,
+        filters: HashMap<MixWorkloadKey, String>,
+    ) {
+        for (key, file) in filters.into_iter() {
+            self.add_command_prefix(key, &gen_cb_wrapper_command_prefix(cb_wrapper_path, file));
+        }
+    }
+}
+
+impl MultiProcessWorkload for MixYcsbWorkload<'_> {
+    type Key = MixWorkloadKey;
+
+    fn process_names() -> Vec<String> {
+        vec![
+            "redis-server".into(),
+            "matrix_mult2".into(),
+            "memhog".into(),
+        ]
+    }
+
+    fn add_command_prefix(&mut self, key: Self::Key, prefix: &str) {
+        self.prefixes
+            .entry(key)
+            .or_insert_with(Vec::new)
+            .push(prefix.into());
+    }
+
+    fn start_background_processes(
+        &mut self,
+        shell: &SshShell,
+    ) -> Result<Vec<SshSpawnHandle>, failure::Error> {
+        let prefixes = self
+            .prefixes
+            .get(&MixWorkloadKey::Redis)
+            .map(|prefixes| prefixes.join(" "));
+
+        let redis_cfg = RedisWorkloadConfig {
+            exp_dir: self.exp_dir,
+            nullfs: self.nullfs_dir,
+            server_size_mb: (self.size_gb << 10) / 3,
+            wk_size_gb: self.size_gb / 3,
+            freq: Some(self.freq),
+            pf_time: None,
+            output_file: None,
+            // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
+            cb_wrapper_cmd: prefixes,
+            client_pin_core: self.tctx.next(),
+            server_pin_core: None,
+            redis_conf: self.redis_conf,
+            pintool: None,
+        };
+
+        let ycsb_cfg: YcsbConfig<for<'a> fn(&'a _) -> _> = YcsbConfig {
+            workload: self.ycsb_workload,
+            system: YcsbSystem::Redis(redis_cfg),
+            ycsb_path: self.ycsb_path,
+            ycsb_result_file: self.ycsb_result_file,
+        };
+        let mut ycsb = YcsbSession::new(ycsb_cfg);
+
+        // Start servers and initial dataset...
+        ycsb.start_and_load(shell)?;
+        self.ycsb = Some(ycsb);
+
+        Ok(vec![])
+    }
+
+    fn run_sync(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
+        let start = Instant::now();
+
+        let matrix_dim = (((self.size_gb / 3) << 27) as f64).sqrt() as usize;
+        let _metis_handle = run_metis_matrix_mult(
+            shell,
+            self.metis_dir,
+            matrix_dim,
+            // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
+            self.prefixes
+                .get(&MixWorkloadKey::Metis)
+                .map(|prefixes| prefixes.join(" "))
+                .as_ref()
+                .map(String::as_str),
+            self.tctx,
+        )?;
+
+        let _memhog_handles = run_memhog(
+            shell,
+            self.numactl_dir,
+            None, // repeat indefinitely
+            (self.size_gb << 20) / 3,
+            MemhogOptions::PIN | MemhogOptions::DATA_OBLIV,
+            // HACK: We reuse the cb_wrapper_cmd parameter to pass arbitrary prefixes here...
+            self.prefixes
+                .get(&MixWorkloadKey::Memhog)
+                .map(|prefixes| prefixes.join(" "))
+                .as_ref()
+                .map(String::as_str),
+            self.tctx,
+        )?;
+
+        // Blocks until completion...
+        self.ycsb.as_mut().unwrap().run(shell)?;
 
         // Make sure processes die so that perf terminates.
         shell.run(cmd!("pkill -9 redis-server"))?;

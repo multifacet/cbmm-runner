@@ -16,12 +16,12 @@ use crate::{
     get_cpu_freq,
     multiworkloads::{
         CloudsuiteWebServingWorkload, CloudsuiteWebServingWorkloadKey, MixWorkload, MixWorkloadKey,
-        MultiProcessWorkload, WorkloadKey,
+        MixYcsbWorkload, MultiProcessWorkload, WorkloadKey,
     },
     output::{Parametrize, Timestamp},
     paths::*,
     time,
-    workloads::gen_perf_command_prefix,
+    workloads::{gen_perf_command_prefix, YcsbWorkload},
 };
 
 use serde::{Deserialize, Serialize};
@@ -32,8 +32,18 @@ use crate::exp00010::{turn_on_huge_addr, ThpHugeAddrMode, ThpHugeAddrProcess};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
-    Mix { size: usize },
-    CloudsuiteWebServing { load_scale: usize },
+    Mix {
+        size: usize,
+    },
+    MixYcsb {
+        size: usize,
+        op_count: usize,
+        read_prop: f32,
+        update_prop: f32,
+    },
+    CloudsuiteWebServing {
+        load_scale: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Parametrize)]
@@ -104,6 +114,20 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run the `mix` workload.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
+        )
+        (@subcommand mixycsb =>
+            (about: "Run the `mix` workload.")
+            (@arg SIZE: +required +takes_value {validator::is::<usize>}
+             "The number of GBs of the workload (e.g. 500)")
+            (@arg OP_COUNT: --op_count +takes_value {validator::is::<usize>}
+             "The number of operations to perform during the workload.\
+             The default is 1000.")
+            (@arg READ_PROP: --read_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop.")
+            (@arg UPDATE_PROP: --update_prop +takes_value {validator::is::<f32>}
+             "The proportion of read operations to perform as a value between 0 and 1.\
+             The default is 0.5. The proportion on insert operations will be 1 - read_prop - update_prop")
         )
         (@subcommand cloudsuite =>
             (about: "Run a Cloudsuite benchmark.")
@@ -289,6 +313,32 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             Workload::Mix { size }
         }
 
+        ("mixycsb", Some(sub_m)) => {
+            let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let op_count = sub_m
+                .value_of("OP_COUNT")
+                .unwrap_or("1000")
+                .parse::<usize>()
+                .unwrap();
+            let read_prop = sub_m
+                .value_of("READ_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+            let update_prop = sub_m
+                .value_of("UPDATE_PROP")
+                .unwrap_or("0.5")
+                .parse::<f32>()
+                .unwrap();
+
+            Workload::MixYcsb {
+                size,
+                op_count,
+                read_prop,
+                update_prop,
+            }
+        }
+
         ("cloudsuite", Some(sub_m)) => match sub_m.subcommand() {
             ("web_serving", Some(sub_m)) => {
                 let load_scale = sub_m
@@ -457,6 +507,7 @@ where
         ref pftrace_rejected_file,
         ref runtime_file,
         ref bmks_dir,
+        ref ycsb_result_file,
 
         instrumented_proc,
         mmap_filter_csv_files,
@@ -474,7 +525,6 @@ where
         pin_path: _,
         damon_output_path: _,
         trace_file: _,
-        ycsb_result_file: _,
         output_file: _,
     } = crate::exp00010::initial_setup(
         &ushell,
@@ -586,6 +636,62 @@ where
                 &memhog_path,
                 &nullfs_path,
                 &redis_conf_path,
+                freq,
+                size,
+                &mut tctx,
+                &runtime_file,
+            );
+
+            // Add prefix to measure mmu overhead.
+            if let Some((mmu_overhead_file, counters)) = mmu_overhead {
+                let key = MixWorkloadKey::from_name(instrumented_proc.as_ref().unwrap());
+                let prefix = gen_perf_command_prefix(mmu_overhead_file, &counters, "");
+                wk.add_command_prefix(key, &prefix);
+            }
+
+            // Set mmap filters.
+            let filters = mmap_filter_csv_files
+                .into_iter()
+                .map(|(p, f)| (MixWorkloadKey::from_name(p), f))
+                .collect();
+            wk.set_mmap_filters(&dir!(bmks_dir, "cb_wrapper"), filters);
+
+            let _handle = time!(
+                timers,
+                "Start server",
+                wk.start_background_processes(&ushell)?
+            );
+
+            time!(timers, "Workload", wk.run_sync(&ushell)?);
+        }
+
+        Workload::MixYcsb {
+            size,
+            op_count,
+            read_prop,
+            update_prop,
+        } => {
+            let freq = get_cpu_freq(&ushell)?;
+            let metis_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE);
+            let memhog_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE);
+            let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
+            let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let ycsb_path = &dir!(bmks_dir, "YCSB");
+            let mut wk = MixYcsbWorkload::new(
+                zerosim_exp_path,
+                &metis_path,
+                &memhog_path,
+                &nullfs_path,
+                &redis_conf_path,
+                &ycsb_path,
+                Some(&ycsb_result_file),
+                YcsbWorkload::Custom {
+                    record_count: op_count,
+                    op_count,
+                    read_prop,
+                    update_prop,
+                    insert_prop: 1.0 - read_prop - update_prop,
+                },
                 freq,
                 size,
                 &mut tctx,

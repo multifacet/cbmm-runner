@@ -2008,6 +2008,7 @@ where
             let freq = get_cpu_freq(&ushell)?;
             let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
             let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let cb_wrapper_cmd = cb_wrapper_cmd.map(|s| s.to_owned());
             let redis_config = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
                 nullfs: &nullfs_path,
@@ -2065,6 +2066,7 @@ where
             let ycsb_path = &dir!(bmks_dir, "YCSB");
             let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
             let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
+            let cb_wrapper_cmd = cb_wrapper_cmd.map(|s| s.to_owned());
             let redis_config = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
                 nullfs: &nullfs_path,

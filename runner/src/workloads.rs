@@ -750,7 +750,7 @@ pub struct RedisWorkloadConfig<'s> {
     pub pf_time: Option<u64>,
 
     /// Indicates the command prefix to use the cb_wrapper.
-    pub cb_wrapper_cmd: Option<&'s str>,
+    pub cb_wrapper_cmd: Option<String>,
 
     /// Indicates that we should run the given pintool on the workload.
     pub pintool: Option<Pintool<'s>>,
@@ -809,7 +809,7 @@ pub fn start_redis(
         "{}{} {} /usr/bin/redis-server {}",
         pintool,
         taskset,
-        cfg.cb_wrapper_cmd.unwrap_or(""),
+        cfg.cb_wrapper_cmd.clone().unwrap_or("".into()),
         cfg.redis_conf
     ))?;
 
@@ -966,6 +966,9 @@ where
 
     /// Computed flags for YCSB.
     flags: Vec<String>,
+
+    /// Any handles that need to be retained to keep stuff running.
+    handles: Vec<SshSpawnHandle>,
 }
 
 impl<F> YcsbSession<'_, F>
@@ -973,7 +976,11 @@ where
     F: for<'cb> Fn(&'cb SshShell) -> Result<(), failure::Error>,
 {
     pub fn new<'a>(cfg: YcsbConfig<'a, F>) -> YcsbSession<'a, F> {
-        YcsbSession { cfg, flags: vec![] }
+        YcsbSession {
+            cfg,
+            flags: vec![],
+            handles: vec![],
+        }
     }
 
     /// Start background processes/storage systems/servers, and load the dataset into it, but do
@@ -1070,7 +1077,9 @@ where
             }
 
             YcsbSystem::Redis(cfg_redis) => {
-                let _handle = start_redis(shell, &cfg_redis)?;
+                // Need to hold onto this handle to keep the process alive.
+                let handle = start_redis(shell, &cfg_redis)?;
+                self.handles.push(handle);
 
                 /*
                 // This is the number of records that would consume the memory given to redis
