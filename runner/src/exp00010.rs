@@ -306,7 +306,7 @@ pub fn cli_options() -> clap::App<'static, 'static> {
              "Which spec workload to run.")
             (@arg SIZE: --spec_size +takes_value {validator::is::<usize>}
              "The size of the spec workload input.")
-            (@arg SPEC_INPUT: --spec_input
+            (@arg SPEC_INPUT: --input +takes_value
              "Use the given SPEC input for the workload.")
         )
         (@subcommand canneal =>
@@ -611,7 +611,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
                 .unwrap_or("0")
                 .parse::<usize>()
                 .unwrap();
-            let spec_input = sub_m.is_present("SPEC_INPUT");
+            let spec_input = sub_m.value_of("SPEC_INPUT").unwrap_or("testing");
+            let spec_input = spec_input == "training";
 
             let wk = match sub_m.value_of("WHICH").unwrap() {
                 "mcf" => Workload::Spec2017Mcf,
