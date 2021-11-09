@@ -746,8 +746,8 @@ where
             cmd!("sudo iptables -X LOGGING || true"),
             cmd!("sudo iptables -N LOGGING"),
             cmd!("sudo iptables -A INPUT -j LOGGING"),
-            cmd!("sudo iptables -A LOGGING -m limit --limit 2/min -j LOG \
-                 --log-prefix \"iptables-dropped: \" --log-level 4"),
+            cmd!("sudo iptables -A LOGGING -m limit --limit 5/hour -j LOG \
+                 --log-prefix \"iptables-dropped: \" --log-level debug"),
             cmd!("sudo iptables -A LOGGING -j REJECT"),
 
             // print and save iptables
