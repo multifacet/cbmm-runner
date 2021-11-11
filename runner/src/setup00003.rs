@@ -58,7 +58,10 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let ushell = connect_and_setup_host_only(&login)?;
 
     // Clone the given kernel, if needed.
+    let user_home = &get_user_home_dir(&ushell)?;
+
     let kernel_path = pathify(&git_repo, commitish);
+    let kernel_path = dir!(user_home, kernel_path);
     ushell.run(cmd!(
         "[ -e {} ] || git clone {} {}",
         kernel_path,
@@ -67,8 +70,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     ))?;
 
     // Install the kernel.
-    let user_home = &get_user_home_dir(&ushell)?;
-
     let git_hash = ushell.run(cmd!("git rev-parse HEAD").cwd(RESEARCH_WORKSPACE_PATH))?;
     let git_hash = git_hash.stdout.trim();
 
