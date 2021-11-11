@@ -6,11 +6,15 @@
 use clap::clap_app;
 
 use crate::{
-    cli::setup_kernel, exp_0sim::*, get_user_home_dir, paths::*, KernelBaseConfigSource,
-    KernelConfig, KernelPkgType, KernelSrc, Login,
+    cli::setup_kernel,
+    downloads::{download_and_extract, Artifact},
+    exp_0sim::*,
+    get_user_home_dir,
+    paths::*,
+    KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login,
 };
 
-use spurs::{cmd, Execute};
+use spurs::{cmd, Execute, SshShell};
 
 pub fn cli_options() -> clap::App<'static, 'static> {
     let app = clap_app! { setup00003 =>
@@ -72,18 +76,19 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .run(cmd!("ls -1 /boot/config-* | head -n1").use_bash())?
         .stdout;
     let config = config.trim();
+    let kernel_localversion = crate::gen_local_version(commitish, git_hash);
 
     crate::build_kernel(
         &ushell,
         KernelSrc::Git {
-            repo_path: kernel_path,
+            repo_path: kernel_path.clone(),
             commitish: commitish.into(),
         },
         KernelConfig {
             base_config: KernelBaseConfigSource::Path(config.into()),
             extra_options: &kernel_config,
         },
-        Some(&crate::gen_local_version(commitish, git_hash)),
+        Some(&kernel_localversion),
         KernelPkgType::Rpm,
         compiler,
         /* cpupower */ true,
@@ -110,6 +115,79 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     // update grub to choose this entry (new kernel) by default
     ushell.run(cmd!("sudo grub2-set-default 0"))?;
     ushell.run(cmd!("sync"))?;
+
+    // Install SAS driver if needed.
+    install_mpt3sas_driver_if_needed(&ushell, &user_home, &kernel_path, &kernel_localversion)?;
+
+    Ok(())
+}
+
+/// On machines that have SAS drives, you need an appropriate SAS driver. Otherwise, you won't be
+/// able to use the device, and consequently, won't be able to boot. For the c220g5 cloudlab
+/// machines, the required driver is mpt3sas, but the version bundled with various older kernels
+/// doesn't work for some reason. Instead, we need to download and install a more recent version.
+///
+/// This function checks if an updated driver is needed, and if so, downloads and installs one.
+pub fn install_mpt3sas_driver_if_needed(
+    shell: &SshShell,
+    user_home: &str,
+    kernel_path: &str,
+    kernel_localversion: &str,
+) -> Result<(), failure::Error> {
+    const KNOWN_WORKING_MAJOR_VERSION: usize = 22;
+
+    // Check version of driver.
+    let current_major_version = shell
+        .run(cmd!(
+            "cat {}/drivers/scsi/mpt3sas/mpt3sas_base.h |\
+            grep MPT3SAS_MAJOR_VERSION |\
+            awk '{{print $3}}'",
+            kernel_path
+        ))?
+        .stdout
+        .trim()
+        .parse::<usize>()?;
+
+    if current_major_version >= KNOWN_WORKING_MAJOR_VERSION {
+        // Current installed driver is fine.
+        return Ok(());
+    }
+
+    // Need to upgrade driver.
+
+    // Get tarball...
+    download_and_extract(shell, Artifact::Mpt3sas, user_home, Some("mpt3sas"))?;
+
+    // Build and install kernel module.
+    let driver_path = dir!(user_home, "mpt3sas");
+    shell.run(
+        cmd!(
+            "make -C {}/kbuild KERNELRELEASE={} M=`pwd`",
+            kernel_path,
+            kernel_localversion
+        )
+        .cwd(&driver_path),
+    )?;
+    shell.run(
+        cmd!(
+            "sudo make -C {}/kbuild KERNELRELEASE={} M=`pwd` modules_install",
+            kernel_path,
+            kernel_localversion
+        )
+        .cwd(&driver_path),
+    )?;
+
+    // Make a new initramfs, so the system can use the driver at boot time.
+    shell.run(cmd!(
+        "sudo cp /boot/initramfs-{}.img{{,.bak}}",
+        kernel_localversion
+    ))?;
+    shell.run(cmd!(
+        "sudo dracut --force-drivers \
+         'sg sd_mod raid_class scsi_transport_sas mpt3sas' \
+         --kver {} --force",
+        kernel_localversion
+    ))?;
 
     Ok(())
 }

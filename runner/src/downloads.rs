@@ -23,6 +23,8 @@ pub enum Artifact {
     Parsec,
     /// jemalloc allocator
     Jemalloc,
+    /// mpt3sas SAS driver from emulab.
+    Mpt3sas,
 }
 
 /// Represents a possible artifact that can be downloaded.
@@ -85,6 +87,11 @@ pub fn artifact_info(artifact: Artifact) -> Download<'static> {
             url: "https://github.com/jemalloc/jemalloc/archive/refs/tags/5.2.1.tar.gz",
             name: "5.2.1.tar.gz",
             version: "5.2.1",
+        },
+        Mpt3sas => Download {
+            url: "https://www.emulab.net/downloads/mpt3sas-22.00.02.00-src.tar.gz",
+            name: "mpt3sas-22.00.02.00-src.tar.gz",
+            version: "22.00.02.00",
         }
     }
 }

@@ -5,8 +5,8 @@
 use clap::clap_app;
 
 use crate::{
-    exp_0sim::*, get_user_home_dir, paths::*, with_shell, KernelBaseConfigSource, KernelConfig,
-    KernelPkgType, KernelSrc, Login,
+    exp_0sim::*, get_user_home_dir, paths::*, setup00003::install_mpt3sas_driver_if_needed,
+    with_shell, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc, Login,
 };
 
 use spurs::{cmd, Execute};
@@ -69,6 +69,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .run(cmd!("ls -1 /boot/config-* | head -n1").use_bash())?
         .stdout;
     let config = config.trim();
+    let kernel_localversion = crate::gen_local_version(HAWKEYE_BRANCH, git_hash);
 
     crate::build_kernel(
         &ushell,
@@ -80,7 +81,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
             base_config: KernelBaseConfigSource::Path(config.into()),
             extra_options: HAWKEYE_KERNEL_CONFIG,
         },
-        Some(&crate::gen_local_version(HAWKEYE_BRANCH, git_hash)),
+        Some(&kernel_localversion),
         KernelPkgType::Rpm,
         None,
         /* cpupower */ true,
@@ -111,6 +112,15 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     // update grub to choose this entry (new kernel) by default
     ushell.run(cmd!("sudo grub2-set-default 0"))?;
     ushell.run(cmd!("sync"))?;
+
+    // Install SAS driver if needed. Needs to happen _before_ reboot because otherwise, initramfs
+    // won't be able to use any SAS drives, including the root volume!
+    install_mpt3sas_driver_if_needed(
+        &ushell,
+        &user_home,
+        &dir!(user_home, "HawkEye"),
+        &kernel_localversion,
+    )?;
 
     // Reboot so the new kernel is running when we build modules.
     spurs_util::reboot(&mut ushell, /* dry_run */ false)?;
