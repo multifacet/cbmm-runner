@@ -158,6 +158,14 @@ pub fn install_mpt3sas_driver_if_needed(
     // Get tarball...
     download_and_extract(shell, Artifact::Mpt3sas, user_home, Some("mpt3sas"))?;
 
+    // Need to get the full kernel version name.
+    let kernel_localversion = shell
+        .run(cmd!(
+            "str=`basename /boot/initramfs-*{}.img .img` ; echo -n ${{str#*-}}",
+            kernel_localversion
+        ))?
+        .stdout;
+
     // Build and install kernel module.
     let driver_path = dir!(user_home, "mpt3sas");
     shell.run(
