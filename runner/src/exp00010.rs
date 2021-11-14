@@ -417,6 +417,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           of memory to fragment it.")
         (@arg EAGERPROFILE: --eagerprofile +takes_value {validator::is::<usize>}
          "Recorded pagemap info at the given interval (in seconds) for the workload.")
+        (@arg TERM: --end ...
+         "Used to signal the cli parser that a list of items has ended.")
     };
 
     let app = damon::add_cli_options(app);

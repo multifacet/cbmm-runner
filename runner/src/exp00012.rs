@@ -232,6 +232,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg HAWKEYE_BLOAT_PROC: --hawkeye_debloat +takes_value
          requires[HAWKEYE]
          "The name of the process to use with Hawkeye debloating.")
+        (@arg TERM: --end ...
+         "Used to signal the cli parser that a list of items has ended.")
     };
 
     app
