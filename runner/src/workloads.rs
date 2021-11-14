@@ -48,7 +48,7 @@ pub fn gen_perf_command_prefix(
     counters: &[impl AsRef<str>],
     extra_args: impl AsRef<str>,
 ) -> String {
-    let mut prefix = String::from("perf stat ");
+    let mut prefix = String::from("sudo perf stat ");
 
     for c in counters {
         prefix.push_str(" -e ");
