@@ -284,6 +284,11 @@ where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
     // Connect to the remote
+    let ushell = SshShell::with_default_key(cfg.login.username, &cfg.login.host)?;
+
+    // Make sure bash is the default shell!
+    ushell.run(cmd!("sudo chsh -s /usr/bin/bash"))?;
+    ushell.run(cmd!("sudo chsh {} -s /usr/bin/bash", cfg.login.username))?;
     let mut ushell = SshShell::with_default_key(cfg.login.username, &cfg.login.host)?;
 
     // Set up the host
