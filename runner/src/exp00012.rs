@@ -34,9 +34,11 @@ use crate::exp00010::{turn_on_huge_addr, ThpHugeAddrMode, ThpHugeAddrProcess};
 enum Workload {
     Mix {
         size: usize,
+        nullfs: bool,
     },
     MixYcsb {
         size: usize,
+        nullfs: bool,
         op_count: usize,
         read_prop: f32,
         update_prop: f32,
@@ -114,11 +116,15 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run the `mix` workload.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
+            (@arg NULLFS: --nullfs
+             "Write the redis snapshot to a nullfs")
         )
         (@subcommand mixycsb =>
             (about: "Run the `mix` workload.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload (e.g. 500)")
+            (@arg NULLFS: --nullfs
+             "Write the redis snapshot to a nullfs")
             (@arg OP_COUNT: --op_count +takes_value {validator::is::<usize>}
              "The number of operations to perform during the workload.\
              The default is 1000.")
@@ -311,12 +317,14 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let workload = match sub_m.subcommand() {
         ("mix", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let nullfs = sub_m.is_present("NULLFS");
 
-            Workload::Mix { size }
+            Workload::Mix { size, nullfs }
         }
 
         ("mixycsb", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let nullfs = sub_m.is_present("NULLFS");
             let op_count = sub_m
                 .value_of("OP_COUNT")
                 .unwrap_or("1000")
@@ -335,6 +343,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             Workload::MixYcsb {
                 size,
+                nullfs,
                 op_count,
                 read_prop,
                 update_prop,
@@ -626,7 +635,7 @@ where
 
     // Run the workload.
     match cfg.workload {
-        Workload::Mix { size } => {
+        Workload::Mix { size, nullfs } => {
             let freq = get_cpu_freq(&ushell)?;
             let metis_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_METIS_SUBMODULE);
             let memhog_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_MEMHOG_SUBMODULE);
@@ -636,7 +645,11 @@ where
                 zerosim_exp_path,
                 &metis_path,
                 &memhog_path,
-                &nullfs_path,
+                if nullfs {
+                    Some(nullfs_path.as_str())
+                } else {
+                    None
+                },
                 &redis_conf_path,
                 freq,
                 size,
@@ -669,6 +682,7 @@ where
 
         Workload::MixYcsb {
             size,
+            nullfs,
             op_count,
             read_prop,
             update_prop,
@@ -683,7 +697,11 @@ where
                 zerosim_exp_path,
                 &metis_path,
                 &memhog_path,
-                &nullfs_path,
+                if nullfs {
+                    Some(nullfs_path.as_str())
+                } else {
+                    None
+                },
                 &redis_conf_path,
                 &ycsb_path,
                 Some(&ycsb_result_file),

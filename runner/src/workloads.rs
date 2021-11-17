@@ -728,7 +728,7 @@ pub struct RedisWorkloadConfig<'s> {
     /// The path of the `0sim-experiments` submodule on the remote.
     pub exp_dir: &'s str,
     /// The path to the nullfs submodule on the remote.
-    pub nullfs: &'s str,
+    pub nullfs: Option<&'s str>,
     /// The path of the `redis.conf` file on the remote.
     pub redis_conf: &'s str,
 
@@ -778,10 +778,12 @@ pub fn start_redis(
     shell.run(cmd!("rm -f /tmp/dump.rdb"))?;
 
     // Start nullfs
-    shell.run(cmd!("sudo rm -rf /mnt/nullfs"))?;
-    shell.run(cmd!("sudo mkdir -p /mnt/nullfs"))?;
-    shell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
-    shell.run(cmd!("nohup {}/nullfs /mnt/nullfs", cfg.nullfs))?;
+    if let Some(nullfs_path) = &cfg.nullfs {
+        shell.run(cmd!("sudo rm -rf /mnt/nullfs"))?;
+        shell.run(cmd!("sudo mkdir -p /mnt/nullfs"))?;
+        shell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
+        shell.run(cmd!("nohup {}/nullfs /mnt/nullfs", nullfs_path))?;
+    }
 
     // On some kernels, we need to do this again. On some, we don't.
     shell.run(cmd!("sudo chmod 777 /mnt/nullfs").allow_error())?;

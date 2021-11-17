@@ -466,6 +466,7 @@ where
         }
 
         Workload::Redis => {
+            let nullfs_path = dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
             let out_file = dir!(VAGRANT_RESULTS_DIR, output_file);
             let cfg = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
@@ -477,11 +478,7 @@ where
                 client_pin_core: tctx.next(),
                 server_pin_core: None,
                 redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-                nullfs: &dir!(
-                    "/home/vagrant",
-                    RESEARCH_WORKSPACE_PATH,
-                    ZEROSIM_NULLFS_SUBMODULE
-                ),
+                nullfs: Some(nullfs_path.as_str()),
                 pintool: None,
                 cb_wrapper_cmd: None,
             };

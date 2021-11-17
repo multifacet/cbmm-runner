@@ -395,7 +395,7 @@ where
             server_size_mb: size << 10,
             server_pin_core: None,
             redis_conf: &redis_conf_path,
-            nullfs: &nullfs_path,
+            nullfs: Some(nullfs_path.as_str()),
             pintool: if cfg.memtrace {
                 Some(Pintool::MemTrace {
                     pin_path: &pin_path,

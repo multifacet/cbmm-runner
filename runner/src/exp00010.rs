@@ -69,9 +69,11 @@ enum Workload {
     },
     Redis {
         size: usize,
+        nullfs: bool,
     },
     RedisYcsb {
         size: usize,
+        nullfs: bool,
         op_count: usize,
         read_prop: f32,
         update_prop: f32,
@@ -264,11 +266,15 @@ pub fn cli_options() -> clap::App<'static, 'static> {
             (about: "Run the `redis` workload using the redis_gen_data driver.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload")
+            (@arg NULLFS: --nullfs
+             "Write the redis snapshot to a nullfs")
         )
         (@subcommand redisycsb =>
             (about: "Run the `redis` workload using the YCSB driver.")
             (@arg SIZE: +required +takes_value {validator::is::<usize>}
              "The number of GBs of the workload")
+            (@arg NULLFS: --nullfs
+             "Write the redis snapshot to a nullfs")
             (@arg OP_COUNT: --op_count +takes_value {validator::is::<usize>}
              "The number of operations to perform during the workload.\
              The default is 1000.")
@@ -524,12 +530,14 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
         ("redis", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let nullfs = sub_m.is_present("NULLFS");
 
-            Workload::Redis { size }
+            Workload::Redis { size, nullfs }
         }
 
         ("redisycsb", Some(sub_m)) => {
             let size = sub_m.value_of("SIZE").unwrap().parse::<usize>().unwrap();
+            let nullfs = sub_m.is_present("NULLFS");
             let op_count = sub_m
                 .value_of("OP_COUNT")
                 .unwrap_or("1000")
@@ -548,6 +556,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
             Workload::RedisYcsb {
                 size,
+                nullfs,
                 op_count,
                 read_prop,
                 update_prop,
@@ -2010,14 +2019,18 @@ where
             }
         }
 
-        Workload::Redis { size } => {
+        Workload::Redis { size, nullfs } => {
             let freq = get_cpu_freq(&ushell)?;
             let nullfs_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
             let redis_conf_path = dir!(user_home, RESEARCH_WORKSPACE_PATH, REDIS_CONF);
             let cb_wrapper_cmd = cb_wrapper_cmd.map(|s| s.to_owned());
             let redis_config = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
-                nullfs: &nullfs_path,
+                nullfs: if nullfs {
+                    Some(nullfs_path.as_str())
+                } else {
+                    None
+                },
                 redis_conf: &redis_conf_path,
                 server_size_mb: size << 10,
                 wk_size_gb: size,
@@ -2053,7 +2066,7 @@ where
             run_redis_gen_data(&ushell, &redis_config)?.join().1?;
 
             // Make sure redis dies
-            ushell.run(cmd!("pkill -9 redis-server"))?;
+            ushell.run(cmd!("sudo pkill -9 redis-server"))?;
 
             // Make sure perf is done.
             if let Some(handle) = perf_handle {
@@ -2064,6 +2077,7 @@ where
 
         Workload::RedisYcsb {
             size,
+            nullfs,
             op_count,
             read_prop,
             update_prop,
@@ -2075,7 +2089,11 @@ where
             let cb_wrapper_cmd = cb_wrapper_cmd.map(|s| s.to_owned());
             let redis_config = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
-                nullfs: &nullfs_path,
+                nullfs: if nullfs {
+                    Some(nullfs_path.as_str())
+                } else {
+                    None
+                },
                 redis_conf: &redis_conf_path,
                 server_size_mb: size << 10,
                 wk_size_gb: size,
@@ -2143,7 +2161,7 @@ where
             time!(timers, "Workload", ycsb.run(&ushell)?);
 
             // Make sure redis dies
-            ushell.run(cmd!("pkill -9 redis-server"))?;
+            ushell.run(cmd!("sudo pkill -9 redis-server"))?;
 
             // Make sure perf is done.
             if let Some(handle) = perf_handle {

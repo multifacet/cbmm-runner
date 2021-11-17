@@ -68,7 +68,7 @@ pub struct MixWorkload<'s> {
     metis_dir: &'s str,
     /// The path to the `numactl` directory in the workspace on the remote.
     numactl_dir: &'s str,
-    nullfs_dir: &'s str,
+    nullfs_dir: Option<&'s str>,
     /// The path to the `redis.conf` file on the remote.
     redis_conf: &'s str,
     /// The _host_ CPU frequency in MHz.
@@ -89,7 +89,7 @@ pub struct MixYcsbWorkload<'s> {
     metis_dir: &'s str,
     /// The path to the `numactl` directory in the workspace on the remote.
     numactl_dir: &'s str,
-    nullfs_dir: &'s str,
+    nullfs_dir: Option<&'s str>,
     /// The path to the `redis.conf` file on the remote.
     redis_conf: &'s str,
     /// The path of the YCSB directory.
@@ -132,7 +132,7 @@ impl MixWorkload<'_> {
         exp_dir: &'s str,
         metis_dir: &'s str,
         numactl_dir: &'s str,
-        nullfs_dir: &'s str,
+        nullfs_dir: Option<&'s str>,
         redis_conf: &'s str,
         freq: usize,
         size_gb: usize,
@@ -269,7 +269,7 @@ impl MultiProcessWorkload for MixWorkload<'_> {
         redis_client_handle.join().1?;
 
         // Make sure processes die so that perf terminates.
-        shell.run(cmd!("pkill -9 redis-server"))?;
+        shell.run(cmd!("sudo pkill -9 redis-server"))?;
         shell.run(cmd!("pkill -9 memhog"))?;
         shell.run(cmd!("pkill -9 matrix_mult2"))?;
 
@@ -289,7 +289,7 @@ impl MultiProcessWorkload for MixWorkload<'_> {
     }
 
     fn kill_background_processes(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
-        shell.run(cmd!("pkill -9 redis-server"))?;
+        shell.run(cmd!("sudo pkill -9 redis-server"))?;
         Ok(())
     }
 }
@@ -299,7 +299,7 @@ impl MixYcsbWorkload<'_> {
         exp_dir: &'s str,
         metis_dir: &'s str,
         numactl_dir: &'s str,
-        nullfs_dir: &'s str,
+        nullfs_dir: Option<&'s str>,
         redis_conf: &'s str,
         ycsb_path: &'s str,
         ycsb_result_file: Option<&'s str>,
@@ -433,7 +433,7 @@ impl MultiProcessWorkload for MixYcsbWorkload<'_> {
         self.ycsb.as_mut().unwrap().run(shell)?;
 
         // Make sure processes die so that perf terminates.
-        shell.run(cmd!("pkill -9 redis-server"))?;
+        shell.run(cmd!("sudo pkill -9 redis-server"))?;
         shell.run(cmd!("pkill -9 memhog"))?;
         shell.run(cmd!("pkill -9 matrix_mult2"))?;
 
@@ -453,7 +453,7 @@ impl MultiProcessWorkload for MixYcsbWorkload<'_> {
     }
 
     fn kill_background_processes(&mut self, shell: &SshShell) -> Result<(), failure::Error> {
-        shell.run(cmd!("pkill -9 redis-server"))?;
+        shell.run(cmd!("sudo pkill -9 redis-server"))?;
         Ok(())
     }
 }

@@ -421,6 +421,7 @@ where
         }
 
         Workload::Redis => {
+            let nullfs_path = dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
             let cfg = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
                 server_size_mb: size >> 10,
@@ -431,11 +432,7 @@ where
                 client_pin_core: tctx.next(),
                 server_pin_core: None,
                 redis_conf: &dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, REDIS_CONF),
-                nullfs: &dir!(
-                    "/home/vagrant",
-                    RESEARCH_WORKSPACE_PATH,
-                    ZEROSIM_NULLFS_SUBMODULE
-                ),
+                nullfs: Some(nullfs_path.as_str()),
                 pintool: None,
                 cb_wrapper_cmd: None,
             };
@@ -506,7 +503,7 @@ where
                 zerosim_exp_path,
                 &metis_path,
                 &memhog_path,
-                &nullfs_path,
+                Some(nullfs_path.as_str()),
                 &redis_conf,
                 freq,
                 size >> 20,
