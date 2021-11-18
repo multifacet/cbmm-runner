@@ -777,6 +777,10 @@ pub fn start_redis(
     // Delete any previous database
     shell.run(cmd!("rm -f /tmp/dump.rdb"))?;
 
+    // Delete the previous log.
+    // Not doing this can cause issues if redis was previously started as root
+    shell.run(cmd!("sudo rm -f /tmp/redis.log"))?;
+
     // Start nullfs
     if let Some(nullfs_path) = &cfg.nullfs {
         shell.run(cmd!("sudo rm -rf /mnt/nullfs"))?;
