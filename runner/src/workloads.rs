@@ -787,10 +787,10 @@ pub fn start_redis(
         shell.run(cmd!("sudo mkdir -p /mnt/nullfs"))?;
         shell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
         shell.run(cmd!("nohup {}/nullfs /mnt/nullfs", nullfs_path))?;
-    }
 
-    // On some kernels, we need to do this again. On some, we don't.
-    shell.run(cmd!("sudo chmod 777 /mnt/nullfs").allow_error())?;
+        // On some kernels, we need to do this again. On some, we don't.
+        shell.run(cmd!("sudo chmod 777 /mnt/nullfs").allow_error())?;
+    }
 
     // Start the redis server
     let taskset = if let Some(server_pin_core) = cfg.server_pin_core {
@@ -823,6 +823,9 @@ pub fn start_redis(
     loop {
         let res = shell.run(cmd!("redis-cli -s /tmp/redis.sock INFO"));
         if res.is_ok() {
+            // It seems if you send redis a request too soon after starting
+            // YCSB might crash, so wait a bit
+            shell.run(cmd!("sleep 30"))?;
             break;
         }
     }
