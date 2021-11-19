@@ -775,7 +775,9 @@ pub fn start_redis(
     shell.run(cmd!("echo 1 | sudo tee /proc/sys/vm/overcommit_memory"))?;
 
     // Delete any previous database
-    shell.run(cmd!("rm -f /mnt/nullfs/dump.rdb"))?;
+    shell.run(cmd!("sudo rm -rf /mnt/nullfs"))?;
+    shell.run(cmd!("sudo mkdir -p /mnt/nullfs"))?;
+    shell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
 
     // Delete the previous log.
     // Not doing this can cause issues if redis was previously started as root
@@ -783,9 +785,6 @@ pub fn start_redis(
 
     // Start nullfs
     if let Some(nullfs_path) = &cfg.nullfs {
-        shell.run(cmd!("sudo rm -rf /mnt/nullfs"))?;
-        shell.run(cmd!("sudo mkdir -p /mnt/nullfs"))?;
-        shell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
         shell.run(cmd!("nohup {}/nullfs /mnt/nullfs", nullfs_path))?;
 
         // On some kernels, we need to do this again. On some, we don't.
