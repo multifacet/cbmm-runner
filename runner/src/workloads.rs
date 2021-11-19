@@ -775,7 +775,7 @@ pub fn start_redis(
     shell.run(cmd!("echo 1 | sudo tee /proc/sys/vm/overcommit_memory"))?;
 
     // Delete any previous database
-    shell.run(cmd!("rm -f /tmp/dump.rdb"))?;
+    shell.run(cmd!("rm -f /mnt/nullfs/dump.rdb"))?;
 
     // Delete the previous log.
     // Not doing this can cause issues if redis was previously started as root
@@ -823,9 +823,6 @@ pub fn start_redis(
     loop {
         let res = shell.run(cmd!("redis-cli -s /tmp/redis.sock INFO"));
         if res.is_ok() {
-            // It seems if you send redis a request too soon after starting
-            // YCSB might crash, so wait a bit
-            shell.run(cmd!("sleep 30"))?;
             break;
         }
     }
