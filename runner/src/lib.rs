@@ -884,12 +884,12 @@ pub fn setup_passphraseless_local_ssh(ushell: &SshShell) -> Result<(), failure::
 pub fn get_device_id(shell: &SshShell, dev_name: &str) -> Result<String, failure::Error> {
     let out = shell.run(
         cmd!(
-            r#"ls -lah /dev/disk/by-id/ | \
+            "ls -lah /dev/disk/by-id/ | \
             sort -k 11 | \
-            awk '{{print $11 "\t" $9}}' | \
+            awk '{{print $11 \"\\t\" $9}}' | \
             grep {} | \
             head -n 1 | \
-            awk '{{print $2}}'"#,
+            awk '{{print $2}}'",
             dev_name
         )
         .use_bash(),
