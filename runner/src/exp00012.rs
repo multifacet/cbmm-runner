@@ -69,6 +69,7 @@ struct Config {
     badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
+    eagerprofile: Option<usize>,
 
     mm_econ: bool,
     enable_aslr: bool,
@@ -182,6 +183,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg KBADGERD_SLEEP_INTERVAL: --kbadgerd_sleep_interval
          +takes_value {validator::is::<usize>} requires[KBADGERD]
          "Sets the sleep_interval for kbadgerd.")
+        (@arg EAGERPROFILE: --eagerprofile +takes_value {validator::is::<usize>}
+         "Recorded pagemap info at the given interval (in seconds) for the workload.")
 
         // Global environmental settings
         (@arg DISABLE_THP: --disable_thp
@@ -393,6 +396,9 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let kbadgerd_sleep_interval = sub_m
         .value_of("KBADGERD_SLEEP_INTERVAL")
         .map(|s| s.parse::<usize>().unwrap());
+    let eagerprofile = sub_m
+        .value_of("EAGERPROFILE")
+        .map(|s| s.parse::<usize>().unwrap());
 
     let enable_aslr = sub_m.is_present("ENABLE_ASLR");
     let asynczero = sub_m.is_present("ASYNCZERO");
@@ -465,6 +471,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
+        eagerprofile,
 
         mm_econ,
         enable_aslr,
@@ -560,7 +567,7 @@ where
         cfg.kbadgerd_sleep_interval,
         cfg.eager.is_some(),
         cfg.fragmentation,
-        None, /* eagerprofile */
+        cfg.eagerprofile,
         // Run normal thp init...
         |_shell| Ok(true),
         // Compute mmap_filters_csv_files
