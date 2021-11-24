@@ -619,7 +619,7 @@ where
                 // so we can reference them later
                 shell.run(cmd!(
                     "echo -n '{}' > {}",
-                    filter_csv_contents,
+                    spurs_util::escape_for_bash(&filter_csv_contents),
                     filter_csv_fname
                 ))?;
             }

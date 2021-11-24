@@ -399,7 +399,10 @@ pub fn set_remote_research_setting<V: Serialize>(
 
     let new_contents = serde_json::to_string(&settings).expect("unable to serialize");
 
-    ushell.run(cmd!("echo '{}' > research-settings.json", new_contents))?;
+    ushell.run(cmd!(
+        "echo '{}' > research-settings.json",
+        spurs_util::escape_for_bash(&new_contents)
+    ))?;
 
     Ok(())
 }

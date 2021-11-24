@@ -471,7 +471,7 @@ where
 
     vshell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::timings_str(timers.as_slice()),
+        escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;
 

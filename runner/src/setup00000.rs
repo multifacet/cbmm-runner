@@ -1361,7 +1361,7 @@ where
     ushell.run(
         cmd!(
             "vagrant ssh -- 'echo {} >> /home/vagrant/.ssh/authorized_keys'",
-            key
+            spurs_util::escape_for_bash(key)
         )
         .cwd(vagrant_path),
     )?;

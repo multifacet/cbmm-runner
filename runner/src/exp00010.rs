@@ -1483,7 +1483,7 @@ pub fn teardown(
 
     ushell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::timings_str(timers.as_slice()),
+        escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(results_dir, time_file)
     ))?;
 
@@ -1673,7 +1673,7 @@ where
                 // so we can reference them later
                 shell.run(cmd!(
                     "echo -n '{}' > {}",
-                    filter_csv,
+                    escape_for_bash(&filter_csv),
                     mmap_filter_csv_files.iter().next().unwrap().1
                 ))?;
             }
