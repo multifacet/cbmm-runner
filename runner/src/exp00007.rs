@@ -421,7 +421,11 @@ where
         }
 
         Workload::Redis => {
-            let nullfs_path = dir!("/home/vagrant", RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE);
+            let nullfs_path = dir!(
+                "/home/vagrant",
+                RESEARCH_WORKSPACE_PATH,
+                ZEROSIM_NULLFS_SUBMODULE
+            );
             let cfg = RedisWorkloadConfig {
                 exp_dir: zerosim_exp_path,
                 server_size_mb: size >> 10,
@@ -547,7 +551,7 @@ where
 
     vshell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::timings_str(timers.as_slice()),
+        escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;
 

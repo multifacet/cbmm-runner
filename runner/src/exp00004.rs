@@ -187,7 +187,7 @@ where
 
     ushell.run(cmd!(
         "echo -e '{}' > {}",
-        crate::timings_str(timers.as_slice()),
+        escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, time_file)
     ))?;
 
