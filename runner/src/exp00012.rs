@@ -618,7 +618,7 @@ where
                 // Be sure to save the contents of the mmap_filter in the results
                 // so we can reference them later
                 shell.run(cmd!(
-                    "echo -n '{}' > {}",
+                    "echo -n {} > {}",
                     spurs_util::escape_for_bash(&filter_csv_contents),
                     filter_csv_fname
                 ))?;

@@ -127,7 +127,7 @@ where
     let params = serde_json::to_string(&cfg)?;
 
     ushell.run(cmd!(
-        "echo '{}' > {}",
+        "echo {} > {}",
         escape_for_bash(&params),
         dir!(
             user_home.as_str(),
@@ -186,7 +186,7 @@ where
     ushell.run(cmd!("free -h"))?;
 
     ushell.run(cmd!(
-        "echo -e '{}' > {}",
+        "echo {} > {}",
         escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(setup00000::HOSTNAME_SHARED_RESULTS_DIR, time_file)
     ))?;

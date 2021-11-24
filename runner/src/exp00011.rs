@@ -269,7 +269,7 @@ where
     let (_output_file, params_file, time_file, sim_file) = cfg.gen_standard_names();
     let params = serde_json::to_string(&*cfg)?;
     vshell.run(cmd!(
-        "echo '{}' > {}",
+        "echo {} > {}",
         escape_for_bash(&params),
         dir!(VAGRANT_RESULTS_DIR, params_file)
     ))?;
@@ -483,7 +483,7 @@ where
     ushell.run(cmd!("date"))?;
 
     vshell.run(cmd!(
-        "echo -e '{}' > {}",
+        "echo {} > {}",
         escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(VAGRANT_RESULTS_DIR, time_file)
     ))?;

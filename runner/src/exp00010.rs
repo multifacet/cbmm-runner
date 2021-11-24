@@ -1086,7 +1086,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let swapnil_path = dir!(&bmks_dir, ZEROSIM_SWAPNIL_PATH);
 
     ushell.run(cmd!(
-        "echo '{}' > {}",
+        "echo {} > {}",
         escape_for_bash(&serde_json::to_string(&output)?),
         dir!(&results_dir, params_file)
     ))?;
@@ -1482,7 +1482,7 @@ pub fn teardown(
     ushell.run(cmd!("free -h"))?;
 
     ushell.run(cmd!(
-        "echo -e '{}' > {}",
+        "echo {} > {}",
         escape_for_bash(&crate::timings_str(timers.as_slice())),
         dir!(results_dir, time_file)
     ))?;
@@ -1672,7 +1672,7 @@ where
                 // Be sure to save the contents of the mmap_filter in the results
                 // so we can reference them later
                 shell.run(cmd!(
-                    "echo -n '{}' > {}",
+                    "echo -n {} > {}",
                     escape_for_bash(&filter_csv),
                     mmap_filter_csv_files.iter().next().unwrap().1
                 ))?;
