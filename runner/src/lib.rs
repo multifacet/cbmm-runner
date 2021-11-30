@@ -795,6 +795,8 @@ pub fn build_kernel(
             cmd!("make -j {} {} && sudo make install", nprocess, compiler)
                 .cwd(&dir!(source_path, "tools/power/cpupower/")),
         )?;
+        // Make sure we reload the ld cache, so that new cpupower library is used.
+        ushell.run(cmd!("sudo ldconfig"))?;
     }
 
     Ok(())
