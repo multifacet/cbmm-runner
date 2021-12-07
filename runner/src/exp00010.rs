@@ -1672,8 +1672,8 @@ where
                 // Be sure to save the contents of the mmap_filter in the results
                 // so we can reference them later
                 shell.run(cmd!(
-                    "echo -n {} > {}",
-                    escape_for_bash(&filter_csv),
+                    "echo -n -e {} > {}",
+                    escape_for_bash(&filter_csv.replace('\n', "\\n")),
                     mmap_filter_csv_files.iter().next().unwrap().1
                 ))?;
             }
