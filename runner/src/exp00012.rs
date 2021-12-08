@@ -8,6 +8,7 @@
 use std::{collections::HashMap, fs};
 
 use clap::clap_app;
+use spurs_util::escape_for_bash;
 
 use crate::{
     cli::validator,
@@ -615,13 +616,18 @@ where
                 let filter_csv_contents = fs::read_to_string(filename)?;
                 let filter_csv_fname = mmap_filter_csv_files.get(proc_name).unwrap();
 
-                // Be sure to save the contents of the mmap_filter in the results
-                // so we can reference them later
-                shell.run(cmd!(
-                    "echo -n {} > {}",
-                    spurs_util::escape_for_bash(&filter_csv_contents),
-                    filter_csv_fname
-                ))?;
+                // Be sure to save the contents of the mmap_filter in the results so we can
+                // reference them later.  We do it this round-about way because otherwise the
+                // command may become too long for SSH...
+                for line in filter_csv_contents.lines() {
+                    shell.run(cmd!(
+                        "echo {} >> {}",
+                        escape_for_bash(&line),
+                        filter_csv_fname
+                    ))?;
+                }
+
+                shell.run(cmd!("cat {}", filter_csv_fname))?;
             }
 
             Ok(())

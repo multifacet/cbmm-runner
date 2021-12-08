@@ -1668,14 +1668,20 @@ where
 
                 println!("Reading mm_econ benefit file: {}", filename);
                 let filter_csv = fs::read_to_string(filename)?;
+                let mmap_filter_csv_file = mmap_filter_csv_files.iter().next().unwrap().1;
 
-                // Be sure to save the contents of the mmap_filter in the results
-                // so we can reference them later
-                shell.run(cmd!(
-                    "echo -n -e {} > {}",
-                    escape_for_bash(&filter_csv.replace('\n', "\\n")),
-                    mmap_filter_csv_files.iter().next().unwrap().1
-                ))?;
+                // Be sure to save the contents of the mmap_filter in the results so we can
+                // reference them later.  We do it this round-about way because otherwise the
+                // command may become too long for SSH...
+                for line in filter_csv.lines() {
+                    shell.run(cmd!(
+                        "echo {} >> {}",
+                        escape_for_bash(&line),
+                        &mmap_filter_csv_file
+                    ))?;
+                }
+
+                shell.run(cmd!("cat {}", mmap_filter_csv_file))?;
             }
 
             Ok(())
