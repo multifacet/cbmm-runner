@@ -1166,6 +1166,21 @@ pub fn initial_setup<'s, P: Parametrize>(
 
     // Turn on mm_econ if needed.
     if mm_econ {
+        // Set frequency.
+        let freq_ghz = ushell
+            .run(cmd!(
+                "lscpu | grep 'Model' | grep -o '[0-9\\.]\\+GHz' | grep -o '[0-9\\.]\\+'"
+            ))?
+            .stdout
+            .trim()
+            .parse::<f64>()
+            .unwrap();
+        let freq_mhz = (freq_ghz * 1000.) as u64;
+        ushell.run(cmd!(
+            "echo {} | sudo tee /sys/kernel/mm/mm_econ/freq_mhz",
+            freq_mhz
+        ))?;
+
         ushell.run(cmd!("echo 1 | sudo tee /sys/kernel/mm/mm_econ/enabled"))?;
     }
 
