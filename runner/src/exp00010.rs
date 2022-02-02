@@ -173,6 +173,7 @@ struct Config {
     perf_counters: Vec<String>,
     smaps_periodic: bool,
     mmap_tracker: bool,
+    high_order_alloc: bool,
     badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
@@ -381,6 +382,8 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
         (@arg MMAP_TRACKER: --mmap_tracker
          "Record stats for mmap calls for the main workload process.")
+        (@arg HIGH_ORDER_ALLOC: --high_order_alloc
+         "Record high-order kernel physical memory allocations.")
         (@arg BADGER_TRAP: --badger_trap
          "Use badger_trap to measure TLB misses.")
         (@arg KBADGERD: --kbadgerd
@@ -705,6 +708,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let perf_record = sub_m.is_present("PERF_RECORD");
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
     let mmap_tracker = sub_m.is_present("MMAP_TRACKER");
+    let high_order_alloc = sub_m.is_present("HIGH_ORDER_ALLOC");
     let badger_trap = sub_m.is_present("BADGER_TRAP");
     let kbadgerd = sub_m.is_present("KBADGERD");
     let kbadgerd_sleep_interval = sub_m
@@ -847,6 +851,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_counters,
         smaps_periodic,
         mmap_tracker,
+        high_order_alloc,
         badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
@@ -975,6 +980,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     meminfo_periodic: bool,
     smaps_periodic: bool,
     mmap_tracker: bool,
+    high_order_alloc: bool,
     badger_trap: bool,
     mm_econ: bool,
     pftrace: Option<usize>,
@@ -1064,6 +1070,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let meminfo_file = dir!(&results_dir, output.gen_file_name("meminfo"));
     let smaps_file = dir!(&results_dir, output.gen_file_name("smaps"));
     let mmap_tracker_file = dir!(&results_dir, output.gen_file_name("mmap"));
+    let high_order_alloc_file = dir!(&results_dir, output.gen_file_name("high"));
     let damon_output_path = dir!(&results_dir, output.gen_file_name("damon"));
     let trace_file = dir!(&results_dir, output.gen_file_name("trace"));
     let mmu_overhead_file = dir!(&results_dir, output.gen_file_name("mmu"));
@@ -1146,6 +1153,23 @@ pub fn initial_setup<'s, P: Parametrize>(
             &dir!(&user_home, RESEARCH_WORKSPACE_PATH),
             instrumented_proc.as_ref().unwrap(),
             mmap_tracker_file
+        ))?;
+        // Wait some time for the BPF validator to do its job
+        println!("Waiting 10s for BPF validator...");
+        ushell.run(cmd!("sleep 10"))?;
+    }
+
+    if high_order_alloc {
+        // This is needed for BPF to compile, but we don't want it enabled all
+        // of the time because it interferes with gcc and g++
+        let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
+
+        ushell.spawn(cmd!(
+            "{}; \
+            sudo {}/bmks/high_order_alloc.py | tee {}",
+            enable_bpf_cmd,
+            &dir!(&user_home, RESEARCH_WORKSPACE_PATH),
+            high_order_alloc_file,
         ))?;
         // Wait some time for the BPF validator to do its job
         println!("Waiting 10s for BPF validator...");
@@ -1563,6 +1587,7 @@ where
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
         cfg.mmap_tracker,
+        cfg.high_order_alloc,
         cfg.badger_trap,
         cfg.mm_econ,
         cfg.pftrace,
