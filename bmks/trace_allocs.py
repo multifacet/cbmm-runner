@@ -7,8 +7,15 @@ from bcc import BPF
 import argparse
 import ctypes as ct
 import time
+import sys
 
 # arguments
+DURATION=None
+if len(sys.argv) == 2:
+    DURATION = int(sys.argv[1])
+
+START = time.time()
+
 debug = 0
 
 ALLOC_PAGES = (1 << 0)
@@ -149,4 +156,8 @@ while 1:
         b.perf_buffer_poll()
         time.sleep(0.1)
     except KeyboardInterrupt:
+        exit()
+
+    if DURATION is not None and time.time() - START >= DURATION * 60.:
+        print("Exiting after %d seconds." % (time.time() - START), file=sys.stderr)
         exit()
