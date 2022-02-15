@@ -67,7 +67,8 @@ struct Config {
     perf_counters: Option<Vec<String>>,
     smaps_periodic: bool,
     mmap_tracker: bool,
-    high_order_alloc: bool,
+    trace_allocs: bool,
+    kpageflags: bool,
     badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
@@ -164,6 +165,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg BPF_PFTRACE_THRESHOLD: --bpf_pftrace_threshold
          +takes_value {validator::is::<usize>} requires[BPFPFTRACE]
          "Sets the pftrace_threshold for minimum latency to be sampled (in nanoseconds!).")
+        (@arg TRACE_ALLOCS: --trace_allocs
+         "Record allocations and frees (mmap, alloc_pages, brk, etc).")
+        (@arg KPAGEFLAGS: --kpageflags
+         "Record kpageflags periodically.")
 
         // Single-process instrumentation
         (@arg INSTRUMENT_PROCESS: --instrument +takes_value
@@ -178,8 +183,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect /proc/[PID]/smaps data periodically for the instrumented process.")
         (@arg MMAP_TRACKER: --mmap_tracker requires[INSTRUMENT_PROCESS]
          "Record stats for mmap calls for the main workload process.")
-        (@arg HIGH_ORDER_ALLOC: --high_order_alloc requires[INSTRUMENT_PROCESS]
-         "Record high-order kernel physical memory allocations.")
         (@arg BADGER_TRAP: --badger_trap requires[INSTRUMENT_PROCESS]
          "Use badger_trap to measure TLB misses.")
         (@arg KBADGERD: --kbadgerd requires[INSTRUMENT_PROCESS]
@@ -395,7 +398,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .map(|counters| counters.map(Into::into).collect());
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
     let mmap_tracker = sub_m.is_present("MMAP_TRACKER");
-    let high_order_alloc = sub_m.is_present("HIGH_ORDER_ALLOC");
+    let trace_allocs = sub_m.is_present("trace_allocs");
+    let kpageflags = sub_m.is_present("KPAGEFLAGS");
     let badger_trap = sub_m.is_present("BADGER_TRAP");
     let kbadgerd = sub_m.is_present("KBADGERD");
     let kbadgerd_sleep_interval = sub_m
@@ -473,7 +477,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_counters,
         smaps_periodic,
         mmap_tracker,
-        high_order_alloc,
+        trace_allocs,
+        kpageflags,
         badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
@@ -565,7 +570,8 @@ where
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
         cfg.mmap_tracker,
-        cfg.high_order_alloc,
+        cfg.trace_allocs,
+        cfg.kpageflags,
         cfg.badger_trap,
         cfg.mm_econ,
         cfg.pftrace,
@@ -811,6 +817,7 @@ where
         cfg.mmstats,
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
+        cfg.kpageflags,
         false,
         cfg.badger_trap,
         cfg.kbadgerd,

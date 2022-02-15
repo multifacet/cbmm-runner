@@ -37,6 +37,7 @@ use spurs::{cmd, Execute, SshShell};
 use spurs_util::escape_for_bash;
 
 pub const PERIOD: usize = 10; // seconds
+pub const KPFPERIOD: usize = 60; // seconds
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 enum Workload {
@@ -173,7 +174,8 @@ struct Config {
     perf_counters: Vec<String>,
     smaps_periodic: bool,
     mmap_tracker: bool,
-    high_order_alloc: bool,
+    trace_allocs: bool,
+    kpageflags: bool,
     badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
@@ -382,8 +384,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
         (@arg MMAP_TRACKER: --mmap_tracker
          "Record stats for mmap calls for the main workload process.")
-        (@arg HIGH_ORDER_ALLOC: --high_order_alloc
-         "Record high-order kernel physical memory allocations.")
+        (@arg TRACE_ALLOCS: --trace_allocs
+         "Record allocations and frees (mmap, alloc_pages, brk, etc).")
+        (@arg KPAGEFLAGS: --kpageflags
+         "Record kpageflags periodically.")
         (@arg BADGER_TRAP: --badger_trap
          "Use badger_trap to measure TLB misses.")
         (@arg KBADGERD: --kbadgerd
@@ -708,7 +712,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let perf_record = sub_m.is_present("PERF_RECORD");
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
     let mmap_tracker = sub_m.is_present("MMAP_TRACKER");
-    let high_order_alloc = sub_m.is_present("HIGH_ORDER_ALLOC");
+    let trace_allocs = sub_m.is_present("TRACE_ALLOCS");
+    let kpageflags = sub_m.is_present("KPAGEFLAGS");
     let badger_trap = sub_m.is_present("BADGER_TRAP");
     let kbadgerd = sub_m.is_present("KBADGERD");
     let kbadgerd_sleep_interval = sub_m
@@ -851,7 +856,8 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_counters,
         smaps_periodic,
         mmap_tracker,
-        high_order_alloc,
+        trace_allocs,
+        kpageflags,
         badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
@@ -980,7 +986,8 @@ pub fn initial_setup<'s, P: Parametrize>(
     meminfo_periodic: bool,
     smaps_periodic: bool,
     mmap_tracker: bool,
-    high_order_alloc: bool,
+    trace_allocs: bool,
+    kpageflags: bool,
     badger_trap: bool,
     mm_econ: bool,
     pftrace: Option<usize>,
@@ -1070,7 +1077,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let meminfo_file = dir!(&results_dir, output.gen_file_name("meminfo"));
     let smaps_file = dir!(&results_dir, output.gen_file_name("smaps"));
     let mmap_tracker_file = dir!(&results_dir, output.gen_file_name("mmap"));
-    let high_order_alloc_file = dir!(&results_dir, output.gen_file_name("high"));
+    let trace_allocs_file = dir!(&results_dir, output.gen_file_name("high"));
     let damon_output_path = dir!(&results_dir, output.gen_file_name("damon"));
     let trace_file = dir!(&results_dir, output.gen_file_name("trace"));
     let mmu_overhead_file = dir!(&results_dir, output.gen_file_name("mmu"));
@@ -1081,6 +1088,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     let runtime_file = dir!(&results_dir, output.gen_file_name("runtime"));
     let frag_file = dir!(&results_dir, output.gen_file_name("precondition.frag"));
     let eagerprofile_file = dir!(&results_dir, output.gen_file_name("eagerprofile"));
+    let kpageflags_file = dir!(&results_dir, output.gen_file_name("kpageflags"));
 
     let bmks_dir = dir!(&user_home, RESEARCH_WORKSPACE_PATH, ZEROSIM_BENCHMARKS_DIR);
     let damon_path = dir!(&bmks_dir, DAMON_PATH);
@@ -1141,11 +1149,11 @@ pub fn initial_setup<'s, P: Parametrize>(
         })?;
     }
 
-    if mmap_tracker {
-        // This is needed for BPF to compile, but we don't want it enabled all
-        // of the time because it interferes with gcc and g++
-        let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
+    // This is needed for BPF to compile, but we don't want it enabled all
+    // of the time because it interferes with gcc and g++
+    let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
 
+    if mmap_tracker {
         ushell.spawn(cmd!(
             "{}; \
             sudo {}/bmks/mmap_tracker.py -c {} | tee {}",
@@ -1159,21 +1167,40 @@ pub fn initial_setup<'s, P: Parametrize>(
         ushell.run(cmd!("sleep 10"))?;
     }
 
-    if high_order_alloc {
-        // This is needed for BPF to compile, but we don't want it enabled all
-        // of the time because it interferes with gcc and g++
-        let enable_bpf_cmd = "source scl_source enable devtoolset-7 llvm-toolset-7";
-
+    if trace_allocs {
         ushell.spawn(cmd!(
             "{}; \
-            sudo {}/bmks/high_order_alloc.py | tee {}",
+            sudo {}/bmks/trace_allocs.py > {}",
             enable_bpf_cmd,
             &dir!(&user_home, RESEARCH_WORKSPACE_PATH),
-            high_order_alloc_file,
+            trace_allocs_file,
         ))?;
         // Wait some time for the BPF validator to do its job
         println!("Waiting 10s for BPF validator...");
         ushell.run(cmd!("sleep 10"))?;
+    }
+
+    if kpageflags {
+        bgctx.spawn(BackgroundTask {
+            name: "kpageflags",
+            period: KPFPERIOD,
+            // We want only the page flags from peak memory usage, as those are most likely to be
+            // representative of the most fragmented state. We don't record continuously because
+            // (1) it would be hard to tell where one snapshot ends and the next begins and (2)
+            // because the output would be very large.
+            cmd: format!(
+                r#"CURMEM=$(free | grep Mem | awk '{{print $3}}') ;
+                 if [ ! -f /tmp/current-mem ] || [ "$CURMEM" -gt $(cat /tmp/current-mem) ] ;
+                 then
+                    echo $CURMEM > /tmp/current-mem ;
+                    sudo cp /proc/kpageflags {kpageflags_file} ;
+                    sudo chown markm {kpageflags_file} ;
+                else
+                    echo no changes ;
+                fi"#,
+            ),
+            ensure_started: kpageflags_file,
+        })?;
     }
 
     // Set `huge_addr` if needed.
@@ -1412,6 +1439,7 @@ pub fn teardown(
     mmstats: bool,
     meminfo_periodic: bool,
     smaps_periodic: bool,
+    kpageflags: bool,
     damon: bool,
     badger_trap: bool,
     kbadgerd: bool,
@@ -1459,7 +1487,7 @@ pub fn teardown(
         }
     }
 
-    if meminfo_periodic || smaps_periodic {
+    if meminfo_periodic || smaps_periodic || kpageflags {
         time!(
             timers,
             "Waiting for data collectioned threads to halt",
@@ -1587,7 +1615,8 @@ where
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
         cfg.mmap_tracker,
-        cfg.high_order_alloc,
+        cfg.trace_allocs,
+        cfg.kpageflags,
         cfg.badger_trap,
         cfg.mm_econ,
         cfg.pftrace,
@@ -2432,6 +2461,7 @@ where
         cfg.mmstats,
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
+        cfg.kpageflags,
         cfg.damon,
         cfg.badger_trap,
         cfg.kbadgerd,
