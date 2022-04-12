@@ -34,6 +34,8 @@ date
 # sample /proc/kpageflags
 echo "Recording page flags"
 cp /proc/kpageflags "$SAMPLEDIR/$RANDTIME.kpageflags"
+echo "Compressing page flags sample"
+gzip "$SAMPLEDIR/$RANDTIME.kpageflags"
 
 date
 
@@ -45,6 +47,7 @@ date
 
 # collect a 1-minute long sample of (de)allocations
 echo "Recording BPF allocations"
+source scl_source enable devtoolset-7 llvm-toolset-7
 $BPFDIR/trace_allocs.py 1 > "$SAMPLEDIR/$RANDTIME.allocs"
 
 date
