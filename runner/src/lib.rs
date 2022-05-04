@@ -46,16 +46,16 @@ use spurs::{cmd, Execute, SshShell};
 /// The access method to use to clone the workspace repo to the _remote_. Make sure that the access
 /// method works on the remote (e.g. the applicable private keys need to be installed on the remote
 /// if using SSH).
-/*
 pub const RESEARCH_WORKSPACE_REPO: GitRepo<'_, '_> = GitRepo::HttpsPublic {
-    repo: "github.com/multifacet/0sim-workspace",
+    repo: "github.com/multifacet/cbmm-runner",
 };
-*/
 
+/*
 pub const RESEARCH_WORKSPACE_REPO: GitRepo<'_, '_> = GitRepo::HttpsPrivate {
     repo: "github.com/mark-i-m/research-workspace",
     username: "robo-mark-i-m",
 };
+*/
 
 /// A git repository.
 #[derive(Clone, Debug)]

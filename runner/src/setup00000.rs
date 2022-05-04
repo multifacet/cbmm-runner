@@ -28,10 +28,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg USERNAME: +required +takes_value
          "The username on the remote (e.g. markm)")
 
-        (@arg PROXY: +takes_value --proxy
-         "(Optional) set up the VM to use the given proxy. Leave off the protocol \
-         (e.g. squid.cs.wisc.edu:3128)")
-
         (@arg AWS: --aws
          "(Optional) Do AWS-specific stuff.")
 
@@ -77,9 +73,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
         (@arg FIREWALL: --firewall
          "(Optional) Set up firewall rules properly.")
 
-        (@arg HOST_KERNEL: +takes_value --host_kernel
-         "(Optional) The git branch to compile the kernel from (e.g. --host_kernel master)")
-
         (@arg HOST_BMKS: --host_bmks
          "(Optional) If passed, build host benchmarks. This also makes them available to the guest.")
         (@arg SPEC_2017: --spec_2017 +takes_value
@@ -90,23 +83,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "(Optional) If passed, transfer a .tar.xz file to be used for the xz benchmark from the driver \
           machine to the remote machine.")
 
-        (@arg HOST_PREP: --prepare_host
-         "(Optional) Prepare the host for initializing the VM.")
-
-        (@arg DISABLE_EPT: --disable_ept
-         "(Optional) may need to disable Intel EPT on machines that don't have enough physical bits.")
-        (@arg DESTROY_EXISTING: --DESTROY_EXISTING
-         "(Optional) Destroy any existing VM")
-        (@arg CREATE_VM: --create_vm
-         "(Optional) Create and initialize a new VM")
-
-        (@arg GUEST_KERNEL: --guest_kernel
-         "(Optional) Build and install a guest kernel")
-
-        (@arg GUEST_DEP: --guest_dep
-         "(Optional) Install guest dependencies")
-        (@arg GUEST_BMKS: --guest_bmks
-         "(Optional) Build and install a guest benchmarks")
         (@arg HADOOP: --hadoop
          "(Optional) set up hadoop stack on VM.")
 
@@ -160,9 +136,6 @@ where
     /// Should we pass in an input for xz? Is so, what is the path?
     spec_xz_input: Option<&'a str>,
 
-    /// Disable EPT on the host.
-    disable_ept: bool,
-
     /// The remote machine is using Centos 7, rather thena Centos 8.
     centos7: bool,
 
@@ -197,8 +170,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let spec_2017 = sub_m.value_of("SPEC_2017");
     let spec_xz_input = sub_m.value_of("SPEC_XZ_INPUT");
 
-    let disable_ept = sub_m.is_present("DISABLE_EPT");
-
     let centos7 = sub_m.is_present("CENTOS7");
 
     let jemalloc = sub_m.is_present("JEMALLOC");
@@ -219,7 +190,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         host_bmks,
         spec_2017,
         spec_xz_input,
-        disable_ept,
         centos7,
         jemalloc,
     };
@@ -248,11 +218,6 @@ where
     set_up_host_devices(&ushell, &cfg)?;
     set_up_host_iptables(&ushell, &cfg)?;
     clone_research_workspace(&ushell, &cfg)?;
-
-    // disable Intel EPT if needed
-    if cfg.disable_ept {
-        disable_ept(&ushell)?;
-    }
 
     if cfg.jemalloc {
         install_jemalloc(&ushell)?;
@@ -671,28 +636,10 @@ where
             ZEROSIM_ZLIB_SUBMODULE,
             ZEROSIM_YCSB_SUBMODULE,
             ZEROSIM_GRAPH500_SUBMODULE,
-            ZEROSIM_BADGERTRAP_SUBMODULE,
         ];
 
         crate::clone_research_workspace(&ushell, cfg.wkspc_branch, cfg.secret, SUBMODULES)?;
     }
-
-    Ok(())
-}
-
-fn disable_ept(shell: &SshShell) -> Result<(), failure::Error> {
-    shell.run(
-        cmd!(
-            r#"echo "options kvm-intel ept=0" | \
-                           sudo tee /etc/modprobe.d/kvm-intel.conf"#
-        )
-        .use_bash(),
-    )?;
-
-    shell.run(cmd!("sudo rmmod kvm_intel"))?;
-    shell.run(cmd!("sudo modprobe kvm_intel"))?;
-
-    shell.run(cmd!("sudo tail /sys/module/kvm_intel/parameters/ept"))?;
 
     Ok(())
 }

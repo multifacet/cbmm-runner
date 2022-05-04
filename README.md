@@ -16,6 +16,7 @@ another machine (the _test_ machine) over SSH.
         - There is a `README.md`
         - The code itself is also pretty well-documented IMHO.
 - `bmks/` contains files needed for some benchmarks (e.g. NAS).
+- `0sim-experiments` contains a bunch of microbenchmarks orginally developed for 0sim.
 
 ## List of `runner` Experiments
 
