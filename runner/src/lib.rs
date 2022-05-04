@@ -25,25 +25,10 @@ pub mod workloads;
 
 // Setup and experimental routines
 pub mod setup00000;
-pub mod setup00001;
-pub mod setup00002;
 pub mod setup00003;
 pub mod setup00004;
-pub mod setup_manual;
 
-pub mod exptmp;
-
-pub mod exp00000;
-pub mod exp00002;
-pub mod exp00003;
-pub mod exp00004;
-pub mod exp00005;
-pub mod exp00006;
-pub mod exp00007;
-pub mod exp00008;
-pub mod exp00009;
 pub mod exp00010;
-pub mod exp00011;
 pub mod exp00012;
 
 use std::path::Path;
@@ -138,14 +123,8 @@ pub mod paths {
     /// The path at which `clone_research_workspace` clones the workspace.
     pub const RESEARCH_WORKSPACE_PATH: &str = "0sim-workspace";
 
-    /// Path to the 0sim submodule.
-    pub const ZEROSIM_KERNEL_SUBMODULE: &str = "0sim";
-
     /// Path to the 0sim-experiments submodule.
     pub const ZEROSIM_EXPERIMENTS_SUBMODULE: &str = "0sim-experiments";
-
-    /// Path to the 0sim-trace submodule.
-    pub const ZEROSIM_TRACE_SUBMODULE: &str = "0sim-trace";
 
     /// Path to the HiBench submodule.
     pub const ZEROSIM_HIBENCH_SUBMODULE: &str = "bmks/zerosim-hadoop/HiBench";

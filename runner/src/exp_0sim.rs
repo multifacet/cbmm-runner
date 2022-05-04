@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use spurs::{cmd, Execute, SshError, SshShell};
+use spurs::{cmd, Execute, SshShell};
 
 use super::paths;
 
@@ -28,136 +28,6 @@ pub const ZEROSIM_SKIP_HALT: bool = false;
 /// The default value for /proc/zerosim_lapic_adjust.
 pub const ZEROSIM_LAPIC_ADJUST: bool = true;
 
-/// Sets various settings on 0sim.
-pub struct ZeroSim;
-
-impl ZeroSim {
-    /// Checks if 0sim is even installed.
-    pub fn is_installed(shell: &SshShell) -> Result<bool, failure::Error> {
-        Ok(shell
-            .run(cmd!("sudo ls /proc/zerosim_drift_threshold"))
-            .is_ok())
-    }
-
-    /// Set the drift threshold.
-    pub fn threshold(shell: &SshShell, d: usize) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(cmd!("echo {} | sudo tee /proc/zerosim_drift_threshold", d))?;
-        Ok(())
-    }
-
-    /// Set the multicore offsetting delay.
-    pub fn delay(shell: &SshShell, delay: usize) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(cmd!("echo {} | sudo tee /proc/zerosim_delay", delay))?;
-        Ok(())
-    }
-
-    /// Enable or disable multicore offsetting.
-    pub fn multicore_offsetting(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(cmd!(
-            "echo {} | sudo tee /proc/zerosim_multicore_sync",
-            if on { "1" } else { "0" }
-        ))?;
-        Ok(())
-    }
-
-    /// Enable or disable skip_halt (you probably want it off).
-    pub fn skip_halt(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(cmd!(
-            "echo {} | sudo tee /proc/zerosim_skip_halt",
-            if on { "3" } else { "0" }
-        ))?;
-        Ok(())
-    }
-
-    /// Enable or disable LAPIC adjustment (you probably want it on).
-    pub fn lapic_adjust(shell: &SshShell, on: bool) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(cmd!(
-            "echo {} | sudo tee /proc/zerosim_lapic_adjust",
-            if on { 1 } else { 0 }
-        ))?;
-        Ok(())
-    }
-
-    /// Turn on or off 0sim TSC offsetting. Turning it off makes things run much faster, but gives up
-    /// accuracy. If you are doing some sort of setup routine, it is worth it to turn off.
-    pub fn tsc_offsetting(shell: &SshShell, enabled: bool) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(
-            cmd!(
-                "echo {} | sudo tee /sys/module/kvm_intel/parameters/enable_tsc_offsetting",
-                if enabled { 1 } else { 0 }
-            )
-            .use_bash(),
-        )?;
-        Ok(())
-    }
-
-    /// Trigger a guest TSC synchronization.
-    pub fn sync_guest_tsc(shell: &SshShell) -> Result<(), failure::Error> {
-        if !Self::is_installed(shell)? {
-            return Ok(());
-        }
-        shell.run(cmd!("echo 1 | sudo tee /proc/zerosim_sync_guest_tsc").use_bash())?;
-        Ok(())
-    }
-
-    /// Set the Zswap max_pool_percent.
-    pub fn zswap_max_pool_percent(shell: &SshShell, pct: usize) -> Result<(), failure::Error> {
-        assert!(pct <= 100);
-
-        shell.run(
-            cmd!(
-                "echo {} | sudo tee /sys/module/zswap/parameters/max_pool_percent",
-                pct
-            )
-            .use_bash(),
-        )?;
-
-        Ok(())
-    }
-
-    /// Turn on Zswap with some default parameters.
-    pub fn turn_on_zswap(shell: &mut SshShell) -> Result<(), failure::Error> {
-        // apparently permissions can get weird
-        shell.run(cmd!("sudo chmod +w /sys/module/zswap/parameters/*").use_bash())?;
-
-        // THP is buggy with frontswap until later kernels
-        shell.run(
-            cmd!("echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled").use_bash(),
-        )?;
-
-        // KSM is also not working right
-        crate::service(shell, "ksm", ServiceAction::Disable)?;
-        crate::service(shell, "ksmtuned", ServiceAction::Disable)?;
-
-        if Self::is_installed(shell)? {
-            shell
-                .run(cmd!("echo ztier | sudo tee /sys/module/zswap/parameters/zpool").use_bash())?;
-        }
-        shell.run(cmd!("echo y | sudo tee /sys/module/zswap/parameters/enabled").use_bash())?;
-        shell.run(cmd!("sudo tail /sys/module/zswap/parameters/*").use_bash())?;
-
-        Ok(())
-    }
-}
-
 /// Shut off any virtual machine and reboot the machine and do nothing else. Useful for getting the
 /// machine into a clean state.
 pub fn initial_reboot<A>(login: &Login<A>) -> Result<(), failure::Error>
@@ -167,56 +37,10 @@ where
     // Connect to the remote
     let mut ushell = SshShell::with_default_key(login.username, &login.host)?;
 
-    vagrant_halt(&ushell)?;
-
     // Reboot the remote to make sure we have a clean slate
     spurs_util::reboot(&mut ushell, /* dry_run */ false)?;
 
     Ok(())
-}
-
-/// Reboot the machine and do nothing else. Useful for getting the machine into a clean state. This
-/// also attempts to turn off any virtual machines, but if there is an error, we ignore it and
-/// reboot the host anyway.
-pub fn initial_reboot_no_vagrant<A>(login: &Login<A>) -> Result<(), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    // Connect to the remote
-    let mut ushell = SshShell::with_default_key(login.username, &login.host)?;
-
-    let _ = vagrant_halt(&ushell);
-
-    // Reboot the remote to make sure we have a clean slate
-    spurs_util::reboot(&mut ushell, /* dry_run */ false)?;
-
-    Ok(())
-}
-
-/// Connects to the host and to vagrant. Returns shells for both. TSC offsetting is disabled
-/// during VM startup to speed things up.
-pub fn connect_and_setup_host_and_vagrant<A>(
-    login: &Login<A>,
-    vm_size: usize,
-    cores: usize,
-    skip_halt: bool,
-    lapic_adjust: bool,
-) -> Result<(SshShell, SshShell), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    let ushell = connect_and_setup_host_only(&login)?;
-    let vshell = start_vagrant(
-        &ushell,
-        &login.host,
-        vm_size,
-        cores,
-        /* fast */ true,
-        skip_halt,
-        lapic_adjust,
-    )?;
-
-    Ok((ushell, vshell))
 }
 
 /// Turn off all previous swap spaces, and turn on the configured ones (e.g. via
@@ -264,9 +88,6 @@ where
 
     dump_sys_info(&ushell)?;
 
-    // Force the VM off if it was left running. If there is no VM, then ignore errors.
-    let _ = vagrant_halt(&ushell);
-
     // Set up swapping
     setup_swapping(&ushell)?;
 
@@ -275,113 +96,6 @@ where
     set_kernel_printk_level(&ushell, 5)?;
 
     Ok(ushell)
-}
-
-pub fn connect_to_vagrant_user<A: std::net::ToSocketAddrs + std::fmt::Display>(
-    hostname: A,
-    user: &str,
-) -> Result<SshShell, SshError> {
-    let (host, _) = spurs_util::get_host_ip(hostname);
-    SshShell::with_default_key(user, (host, VAGRANT_PORT))
-}
-
-pub fn connect_to_vagrant_as_root<A: std::net::ToSocketAddrs + std::fmt::Display>(
-    hostname: A,
-) -> Result<SshShell, SshError> {
-    connect_to_vagrant_user(hostname, "root")
-}
-
-pub fn connect_to_vagrant_as_user<A: std::net::ToSocketAddrs + std::fmt::Display>(
-    hostname: A,
-) -> Result<SshShell, SshError> {
-    connect_to_vagrant_user(hostname, "vagrant")
-}
-
-pub fn vagrant_halt(shell: &SshShell) -> Result<(), failure::Error> {
-    let vagrant_path = &dir!(paths::RESEARCH_WORKSPACE_PATH, paths::VAGRANT_SUBDIRECTORY);
-
-    // Speed things up...
-    ZeroSim::tsc_offsetting(shell, false)?;
-
-    let res = shell.run(cmd!("vagrant halt").cwd(vagrant_path));
-
-    if res.is_err() {
-        // Try again
-        shell.run(cmd!("vagrant halt").cwd(vagrant_path))?;
-    }
-
-    Ok(())
-}
-
-/// Start the VM with the given amount of memory and core. If `fast` is `true`, TSC offsetting
-/// is disabled during the VM boot (and re-enabled afterwards), which is much faster.
-///
-/// After starting the VM, we attempt to disable soft lockup detectors in the guest because they
-/// can produce timing anomalies.
-pub fn start_vagrant<A: std::net::ToSocketAddrs + std::fmt::Display>(
-    shell: &SshShell,
-    hostname: A,
-    memgb: usize,
-    cores: usize,
-    fast: bool,
-    skip_halt: bool,
-    lapic_adjust: bool,
-) -> Result<SshShell, failure::Error> {
-    crate::service(shell, "nfs-idmapd", ServiceAction::Restart)?;
-    crate::service(shell, "libvirtd", ServiceAction::Restart)?;
-
-    // Disable KSM because it creates a lot of overhead when the host is oversubscribed
-    crate::service(shell, "ksm", ServiceAction::Disable)?;
-    crate::service(shell, "ksmtuned", ServiceAction::Disable)?;
-
-    gen_vagrantfile(shell, memgb, cores)?;
-
-    let vagrant_path = &dir!(paths::RESEARCH_WORKSPACE_PATH, paths::VAGRANT_SUBDIRECTORY);
-
-    // Make sure to turn off skip_halt, which breaks multi-core boot.
-    ZeroSim::skip_halt(shell, false)?;
-
-    // Set LAPIC adjust if needed
-    ZeroSim::lapic_adjust(shell, lapic_adjust)?;
-
-    // Disable TSC offsetting if `fast` is true.
-    ZeroSim::tsc_offsetting(shell, !fast)?;
-
-    vagrant_halt(&shell)?;
-
-    // We want to pin the vCPUs as soon as possible because otherwise, they tend to switch
-    // around a lot, causing a lot of printk overhead.
-    let pin = {
-        let mut pin = HashMap::new();
-        for c in 0..cores {
-            pin.insert(c, c);
-        }
-        pin
-    };
-    virsh_vcpupin(shell, &pin)?;
-
-    shell.run(cmd!("vagrant up").no_pty().cwd(vagrant_path))?;
-
-    shell.run(cmd!("sudo lsof -i -P -n | grep LISTEN").use_bash())?;
-    let vshell = connect_to_vagrant_as_root(hostname)?;
-
-    turn_off_watchdogs(&vshell)?;
-
-    dump_sys_info(&vshell)?;
-
-    // Don't let the OOM killer kill ssh
-    oomkiller_blacklist_by_name(&vshell, "/usr/sbin/sshd")?;
-
-    // Disable ASLR in guest.
-    super::disable_aslr(&vshell)?;
-
-    // Enable TSC offsetting (regardless of whether it was already off).
-    ZeroSim::tsc_offsetting(shell, true)?;
-
-    // Can turn skip_halt back on now.
-    ZeroSim::skip_halt(shell, skip_halt)?;
-
-    Ok(vshell)
 }
 
 pub fn turn_off_swapdevs(shell: &SshShell) -> Result<(), failure::Error> {

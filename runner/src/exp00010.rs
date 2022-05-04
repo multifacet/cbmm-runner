@@ -1512,7 +1512,7 @@ where
     A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
 {
     // Reboot
-    initial_reboot_no_vagrant(&login)?;
+    initial_reboot(&login)?;
 
     // Connect
     let ushell = connect_and_setup_host_only(&login)?;

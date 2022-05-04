@@ -4,20 +4,16 @@
 //! kernel from.
 
 use std::path::PathBuf;
-use std::process::Command;
 
 use clap::clap_app;
 
-use failure::ResultExt;
-
 use crate::{
     dir,
-    downloads::{artifact_info, download, download_and_extract, Artifact},
+    downloads::{artifact_info, download_and_extract, Artifact},
     exp_0sim::*,
     get_user_home_dir, install_bcc,
     paths::{setup00000::*, *},
-    rsync_to_remote, with_shell, KernelBaseConfigSource, KernelConfig, KernelPkgType, KernelSrc,
-    Login, ServiceAction,
+    rsync_to_remote, with_shell, Login, ServiceAction,
 };
 
 use spurs::{cmd, Execute, SshShell};
@@ -132,9 +128,6 @@ where
     /// Do AWS-specific stuff.
     aws: bool,
 
-    /// Setup the host and guest to work behind the given proxy.
-    setup_proxy: Option<&'a str>,
-
     /// Install host dependencies, rename poweorff.
     host_dep: bool,
 
@@ -160,9 +153,6 @@ where
     /// connect to the host, the internet, etc.
     firewall: bool,
 
-    /// The git branch/hash/tag to compile the kernel from (e.g. master or v4.10).
-    commitish: Option<&'a str>,
-
     /// Should we build host benchmarks?
     host_bmks: bool,
     /// Should we install SPEC 2017? If so, what is the ISO path?
@@ -170,25 +160,8 @@ where
     /// Should we pass in an input for xz? Is so, what is the path?
     spec_xz_input: Option<&'a str>,
 
-    /// Should we prepare the host for initing the VM? This needs to be done only once?
-    host_prep: bool,
-
     /// Disable EPT on the host.
     disable_ept: bool,
-    /// Destroy any existing VM.
-    destroy_existing_vm: bool,
-    /// Create and init a new VM, including installing guest dependencies.
-    create_vm: bool,
-
-    /// Compile and install a recent Linux on the guest.
-    guest_kernel: bool,
-
-    /// Install guest dependencies.
-    guest_dep: bool,
-    /// Compile and install guest bmks.
-    guest_bmks: bool,
-    /// Set up the Hadoop on the guest.
-    setup_hadoop: bool,
 
     /// The remote machine is using Centos 7, rather thena Centos 8.
     centos7: bool,
@@ -206,8 +179,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let aws = sub_m.is_present("AWS");
 
-    let setup_proxy = sub_m.value_of("PROXY");
-
     let host_dep = sub_m.is_present("HOST_DEP");
 
     let resize_root = sub_m.is_present("RESIZE_ROOT");
@@ -222,24 +193,11 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
 
     let firewall = sub_m.is_present("FIREWALL");
 
-    let commitish = sub_m.value_of("HOST_KERNEL");
-
     let host_bmks = sub_m.is_present("HOST_BMKS");
     let spec_2017 = sub_m.value_of("SPEC_2017");
     let spec_xz_input = sub_m.value_of("SPEC_XZ_INPUT");
 
-    let host_prep = sub_m.is_present("HOST_PREP");
-
     let disable_ept = sub_m.is_present("DISABLE_EPT");
-    let destroy_existing_vm = sub_m.is_present("DESTROY_EXISTING");
-    let create_vm = sub_m.is_present("CREATE_VM");
-
-    let guest_kernel = sub_m.is_present("GUEST_KERNEL");
-
-    let setup_hadoop = sub_m.is_present("HADOOP");
-
-    let guest_bmks = sub_m.is_present("GUEST_BMKS");
-    let guest_dep = guest_bmks || sub_m.is_present("GUEST_DEP");
 
     let centos7 = sub_m.is_present("CENTOS7");
 
@@ -248,7 +206,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let cfg = SetupConfig {
         login,
         aws,
-        setup_proxy,
         host_dep,
         resize_root,
         home_device,
@@ -256,21 +213,13 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         swap_devices,
         unstable_names,
         firewall,
-        commitish,
         clone_wkspc,
         wkspc_branch,
         secret,
         host_bmks,
         spec_2017,
         spec_xz_input,
-        host_prep,
         disable_ept,
-        destroy_existing_vm,
-        create_vm,
-        guest_kernel,
-        guest_dep,
-        guest_bmks,
-        setup_hadoop,
         centos7,
         jemalloc,
     };
@@ -299,7 +248,6 @@ where
     set_up_host_devices(&ushell, &cfg)?;
     set_up_host_iptables(&ushell, &cfg)?;
     clone_research_workspace(&ushell, &cfg)?;
-    install_host_kernel(&ushell, &cfg)?;
 
     // disable Intel EPT if needed
     if cfg.disable_ept {
@@ -321,66 +269,6 @@ where
     if let Some(xz_input_path) = cfg.spec_xz_input {
         copy_spec_xz_input(&ushell, &cfg, xz_input_path)?;
     }
-
-    // Prepare to install VM
-    if cfg.host_prep {
-        prepare_host_for_vm_and_reboot(&mut ushell, &cfg)?;
-    }
-
-    if cfg.destroy_existing_vm {
-        destroy_vm(&ushell)?;
-    }
-
-    let (vrshell, vushell) = if cfg.create_vm {
-        // Create the VM and install dependencies for the benchmarks/simulator.
-        init_vm(&mut ushell, &cfg)?
-    } else if cfg.guest_kernel || cfg.setup_hadoop || cfg.guest_bmks || cfg.guest_dep {
-        // Start vagrant (that already exists)
-        let vrshell = start_vagrant(
-            &ushell,
-            &cfg.login.host,
-            20,
-            1,
-            /* fast */ true,
-            ZEROSIM_SKIP_HALT,
-            ZEROSIM_LAPIC_ADJUST,
-        )?;
-        let vushell = connect_to_vagrant_as_user(&cfg.login.host)?;
-
-        (vrshell, vushell)
-    } else {
-        // Nothing left to do
-        return Ok(());
-    };
-
-    // Setup of proxying if needed.
-    let (vrshell, vushell) = if let Some(proxy) = cfg.setup_proxy {
-        setup_proxy(vrshell, vushell, proxy, &cfg)?
-    } else {
-        (vrshell, vushell)
-    };
-
-    // Disable TSC offsetting for performance
-    ZeroSim::tsc_offsetting(&ushell, false)?;
-
-    install_guest_dependencies(&vrshell, &vushell, &cfg)?;
-
-    if cfg.guest_kernel {
-        install_guest_kernel(&ushell, &vrshell, &vushell)?;
-    }
-
-    // Install benchmarks.
-    if cfg.guest_bmks || cfg.setup_hadoop {
-        install_guest_benchmarks(&ushell, &vushell, &vrshell, &cfg)?;
-    }
-
-    // Make sure the TSC is marked as a reliable clock source in the guest.
-    set_kernel_boot_param(&vrshell, "tsc", Some("reliable"))?;
-
-    // Need to run shutdown to make sure that the next host reboot doesn't lose guest data.
-    vrshell.run(cmd!("sync"))?;
-    ushell.run(cmd!("sync"))?;
-    let _ = vrshell.run(cmd!("sudo poweroff")); // This will give a TCP error for obvious reasons
 
     Ok(())
 }
@@ -773,9 +661,6 @@ where
 {
     if cfg.clone_wkspc {
         const SUBMODULES: &[&str] = &[
-            ZEROSIM_KERNEL_SUBMODULE,
-            ZEROSIM_EXPERIMENTS_SUBMODULE,
-            ZEROSIM_TRACE_SUBMODULE,
             ZEROSIM_HIBENCH_SUBMODULE,
             ZEROSIM_MEMHOG_SUBMODULE,
             ZEROSIM_METIS_SUBMODULE,
@@ -790,95 +675,6 @@ where
         ];
 
         crate::clone_research_workspace(&ushell, cfg.wkspc_branch, cfg.secret, SUBMODULES)?;
-    }
-
-    Ok(())
-}
-
-fn install_host_kernel<A>(ushell: &SshShell, cfg: &SetupConfig<'_, A>) -> Result<(), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    let user_home = &get_user_home_dir(&ushell)?;
-
-    // clone the research workspace and build/install the 0sim kernel.
-    if let Some(commitish) = cfg.commitish {
-        let mut config_set = vec![
-            // turn on 0sim
-            ("CONFIG_ZSWAP", true),
-            ("CONFIG_ZPOOL", true),
-            ("CONFIG_ZBUD", true),
-            ("CONFIG_ZTIER", true),
-            ("CONFIG_SBALLOC", true),
-            ("CONFIG_ZSMALLOC", true),
-            ("CONFIG_X86_TSC_OFFSET_HOST_ELAPSED", true),
-            ("CONFIG_SSDSWAP", true),
-            // disable spectre/meltdown mitigations
-            ("CONFIG_PAGE_TABLE_ISOLATION", false),
-            ("CONFIG_RETPOLINE", false),
-            // for `perf` stack traces
-            ("CONFIG_FRAME_POINTER", true),
-            // Compile with more recent kernels (bug workaround)
-            ("CONFIG_NVM", true),
-        ];
-
-        // We don't have the keys to build with.
-        if cfg.aws || !cfg.centos7 {
-            config_set.push(("CONFIG_SYSTEM_TRUSTED_KEYS", false));
-            config_set.push(("CONFIG_MODULE_SIG_KEY", false));
-        }
-
-        let kernel_path = dir!(
-            user_home.as_str(),
-            RESEARCH_WORKSPACE_PATH,
-            ZEROSIM_KERNEL_SUBMODULE
-        );
-
-        let git_hash = crate::research_workspace_git_hash(ushell)?;
-
-        crate::build_kernel(
-            &ushell,
-            KernelSrc::Git {
-                repo_path: kernel_path.clone(),
-                commitish: commitish.into(),
-            },
-            KernelConfig {
-                base_config: KernelBaseConfigSource::Current,
-                extra_options: &config_set,
-            },
-            Some(&crate::gen_local_version(commitish, &git_hash)),
-            KernelPkgType::Rpm,
-            None,
-            /* cpupower */ true,
-        )?;
-
-        // Get name of RPM by looking for most recent file.
-        let kernel_rpm = ushell
-            .run(
-                cmd!(
-                    "basename `ls -Art {}/rpmbuild/RPMS/x86_64/ | grep -v headers | tail -n 1`",
-                    user_home
-                )
-                .use_bash(),
-            )?
-            .stdout;
-        let kernel_rpm = kernel_rpm.trim();
-
-        ushell.run(
-            cmd!(
-                "sudo rpm -ivh --force {}/rpmbuild/RPMS/x86_64/{}",
-                user_home,
-                kernel_rpm
-            )
-            .use_bash(),
-        )?;
-
-        // update grub to choose this entry (new kernel) by default. This works as long as the new
-        // kernel is the most recent one installed.
-        ushell.run(cmd!("sudo grub2-set-default 0"))?;
-
-        // Build cpupower
-        ushell.run(cmd!("make").cwd(&format!("{}/tools/power/cpupower/", kernel_path)))?;
     }
 
     Ok(())
@@ -951,21 +747,8 @@ where
     let ncores = crate::get_num_cores(&ushell)?;
     let user_home = &get_user_home_dir(&ushell)?;
 
-    // Build 0sim trace tool
-    ushell.run(
-        cmd!("$HOME/.cargo/bin/cargo build --release")
-            .use_bash()
-            .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_TRACE_SUBMODULE)),
-    )?;
-
     // Make the share directory (if it doesn't exist)
     ushell.run(cmd!("mkdir -p {}", HOSTNAME_SHARED_RESULTS_DIR))?;
-
-    // 0sim-experiments
-    ushell.run(cmd!("$HOME/.cargo/bin/cargo build --release").cwd(&dir!(
-        RESEARCH_WORKSPACE_PATH,
-        ZEROSIM_EXPERIMENTS_SUBMODULE
-    )))?;
 
     // NAS 3.4
     ushell.run(
@@ -1250,449 +1033,6 @@ where
 
     // We want to decompress into a .tar file so we can compute the checksum later
     ushell.run(cmd!("xz --decompress < {} > {}", TAR_XZ_NAME, TAR_NAME))?;
-
-    Ok(())
-}
-
-/// Prepare the host to install the VM. This involves rebooting the machine.
-fn prepare_host_for_vm_and_reboot<A>(
-    ushell: &mut SshShell,
-    cfg: &SetupConfig<'_, A>,
-) -> Result<(), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    let user_home = &get_user_home_dir(&ushell)?;
-
-    // Configure libvirt to store images in the home directory.
-    ushell.run(cmd!("mkdir -p images/"))?;
-    ushell.run(cmd!("chmod +x ."))?;
-    ushell.run(cmd!("chmod +x images/"))?;
-    ushell.run(cmd!("sudo chown {}:qemu images/", cfg.login.username))?;
-
-    crate::service(&ushell, "libvirtd", ServiceAction::Start)?;
-
-    let def_exists = ushell
-        .run(cmd!("sudo virsh pool-list --all | grep -q default"))
-        .is_ok();
-    if def_exists {
-        ushell.run(cmd!("sudo virsh pool-destroy default"))?;
-        ushell.run(cmd!("sudo virsh pool-undefine default"))?;
-    }
-
-    ushell.run(cmd!(
-        "sudo virsh pool-define-as --name default --type dir --target {}/images/",
-        user_home
-    ))?;
-    ushell.run(cmd!("sudo virsh pool-autostart default"))?;
-    ushell.run(cmd!("sudo virsh pool-start default"))?;
-    ushell.run(cmd!("sudo virsh pool-list"))?;
-
-    // Reboot the host.
-    spurs_util::reboot(ushell, /* dry_run */ false)?;
-
-    // Disable TSC offsetting so that setup runs faster
-    ZeroSim::tsc_offsetting(&ushell, false)?;
-
-    // Make sure libvirtd is running.
-    crate::service(&ushell, "libvirtd", ServiceAction::Restart)?;
-
-    // Make sure NFS accepts UDP.
-    ushell.run(cmd!(r"sed 's/\[nfsd\]/[nfsd]\nudp=y/' /etc/nfs.conf"))?;
-    crate::service(&ushell, "nfs-server", ServiceAction::Restart)?;
-
-    Ok(())
-}
-
-/// Destroys any existing VM forcibly.
-fn destroy_vm(ushell: &SshShell) -> Result<(), failure::Error> {
-    let vagrant_path = &dir!(RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
-
-    with_shell! { ushell in vagrant_path =>
-        cmd!("vagrant halt --force || [ ! -e Vagrantfile ]").use_bash(),
-        cmd!("sudo virsh net-undefine vagrant-libvirt || [ ! -e Vagrantfile ]").use_bash(),
-        cmd!("vagrant destroy --force || [ ! -e Vagrantfile ]").use_bash(),
-    }
-
-    Ok(())
-}
-
-/// Create the VM and install dependencies for the benchmarks/simulator. Returns root and user
-/// shells to the VM.
-fn init_vm<A>(
-    ushell: &mut SshShell,
-    cfg: &SetupConfig<'_, A>,
-) -> Result<(SshShell, SshShell), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    // Create the VM and add our ssh key to it.
-    let vagrant_path = &dir!(RESEARCH_WORKSPACE_PATH, VAGRANT_SUBDIRECTORY);
-
-    // Make the share directory (if it doesn't exist)
-    ushell.run(cmd!("mkdir -p {}", HOSTNAME_SHARED_RESULTS_DIR))?;
-
-    ushell.run(cmd!("cp Vagrantfile.bk Vagrantfile").cwd(vagrant_path))?;
-    crate::gen_new_vagrantdomain(
-        &ushell,
-        if cfg.centos7 {
-            VAGRANT_CENTOS7_BOX
-        } else {
-            VAGRANT_CENTOS8_BOX
-        },
-    )?;
-
-    gen_vagrantfile(&ushell, 20, 1)?;
-
-    // Make sure to turn off skip_halt and lapic_adjust
-    ZeroSim::skip_halt(&ushell, false)?;
-    ZeroSim::lapic_adjust(&ushell, false)?;
-
-    ushell.run(cmd!("vagrant halt").cwd(vagrant_path))?;
-    ushell.run(cmd!("vagrant up").cwd(vagrant_path))?; // This creates the VM
-
-    let ssh_location = format!(
-        "{}/.ssh",
-        std::env::var("HOME").context("finding location of .ssh directory")?
-    );
-
-    let key = std::fs::read_to_string(dir!(&ssh_location, "id_rsa.pub"))?;
-    let key = key.trim();
-    ushell.run(
-        cmd!(
-            "vagrant ssh -- 'echo {} >> /home/vagrant/.ssh/authorized_keys'",
-            spurs_util::escape_for_bash(key)
-        )
-        .cwd(vagrant_path),
-    )?;
-    ushell.run(cmd!("vagrant ssh -- sudo cp -r /home/vagrant/.ssh /root/").cwd(vagrant_path))?;
-
-    // Old key will be cached for the VM, but it is likely to have changed
-    let (host, _) = spurs_util::get_host_ip(&cfg.login.host);
-    let _ = Command::new("ssh-keygen")
-        .args(&[
-            "-f",
-            &dir!(&ssh_location, "known_hosts"),
-            "-R",
-            &format!("[{}]:{}", host, VAGRANT_PORT),
-        ])
-        .status()
-        .unwrap();
-
-    // Start vagrant
-    let mut vrshell = start_vagrant(
-        &ushell,
-        &cfg.login.host,
-        20,
-        1,
-        /* fast */ true,
-        ZEROSIM_SKIP_HALT,
-        ZEROSIM_LAPIC_ADJUST,
-    )?;
-    let mut vushell = connect_to_vagrant_as_user(&cfg.login.host)?;
-
-    // Make sure we have an alternate way to get into the VM
-    vrshell.run(cmd!("echo 0sim | passwd --stdin vagrant"))?;
-    vrshell.run(cmd!("echo 0sim | passwd --stdin root"))?;
-
-    // Sometimes on adsl, networking is kind of messed up until a host restart. Check for
-    // connectivity, and try restarting.
-    let pub_net = vushell.run(cmd!("ping -c 1 -W 10 1.1.1.1")).is_ok();
-    if !pub_net {
-        ushell.run(cmd!("vagrant halt").cwd(vagrant_path))?;
-        spurs_util::reboot(ushell, /* dry_run */ false)?;
-
-        vrshell = start_vagrant(
-            &ushell,
-            &cfg.login.host,
-            20,
-            1,
-            /* fast */ true,
-            ZEROSIM_SKIP_HALT,
-            ZEROSIM_LAPIC_ADJUST,
-        )?;
-        vushell = connect_to_vagrant_as_user(&cfg.login.host)?;
-    }
-
-    // Keep tsc offsetting off (it may be turned on by start_vagrant).
-    ZeroSim::tsc_offsetting(&ushell, false)?;
-
-    Ok((vrshell, vushell))
-}
-
-/// Setup up proxying for the given root/user shells and proxy address:port. Consume the old shells
-/// and return new shells with the proxy settings active.
-fn setup_proxy<A>(
-    rshell: SshShell,
-    ushell: SshShell,
-    proxy: &str,
-    cfg: &SetupConfig<'_, A>,
-) -> Result<(SshShell, SshShell), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    let mut parts = proxy.split(':');
-    let address = parts.next().unwrap();
-    let port = parts.next().unwrap();
-
-    // user
-    with_shell! { ushell =>
-        cmd!("echo export http_proxy='{}' | tee --append .bashrc", proxy).use_bash(),
-        cmd!("echo export https_proxy='{}' | tee --append .bashrc", proxy).use_bash(),
-        cmd!("echo export HTTP_PROXY='{}' | tee --append .bashrc", proxy).use_bash(),
-        cmd!("echo export HTTPS_PROXY='{}' | tee --append .bashrc", proxy).use_bash(),
-
-        // Setup proxying for maven
-        cmd!("mkdir -p .m2"),
-        cmd!("cp {}/mvn-settings.xml .m2/settings.xml",
-            dir!(
-                RESEARCH_WORKSPACE_PATH,
-                ZEROSIM_BENCHMARKS_DIR,
-                ZEROSIM_HADOOP_PATH
-            )
-        ),
-        cmd!("sed -i 's/PROXY_ADDRESS/{}/' .m2/settings.xml", address),
-        cmd!("sed -i 's/PROXY_PORT/{}/' .m2/settings.xml", port),
-    }
-
-    // root
-    with_shell! { rshell =>
-        cmd!("echo export http_proxy='{}' | tee --append .bashrc", proxy).use_bash(),
-        cmd!("echo export https_proxy='{}' | tee --append .bashrc", proxy).use_bash(),
-        cmd!("echo export HTTP_PROXY='{}' | tee --append .bashrc", proxy).use_bash(),
-        cmd!("echo export HTTPS_PROXY='{}' | tee --append .bashrc", proxy).use_bash(),
-    }
-
-    // proxy (https would be preferred, but RHEL/Centos 8 has issues with proxies)
-    rshell.run(cmd!("echo proxy=http://{} | tee --append /etc/yum.conf", proxy).use_bash())?;
-
-    // need to restart shell to get new env
-    let rshell = connect_to_vagrant_as_root(&cfg.login.host)?;
-    let ushell = connect_to_vagrant_as_user(&cfg.login.host)?;
-
-    Ok((rshell, ushell))
-}
-
-fn install_guest_dependencies<A>(
-    vrshell: &SshShell,
-    vushell: &SshShell,
-    cfg: &SetupConfig<'_, A>,
-) -> Result<(), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    // Install stuff on the VM
-
-    if cfg.centos7 {
-        vrshell.run(spurs_util::centos::yum_install(&[
-            "epel-release",
-            "centos-release-scl",
-        ]))?;
-        vrshell.run(spurs_util::centos::yum_install(&[
-            "devtoolset-8",
-            "devtoolset-8-gcc-c++",
-        ]))?;
-        vrshell.run(cmd!(
-            "echo 'source /opt/rh/devtoolset-8/enable' | \
-             sudo tee /etc/profile.d/recent-compilers.sh"
-        ))?;
-        vrshell.run(cmd!(
-            "sudo mv /opt/rh/devtoolset-8/root/usr/bin/sudo \
-             /opt/rh/devtoolset-8/root/usr/bin/scl-sudo || \
-             ls /opt/rh/devtoolset-8/root/usr/bin/scl-sudo"
-        ))?;
-    }
-
-    vrshell.run(spurs_util::centos::yum_install(&[
-        "vim",
-        "git",
-        "memcached",
-        "gcc",
-        "gcc-c++",
-        "ggc-gfortran",
-        "libcgroup",
-        "libcgroup-tools",
-        "java-1.8.0-openjdk-devel",
-        "redis",
-        "perf", // for debugging
-        "libevent",
-        "libevent-devel",
-        "numactl-devel",
-        "fuse-devel",
-        "wget",
-        "python3",
-        "openmpi-devel",
-        "libgomp",
-    ]))?;
-
-    install_rust(vrshell)?;
-    install_rust(vushell)?;
-
-    // Set up maven
-    let user_home = &get_user_home_dir(&vushell)?;
-    download_and_extract(vushell, Artifact::Maven, user_home, Some("maven"))?;
-    vushell.run(cmd!(
-        "echo -e 'export JAVA_HOME=/usr/lib/jvm/java/\n\
-         export M2_HOME=~vagrant/maven/\n\
-         export MAVEN_HOME=$M2_HOME\n\
-         export PATH=${{M2_HOME}}/bin:${{PATH}}' | \
-         sudo tee /etc/profile.d/java.sh",
-    ))?;
-
-    Ok(())
-}
-
-/// Install a recent kernel on the guest.
-///
-/// We will compile on the host and copy the config and the RPM through the shared directory.
-fn install_guest_kernel(
-    ushell: &SshShell,
-    vrshell: &SshShell,
-    vushell: &SshShell,
-) -> Result<(), failure::Error> {
-    let user_home = &get_user_home_dir(&ushell)?;
-
-    let guest_config = vushell
-        .run(cmd!("ls -1 /boot/config-* | head -n1").use_bash())?
-        .stdout;
-    let guest_config = guest_config.trim();
-    vushell.run(cmd!("cp {} {}", guest_config, VAGRANT_SHARED_DIR))?;
-
-    let guest_config_base_name = std::path::Path::new(guest_config).file_name().unwrap();
-
-    let kernel_info = download(ushell, Artifact::Linux, user_home, None)?;
-    crate::build_kernel(
-        &ushell,
-        KernelSrc::Tar {
-            tarball_path: kernel_info.name.into(),
-        },
-        KernelConfig {
-            base_config: KernelBaseConfigSource::Path(dir!(
-                HOSTNAME_SHARED_DIR,
-                guest_config_base_name.to_str().unwrap()
-            )),
-            extra_options: &[
-                // disable spectre/meltdown mitigations
-                ("CONFIG_PAGE_TABLE_ISOLATION", false),
-                ("CONFIG_RETPOLINE", false),
-                // for `perf` stack traces
-                ("CONFIG_FRAME_POINTER", true),
-                // for bpf
-                ("CONFIG_IKHEADERS", true),
-                ("CONFIG_BPF", true),
-                ("CONFIG_BPF_SYSCALL", true),
-                ("CONFIG_BPF_JIT", true),
-                ("CONFIG_HAVE_EBPF_JIT", true),
-                ("CONFIG_BPF_EVENTS", true),
-            ],
-        },
-        None,
-        KernelPkgType::Rpm,
-        None,
-        /* cpupower */ false,
-    )?;
-
-    // Get name of RPM by looking for most recent file.
-    let kernel_rpm = ushell
-        .run(
-            cmd!(
-                "basename `ls -Art {}/rpmbuild/RPMS/x86_64/ | grep -v headers | tail -n 1`",
-                user_home
-            )
-            .use_bash(),
-        )?
-        .stdout;
-    let kernel_rpm = kernel_rpm.trim();
-
-    ushell.run(
-        cmd!(
-            "cp {}/rpmbuild/RPMS/x86_64/{} {}/",
-            user_home,
-            kernel_rpm,
-            dir!(user_home.as_str(), HOSTNAME_SHARED_DIR)
-        )
-        .use_bash(),
-    )?;
-
-    vrshell.run(cmd!(
-        "rpm -ivh --force {}",
-        dir!(VAGRANT_SHARED_DIR, kernel_rpm)
-    ))?;
-
-    vrshell.run(cmd!("sudo grub2-set-default 0"))?;
-
-    Ok(())
-}
-
-/// Installation of benchmarks that must be done with a VM.
-fn install_guest_benchmarks<A>(
-    ushell: &SshShell,
-    vushell: &SshShell,
-    vrshell: &SshShell,
-    cfg: &SetupConfig<'_, A>,
-) -> Result<(), failure::Error>
-where
-    A: std::net::ToSocketAddrs + std::fmt::Display + std::fmt::Debug + Clone,
-{
-    // Hadoop/spark/hibench
-    if cfg.setup_hadoop {
-        vm_setup_hadoop(ushell, vushell, vrshell)?;
-    }
-
-    // Create a mountpoint for nullfs
-    vushell.run(cmd!("sudo mkdir -p /mnt/nullfs"))?;
-    vushell.run(cmd!("sudo chmod 777 /mnt/nullfs"))?;
-
-    Ok(())
-}
-
-/// Set up hadoop and hibench in the guest.
-fn vm_setup_hadoop(
-    ushell: &SshShell,
-    vushell: &SshShell,
-    vrshell: &SshShell,
-) -> Result<(), failure::Error> {
-    let hadoop_path = dir!(
-        RESEARCH_WORKSPACE_PATH,
-        ZEROSIM_BENCHMARKS_DIR,
-        ZEROSIM_HADOOP_PATH
-    );
-
-    crate::setup_passphraseless_local_ssh(vushell)?;
-
-    // Add hadoop env vars to shell profile.
-    let user_home = vushell.run(cmd!("echo $HOME"))?.stdout;
-    let user_home = user_home.trim();
-    vrshell.run(cmd!(
-        "echo 'source {}/{}/hadoop_env.sh' >> ~/.bashrc",
-        user_home,
-        hadoop_path
-    ))?;
-    vushell.run(cmd!(
-        "echo 'source {}/{}/hadoop_env.sh' >> ~/.bashrc",
-        user_home,
-        hadoop_path
-    ))?;
-
-    // Download and untar hadoop and spark.
-    crate::hadoop::download_hadoop_tarball(&ushell, &hadoop_path)?;
-    crate::hadoop::download_spark_tarball(&ushell, &hadoop_path)?;
-
-    // Copy config options into place. These already have settings set, so we don't need to do a
-    // lot of adjusting on the fly.
-    with_shell! { ushell in &hadoop_path =>
-        cmd!("cp hadoop-conf/* hadoop/etc/hadoop/"),
-        cmd!("cp spark-conf/* spark/conf/"),
-        cmd!("cp hibench-conf/* HiBench/conf/"),
-    }
-
-    // Do some setup for hadoop and then hibench
-    vushell.run(
-        cmd!("sh -x setup.sh")
-            .use_bash()
-            .cwd(&hadoop_path)
-            .use_bash(),
-    )?;
 
     Ok(())
 }
