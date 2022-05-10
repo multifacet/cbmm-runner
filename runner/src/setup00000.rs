@@ -830,9 +830,6 @@ where
     download_and_extract(ushell, Artifact::Parsec, user_home, None)?;
     ushell.run(cmd!("./parsecmgmt -a build -p canneal").cwd("parsec-3.0/bin/"))?;
 
-    // Build BadgerTrap client program.
-    ushell.run(cmd!("make").cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_BADGERTRAP_SUBMODULE)))?;
-
     // Build the cb_wrapper and fragmentation tool.
     ushell.run(
         cmd!("gcc -Wall -Werror -o cb_wrapper cb_wrapper.c")

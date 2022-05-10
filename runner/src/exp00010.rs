@@ -173,7 +173,6 @@ struct Config {
     perf_counters: Vec<String>,
     smaps_periodic: bool,
     mmap_tracker: bool,
-    badger_trap: bool,
     kbadgerd: bool,
     kbadgerd_sleep_interval: Option<usize>,
     mm_econ: bool,
@@ -381,8 +380,6 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Collect /proc/[PID]/smaps data periodically for the main workload process.")
         (@arg MMAP_TRACKER: --mmap_tracker
          "Record stats for mmap calls for the main workload process.")
-        (@arg BADGER_TRAP: --badger_trap
-         "Use badger_trap to measure TLB misses.")
         (@arg KBADGERD: --kbadgerd
          "Use kbadgerd to measure TLB misses.")
         (@arg KBADGERD_SLEEP_INTERVAL: --kbadgerd_sleep_interval
@@ -705,7 +702,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
     let perf_record = sub_m.is_present("PERF_RECORD");
     let smaps_periodic = sub_m.is_present("SMAPS_PERIODIC");
     let mmap_tracker = sub_m.is_present("MMAP_TRACKER");
-    let badger_trap = sub_m.is_present("BADGER_TRAP");
     let kbadgerd = sub_m.is_present("KBADGERD");
     let kbadgerd_sleep_interval = sub_m
         .value_of("KBADGERD_SLEEP_INTERVAL")
@@ -847,7 +843,6 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         perf_counters,
         smaps_periodic,
         mmap_tracker,
-        badger_trap,
         kbadgerd,
         kbadgerd_sleep_interval,
         mm_econ,
@@ -975,7 +970,6 @@ pub fn initial_setup<'s, P: Parametrize>(
     meminfo_periodic: bool,
     smaps_periodic: bool,
     mmap_tracker: bool,
-    badger_trap: bool,
     mm_econ: bool,
     pftrace: Option<usize>,
     bpf_pftrace: Option<usize>,
@@ -1154,15 +1148,6 @@ pub fn initial_setup<'s, P: Parametrize>(
 
     // Set `huge_addr` if needed.
     set_huge_addr(ushell, &instrumented_proc)?;
-
-    // Turn on BadgerTrap if needed
-    if badger_trap {
-        ushell.run(cmd!(
-            "{}/0sim-workspace/bmks/BadgerTrap/badger-trap name {}",
-            &user_home,
-            instrumented_proc.as_ref().unwrap()
-        ))?;
-    }
 
     // Turn on mm_econ if needed.
     if mm_econ {
@@ -1382,14 +1367,12 @@ pub fn teardown(
     ushell: &SshShell,
     timers: &mut Vec<(&str, Duration)>,
     bgctx: BackgroundContext,
-    instrumented_proc: Option<&str>,
     pftrace: Option<usize>,
     mm_econ: bool,
     mmstats: bool,
     meminfo_periodic: bool,
     smaps_periodic: bool,
     damon: bool,
-    badger_trap: bool,
     kbadgerd: bool,
     results_dir: &str,
     pftrace_rejected_file: &str,
@@ -1457,28 +1440,6 @@ pub fn teardown(
         })
     }
 
-    // Extract relevant data from dmesg for BadgerTrap, if needed.
-    if badger_trap {
-        // We need to ensure the relevant process has terminated.
-        ushell.run(cmd!(
-            "pkill -9 {} || echo 'already dead'",
-            instrumented_proc.unwrap()
-        ))?;
-
-        // We wait until the results have been written...
-        while ushell
-            .run(cmd!("dmesg | grep -q 'BadgerTrap: END Statistics'"))
-            .is_err()
-        {
-            std::thread::sleep(std::time::Duration::from_secs(10));
-        }
-
-        ushell.run(cmd!(
-            "dmesg | grep 'BadgerTrap:' | tee {}",
-            badger_trap_file
-        ))?;
-    }
-
     // Extract relevant data from dmesg for kbadgerd, if needed.
     if kbadgerd {
         ushell.run(cmd!("echo off | sudo tee /sys/kernel/mm/kbadgerd/enabled"))?;
@@ -1538,7 +1499,7 @@ where
         ref pin_path,
         mmu_overhead,
 
-        instrumented_proc: proc_name,
+        instrumented_proc: _,
 
         mut tctx,
         bgctx,
@@ -1563,7 +1524,6 @@ where
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
         cfg.mmap_tracker,
-        cfg.badger_trap,
         cfg.mm_econ,
         cfg.pftrace,
         cfg.bpf_pftrace,
@@ -1712,7 +1672,6 @@ where
         |proc_name| proc_name.clone().unwrap(),
     )?;
 
-    let proc_name = proc_name.as_ref().unwrap();
     let mmu_overhead = if let Some((ref file, ref counters)) = mmu_overhead {
         Some((file.as_str(), counters.as_slice()))
     } else {
@@ -2401,14 +2360,12 @@ where
         &ushell,
         &mut timers,
         bgctx,
-        Some(proc_name.as_str()),
         cfg.pftrace,
         cfg.mm_econ,
         cfg.mmstats,
         cfg.meminfo_periodic,
         cfg.smaps_periodic,
         cfg.damon,
-        cfg.badger_trap,
         cfg.kbadgerd,
         results_dir,
         pftrace_rejected_file,
