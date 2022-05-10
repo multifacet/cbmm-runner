@@ -481,6 +481,28 @@ where
     ))?;
 
     if cfg.resize_root {
+        let output = ushell
+            .run(cmd!(
+                r#"eval `lsblk -P -o NAME,PKNAME,MOUNTPOINT |\
+              grep 'MOUNTPOINT="/"'` ; echo $NAME ; echo $PKNAME"#
+            ))?
+            .stdout;
+        let mut output = output.split_whitespace();
+        let root_part = output.next().unwrap().trim().to_owned();
+
+        // Do a sanity check...
+        if let Some(swaps) = &cfg.swap_devices {
+            for s in swaps.iter() {
+                if root_part.contains(s) {
+                    failure::bail!(
+                        "Cannot resize_root device {} and use partition {} for swap.",
+                        root_part,
+                        s
+                    );
+                }
+            }
+        }
+
         crate::resize_root_partition(ushell)?;
     }
 
