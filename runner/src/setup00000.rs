@@ -425,7 +425,7 @@ where
                  PATH=/opt/vagrant/embedded/bin:$PATH vagrant plugin install vagrant-libvirt",
             ))?;
         } else {
-            ushell.run(cmd!("vagrant plugin install vagrant-libvirt"))?;
+             //ushell.run(cmd!("vagrant plugin install vagrant-libvirt"))?;
         }
     }
 
