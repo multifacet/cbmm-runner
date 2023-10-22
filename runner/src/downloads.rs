@@ -54,9 +54,9 @@ pub fn artifact_info(artifact: Artifact) -> Download<'static> {
             version: "4.0.0",
         },
         Maven => Download {
-            url: "https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz",
-            name: "apache-maven-3.6.3-bin.tar.gz",
-            version: "3.6.3",
+            url: "https://downloads.apache.org/maven/maven-3/3.8.8/binaries/apache-maven-3.8.8-bin.tar.gz",
+            name: "apache-maven-3.8.8-bin.tar.gz",
+            version: "3.8.8",
         },
         Pin => Download {
             url: "https://software.intel.com/sites/landingpage/pintool/downloads/pin-3.11-97998-g7ecce2dac-gcc-linux.tar.gz",
