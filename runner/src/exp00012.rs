@@ -73,6 +73,7 @@ struct Config {
     eagerprofile: Option<usize>,
 
     mm_econ: bool,
+    mm_econ_delay: Option<usize>,
     enable_aslr: bool,
     asynczero: bool,
     hawkeye: Option<String>,
@@ -202,6 +203,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
          "Turn on HawkEye (ASPLOS '19).")
         (@arg MM_ECON: --mm_econ conflicts_with[HAWKEYE]
          "Enable mm_econ.")
+        (@arg MM_ECON_DELAY: --mm_econ_delay +takes_value
+         requires[MM_ECON]
+         "Test argument: Adds delay to kernel policy decisions. This is used to study \
+         the impact kernel policy latency on app performance.")
         (@arg FRAGMENTATION: --fragmentation +takes_value {validator::is::<usize>}
          "Fragment the given percentage of memory. Must be an integer between 0 and 100. \
           This will consume a bit of memory, as there is a daemon that holds on to a bit \
@@ -431,6 +436,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         (1000, 1000)
     };
     let mm_econ = sub_m.is_present("MM_ECON");
+    let mm_econ_delay = sub_m.value_of("MM_ECON_DELAY").map(|s| s.parse::<usize>().unwrap());
     let fragmentation = sub_m
         .value_of("FRAGMENTATION")
         .map(|s| s.parse::<usize>().unwrap());
@@ -475,6 +481,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         eagerprofile,
 
         mm_econ,
+        mm_econ_delay,
         enable_aslr,
         asynczero,
         hawkeye,
@@ -561,6 +568,7 @@ where
         cfg.smaps_periodic,
         cfg.mmap_tracker,
         cfg.mm_econ,
+        cfg.mm_econ_delay,
         cfg.pftrace,
         cfg.bpf_pftrace,
         cfg.kbadgerd,

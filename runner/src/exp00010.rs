@@ -177,6 +177,7 @@ struct Config {
     kbadgerd_sleep_interval: Option<usize>,
     mm_econ: bool,
     mm_econ_benefit_file: Option<String>,
+    mm_econ_delay: Option<usize>,
     enable_aslr: bool,
     pftrace: Option<usize>,
     bpf_pftrace: Option<usize>,
@@ -397,6 +398,10 @@ pub fn cli_options() -> clap::App<'static, 'static> {
           CONSTRAINTS is an unbounded list of QUANTITY,COMP,VALUE\n\
           QUANTITY can be section_off, addr, len, prot, flags, fd, or off\n\
           COMP can be >, <, or =.")
+        (@arg MM_ECON_DELAY: --mm_econ_delay +takes_value
+         requires[MM_ECON]
+         "Test argument: Adds delay to kernel policy decisions. This is used to study \
+         the impact kernel policy latency on app performance.")
         (@arg ENABLE_ASLR: --enable_aslr
          "Enable ASLR.")
         (@arg PFTRACE: --pftrace
@@ -708,6 +713,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         .map(|s| s.parse::<usize>().unwrap());
     let mm_econ = sub_m.is_present("MM_ECON");
     let mm_econ_benefit_file = sub_m.value_of("MM_ECON_BENEFIT_FILE").map(|s| s.to_owned());
+    let mm_econ_delay = sub_m.value_of("MM_ECON_DELAY").map(|s| s.parse::<usize>().unwrap());
     let enable_aslr = sub_m.is_present("ENABLE_ASLR");
     let pftrace = sub_m.is_present("PFTRACE").then(|| {
         sub_m
@@ -847,6 +853,7 @@ pub fn run(sub_m: &clap::ArgMatches<'_>) -> Result<(), failure::Error> {
         kbadgerd_sleep_interval,
         mm_econ,
         mm_econ_benefit_file,
+        mm_econ_delay,
         enable_aslr,
         pftrace,
         bpf_pftrace,
@@ -971,6 +978,7 @@ pub fn initial_setup<'s, P: Parametrize>(
     smaps_periodic: bool,
     mmap_tracker: bool,
     mm_econ: bool,
+    mm_econ_delay: Option<usize>,
     pftrace: Option<usize>,
     bpf_pftrace: Option<usize>,
     kbadgerd: bool,
@@ -1174,6 +1182,16 @@ pub fn initial_setup<'s, P: Parametrize>(
 
     if mm_econ {
         ushell.run(cmd!("cat /sys/kernel/mm/mm_econ/stats"))?;
+    }
+
+    // Set the policy decision delay
+    if mm_econ {
+        if let Some(delay_ns) = mm_econ_delay {
+            ushell.run(cmd!(
+                "echo {} | sudo tee /sys/kernel/mm/mm_econ/delay",
+                delay_ns
+            ))?;
+        }
     }
 
     if let Some(threshold) = pftrace {
@@ -1525,6 +1543,7 @@ where
         cfg.smaps_periodic,
         cfg.mmap_tracker,
         cfg.mm_econ,
+        cfg.mm_econ_delay,
         cfg.pftrace,
         cfg.bpf_pftrace,
         cfg.kbadgerd,
