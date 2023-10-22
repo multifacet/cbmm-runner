@@ -764,14 +764,14 @@ where
     }
 
     // MongoDB
-    let gcc_path = ushell.run(cmd!("which gcc"))?.stdout;
-    let gcc_path = gcc_path.trim();
-    let gpp_path = ushell.run(cmd!("which g++"))?.stdout;
-    let gpp_path = gpp_path.trim();
-    with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH,ZEROSIM_MONGODB_SUBMODULE) =>
-        cmd!("sudo python3 -m pip install -r etc/pip/compile-requirements.txt"),
-        cmd!("python3 buildscripts/scons.py CC={} CXX={} install-mongod", gcc_path, gpp_path),
-    }
+    //let gcc_path = ushell.run(cmd!("which gcc"))?.stdout;
+    //let gcc_path = gcc_path.trim();
+    //let gpp_path = ushell.run(cmd!("which g++"))?.stdout;
+    //let gpp_path = gpp_path.trim();
+    //with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH,ZEROSIM_MONGODB_SUBMODULE) =>
+    //    cmd!("sudo python3 -m pip install -r etc/pip/compile-requirements.txt"),
+    //    cmd!("python3 buildscripts/scons.py CC={} CXX={} install-mongod", gcc_path, gpp_path),
+    //}
 
     // nullfs (for redis bgsave)
     with_shell! { ushell in &dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_NULLFS_SUBMODULE) =>
@@ -825,7 +825,7 @@ where
     ushell.run(
         cmd!(
             "mvn -pl :memcached-binding -pl :redis-binding -pl \
-            :kyotocabinet-binding -pl :mongodb-binding -am clean package"
+            :kyotocabinet-binding -am clean package"
         )
         .cwd(dir!(RESEARCH_WORKSPACE_PATH, ZEROSIM_YCSB_SUBMODULE)),
     )?;
