@@ -365,7 +365,7 @@ where
             "yum-utils",
             "device-mapper-persistent-data",
             "lvm2",
-            "docker",
+            //"docker",
         ]),
 
         // Add user to libvirt group after installing.
@@ -867,7 +867,7 @@ where
     )?;
 
     // Cloudsuite - web-serving
-    ushell.run(cmd!("docker pull -a cloudsuite/web-serving"))?;
+    ushell.run(cmd!("sudo docker pull -a cloudsuite/web-serving"))?;
 
     // Build pagemap tool.
     ushell.run(
