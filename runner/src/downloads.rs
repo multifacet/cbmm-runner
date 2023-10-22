@@ -110,7 +110,7 @@ pub fn download(
     // Some websites reject non-browsers, so pretend to be Google Chrome.
     const USER_AGENT: &str = r#"--user-agent="Mozilla/5.0 \
                              (X11; Ubuntu; Linux x86_64; rv:92.0) \
-                             Gecko/20100101 Firefox/92.0""#;
+                             Gecko/20100101""#;
 
     // Check if the file exists and then maybe download.
     if let Some(name) = name {
